@@ -1,0 +1,59 @@
+[package]
+name = "aroxy"
+version = "0.1.0"
+edition = "2021"
+authors = ["Qyzom <qyzom@users.noreply.github.com>", "qwezzxxx <351012934+qwezzxxx@users.noreply.github.com>"]
+description = "Ultra-lightweight high-performance AI API proxy & protocol emulator with Slint UI"
+license = "MIT"
+repository = "https://github.com/Qyzom/Aroxy"
+
+[dependencies]
+# GUI
+slint = { version = "1.9", default-features = false, features = ["backend-winit", "renderer-femtovg", "compat-1-2"] }
+i-slint-backend-winit = { version = "1.9", default-features = false }
+
+# Async runtime & HTTP Server
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.8", default-features = false, features = ["tokio", "http1", "http2", "json"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+bytes = "1"
+futures-util = "0.3"
+async-stream = "0.3"
+parking_lot = "0.12"
+
+# Serialization & utils
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+dirs = "6.0"
+clap = { version = "4.5", features = ["derive"] }
+chrono = "0.4"
+log = "0.4"
+env_logger = "0.11"
+uuid = { version = "1.10", features = ["v4"] }
+
+# System Tray
+tray-icon = { version = "0.19", default-features = false }
+muda = { version = "0.15", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+auto-launch = "0.5"
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Storage_FileSystem",
+] }
+
+[build-dependencies]
+slint-build = "1.9"
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "unwind"
+strip = "symbols"
