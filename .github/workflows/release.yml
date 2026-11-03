@@ -72,15 +72,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download Linux AppImage
+      - name: Download all release artifacts
         uses: actions/download-artifact@v4
         with:
-          name: Aroxy-0.0.1-x86_64.AppImage
+          path: dist
+          merge-multiple: true
 
-      - name: Download Windows EXE
-        uses: actions/download-artifact@v4
-        with:
-          name: Aroxy-0.0.1-x86_64.exe
+      - name: List dist files
+        run: ls -la dist/
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -88,15 +87,15 @@ jobs:
           name: Aroxy v0.0.1
           tag_name: ${{ github.ref_name }}
           files: |
-            Aroxy-0.0.1-x86_64.AppImage
-            Aroxy-0.0.1-x86_64.exe
+            dist/Aroxy-0.0.1-x86_64.AppImage
+            dist/Aroxy-0.0.1-x86_64.exe
           draft: false
           prerelease: false
           body: |
-            ## Aroxy v0.0.1 ⚡
-            
-            Ultra-lightweight high-performance cross-platform AI protocol proxy & emulator in Rust + Slint.
-            
-            ### Included Release Binaries:
-            - **Linux:** `Aroxy-0.0.1-x86_64.AppImage` (Single executable AppImage)
-            - **Windows:** `Aroxy-0.0.1-x86_64.exe` (Portable standalone executable)
+            ## Aroxy v0.0.1
+
+            Ultra-lightweight high-performance AI protocol proxy & emulator in Rust + Slint.
+
+            ### Release Binaries:
+            - **Linux:** `Aroxy-0.0.1-x86_64.AppImage` (Portable AppImage)
+            - **Windows:** `Aroxy-0.0.1-x86_64.exe` (Standalone Portable Executable)
