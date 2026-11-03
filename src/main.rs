@@ -18,6 +18,15 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::watch;
 
+fn open_in_system(target: &str) {
+    #[cfg(target_os = "linux")]
+    let _ = std::process::Command::new("xdg-open").arg(target).spawn();
+    #[cfg(target_os = "windows")]
+    let _ = std::process::Command::new("cmd").args(["/C", "start", "", target]).spawn();
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg(target).spawn();
+}
+
 fn apply_translations(ui: &MainWindow, lang: Language) {
     let t = get_translations(lang);
     let i18n_struct = I18nData {
@@ -28,6 +37,7 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         tab_logs: t.tab_logs.into(),
         tab_stats: t.tab_stats.into(),
         tab_settings: t.tab_settings.into(),
+        tab_about: t.tab_about.into(),
 
         btn_stop_proxy: t.btn_stop_proxy.into(),
         btn_start_proxy: t.btn_start_proxy.into(),
@@ -115,6 +125,14 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_active_refresh: t.lbl_active_refresh.into(),
         lbl_pool_refresh: t.lbl_pool_refresh.into(),
         info_error_label: t.info_error_label.into(),
+        about_title: t.about_title.into(),
+        about_subtitle: t.about_subtitle.into(),
+        lbl_app_folder: t.lbl_app_folder.into(),
+        btn_open_folder: t.btn_open_folder.into(),
+        lbl_quota_view_mode: t.lbl_quota_view_mode.into(),
+        opt_quota_both: t.opt_quota_both.into(),
+        opt_quota_5h: t.opt_quota_5h.into(),
+        opt_quota_weekly: t.opt_quota_weekly.into(),
     };
     ui.set_i18n(i18n_struct);
     ui.set_current_language(lang.to_index());
@@ -272,8 +290,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     acc.quota_reset = reset;
                                     acc.claude_gpt_percent = detailed_quota.claude_gpt_percent;
                                     acc.claude_gpt_reset = detailed_quota.claude_gpt_reset;
+                                    acc.claude_gpt_weekly_percent = detailed_quota.claude_gpt_weekly_percent;
+                                    acc.claude_gpt_weekly_reset = detailed_quota.claude_gpt_weekly_reset;
                                     acc.gemini_percent = detailed_quota.gemini_percent;
                                     acc.gemini_reset = detailed_quota.gemini_reset;
+                                    acc.gemini_weekly_percent = detailed_quota.gemini_weekly_percent;
+                                    acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
                                     acc.error_message = None;
                                     acc.status = "ACTIVE".to_string();
                                 }
@@ -340,9 +362,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_proxy_running(true);
         main_window.set_proxy_port(cfg.port as i32);
         main_window.set_proxy_host(cfg.host.clone().into());
+        main_window.set_proxy_port_input(cfg.port.to_string().into());
+        main_window.set_proxy_host_input(cfg.host.clone().into());
+        main_window.set_setting_timeout_str(cfg.request_timeout_secs.to_string().into());
+        main_window.set_setting_heartbeat_str(cfg.heartbeat_interval_secs.to_string().into());
         main_window.set_expose_reasoning_variants(cfg.expose_reasoning_variants);
         main_window.set_group_reasoning_clones(cfg.group_reasoning_clones);
         main_window.set_quota_display_mode(cfg.quota_display_mode.clone().into());
+        main_window.set_quota_view_mode(cfg.quota_view_mode.clone().into());
         main_window.set_hide_sidebar_brand(cfg.hide_sidebar_brand);
         main_window.set_show_logs_tab(cfg.show_logs_tab);
         main_window.set_show_stats_tab(cfg.show_stats_tab);
@@ -366,6 +393,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_max_log_capacity(cfg.max_log_entries as i32);
         main_window.set_max_log_capacity_input(cfg.max_log_entries.to_string().into());
 
+        let (f_path, f_size) = AppConfig::config_folder_info();
+        main_window.set_config_folder_path(f_path.to_string_lossy().to_string().into());
+        let size_mb = (f_size as f64) / (1024.0 * 1024.0);
+        let size_display = if size_mb < 0.1 {
+            format!("{} KB", (f_size + 1023) / 1024)
+        } else {
+            format!("{:.1} MB", size_mb)
+        };
+        main_window.set_config_folder_size(size_display.into());
+
         for acc in &cfg.accounts {
             accounts_model.push(AccountData {
                 id: acc.id.clone().into(),
@@ -381,8 +418,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 quota_reset: acc.claude_gpt_reset.clone().into(),
                 claude_gpt_percent: acc.claude_gpt_percent,
                 claude_gpt_reset: acc.claude_gpt_reset.clone().into(),
+                claude_gpt_weekly_percent: acc.claude_gpt_weekly_percent,
+                claude_gpt_weekly_reset: acc.claude_gpt_weekly_reset.clone().into(),
                 gemini_percent: acc.gemini_percent,
                 gemini_reset: acc.gemini_reset.clone().into(),
+                gemini_weekly_percent: acc.gemini_weekly_percent,
+                gemini_weekly_reset: acc.gemini_weekly_reset.clone().into(),
                 status: acc.status.clone().into(),
                 is_active: acc.is_active,
                 error_message: acc.error_message.clone().unwrap_or_default().into(),
@@ -409,9 +450,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_global_claude_percent(cfg.aggregate_claude_gpt_percent());
         main_window.set_global_claude_label(cfg.format_claude_quota().into());
         main_window.set_global_claude_reset(cfg.nearest_claude_reset().into());
+        main_window.set_global_claude_weekly_percent(cfg.aggregate_claude_gpt_weekly_percent());
+        main_window.set_global_claude_weekly_label(cfg.format_claude_weekly_quota().into());
+        main_window.set_global_claude_weekly_reset(cfg.nearest_claude_weekly_reset().into());
         main_window.set_global_gemini_percent(cfg.aggregate_gemini_percent());
         main_window.set_global_gemini_label(cfg.format_gemini_quota().into());
         main_window.set_global_gemini_reset(cfg.nearest_gemini_reset().into());
+        main_window.set_global_gemini_weekly_percent(cfg.aggregate_gemini_weekly_percent());
+        main_window.set_global_gemini_weekly_label(cfg.format_gemini_weekly_quota().into());
+        main_window.set_global_gemini_weekly_reset(cfg.nearest_gemini_weekly_reset().into());
         main_window.set_healthy_accounts_count(cfg.accounts.iter().filter(|a| a.is_active).count() as i32);
         main_window.set_app_memory(get_process_memory_string().into());
     }
@@ -435,6 +482,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let c_grp = Arc::clone(&config_arc);
     let v_grp = Arc::clone(&cfg_version);
     let h_grp = window_handle.clone();
+    let m_grp = models_model.clone();
     main_window.on_toggle_reasoning_clones_grouping(move || {
         let next_val = {
             let mut cfg = c_grp.write();
@@ -444,6 +492,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         if let Some(h) = h_grp.upgrade() {
             h.set_group_reasoning_clones(next_val);
+            let cfg = c_grp.read();
+            let filtered_models = if next_val {
+                cfg.models.iter().filter(|m| !m.id.ends_with("-low") && !m.id.ends_with("-medium") && !m.id.ends_with("-high")).collect::<Vec<_>>()
+            } else {
+                cfg.models.iter().collect::<Vec<_>>()
+            };
+            m_grp.set_vec(
+                filtered_models
+                    .into_iter()
+                    .map(|m| ModelItemData {
+                        id: m.id.clone().into(),
+                        display_name: m.display_name.clone().into(),
+                        provider: m.provider.clone().into(),
+                        tier: m.tier.clone().into(),
+                        is_enabled: m.is_enabled,
+                        supports_thinking: m.supports_thinking,
+                    })
+                    .collect::<Vec<_>>(),
+            );
         }
         v_grp.fetch_add(1, Ordering::SeqCst);
     });
@@ -566,8 +633,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     quota_reset,
                     claude_gpt_percent: detailed_quota.claude_gpt_percent,
                     claude_gpt_reset: detailed_quota.claude_gpt_reset,
+                    claude_gpt_weekly_percent: detailed_quota.claude_gpt_weekly_percent,
+                    claude_gpt_weekly_reset: detailed_quota.claude_gpt_weekly_reset,
                     gemini_percent: detailed_quota.gemini_percent,
                     gemini_reset: detailed_quota.gemini_reset,
+                    gemini_weekly_percent: detailed_quota.gemini_weekly_percent,
+                    gemini_weekly_reset: detailed_quota.gemini_weekly_reset,
                     status: "ACTIVE".to_string(),
                     error_message: None,
                     refresh_token: refresh_token_opt,
@@ -647,8 +718,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         acc.quota_reset = reset;
                         acc.claude_gpt_percent = detailed_quota.claude_gpt_percent;
                         acc.claude_gpt_reset = detailed_quota.claude_gpt_reset;
+                        acc.claude_gpt_weekly_percent = detailed_quota.claude_gpt_weekly_percent;
+                        acc.claude_gpt_weekly_reset = detailed_quota.claude_gpt_weekly_reset;
                         acc.gemini_percent = detailed_quota.gemini_percent;
                         acc.gemini_reset = detailed_quota.gemini_reset;
+                        acc.gemini_weekly_percent = detailed_quota.gemini_weekly_percent;
+                        acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
                     }
                     let clean_models: Vec<_> = models.into_iter().filter(|x| !x.id.starts_with("chat_") && !x.id.contains("gemini-3.5")).collect();
                     if !clean_models.is_empty() {
@@ -672,8 +747,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 h.set_info_account_name(acc.name.clone().into());
                 h.set_info_account_tier(acc.tier.clone().into());
                 h.set_info_account_status(acc.status.clone().into());
-                h.set_info_account_claude(format!("{}% Available (Resets {})", acc.claude_gpt_percent, acc.claude_gpt_reset).into());
-                h.set_info_account_gemini(format!("{}% Available (Resets {})", acc.gemini_percent, acc.gemini_reset).into());
+                h.set_info_account_claude(format!("5h: {}% (resets {}) | Weekly: {}% (resets {})",
+                    acc.claude_gpt_percent, acc.claude_gpt_reset,
+                    acc.claude_gpt_weekly_percent, acc.claude_gpt_weekly_reset).into());
+                h.set_info_account_gemini(format!("5h: {}% (resets {}) | Weekly: {}% (resets {})",
+                    acc.gemini_percent, acc.gemini_reset,
+                    acc.gemini_weekly_percent, acc.gemini_weekly_reset).into());
                 h.set_info_account_models(format!("{} upstream models available", cfg.models.len()).into());
                 h.set_info_account_error(acc.error_message.clone().unwrap_or_default().into());
                 h.set_show_account_info(true);
@@ -947,13 +1026,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Instant Auto-Save Preferences Callbacks
     let c_tray = Arc::clone(&config_arc);
+    let h_tray = window_handle.clone();
     main_window.on_toggle_minimize_tray(move || {
-        let mut cfg = c_tray.write();
-        cfg.minimize_to_tray = !cfg.minimize_to_tray;
-        let _ = cfg.save();
+        let next_val = {
+            let mut cfg = c_tray.write();
+            cfg.minimize_to_tray = !cfg.minimize_to_tray;
+            let _ = cfg.save();
+            cfg.minimize_to_tray
+        };
+        if let Some(h) = h_tray.upgrade() {
+            h.set_setting_minimize_tray(next_val);
+        }
     });
 
     let c_auto = Arc::clone(&config_arc);
+    let h_auto = window_handle.clone();
     main_window.on_toggle_autostart(move || {
         let next_val = {
             let mut cfg = c_auto.write();
@@ -962,41 +1049,173 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             cfg.autostart
         };
         let _ = set_autostart(next_val);
+        if let Some(h) = h_auto.upgrade() {
+            h.set_setting_autostart(next_val);
+        }
     });
 
     let c_port = Arc::clone(&config_arc);
+    let h_port = window_handle.clone();
     main_window.on_toggle_portable_mode(move || {
-        let mut cfg = c_port.write();
-        cfg.portable_mode = !cfg.portable_mode;
-        let _ = cfg.save();
+        let next_val = {
+            let mut cfg = c_port.write();
+            cfg.portable_mode = !cfg.portable_mode;
+            let _ = cfg.save();
+            cfg.portable_mode
+        };
+        if let Some(h) = h_port.upgrade() {
+            h.set_setting_portable_mode(next_val);
+        }
     });
 
     let c_upd = Arc::clone(&config_arc);
+    let h_upd = window_handle.clone();
     main_window.on_toggle_check_updates(move || {
-        let mut cfg = c_upd.write();
-        cfg.check_updates_startup = !cfg.check_updates_startup;
-        let _ = cfg.save();
+        let next_val = {
+            let mut cfg = c_upd.write();
+            cfg.check_updates_startup = !cfg.check_updates_startup;
+            let _ = cfg.save();
+            cfg.check_updates_startup
+        };
+        if let Some(h) = h_upd.upgrade() {
+            h.set_setting_check_updates(next_val);
+        }
     });
 
     let c_clx = Arc::clone(&config_arc);
+    let h_clx = window_handle.clone();
     main_window.on_toggle_clear_logs_exit(move || {
-        let mut cfg = c_clx.write();
-        cfg.clear_logs_on_exit = !cfg.clear_logs_on_exit;
-        let _ = cfg.save();
+        let next_val = {
+            let mut cfg = c_clx.write();
+            cfg.clear_logs_on_exit = !cfg.clear_logs_on_exit;
+            let _ = cfg.save();
+            cfg.clear_logs_on_exit
+        };
+        if let Some(h) = h_clx.upgrade() {
+            h.set_setting_clear_logs_exit(next_val);
+        }
     });
 
     let c_slog = Arc::clone(&config_arc);
+    let h_slog = window_handle.clone();
     main_window.on_toggle_show_logs(move || {
-        let mut cfg = c_slog.write();
-        cfg.show_logs_tab = !cfg.show_logs_tab;
-        let _ = cfg.save();
+        let next_val = {
+            let mut cfg = c_slog.write();
+            cfg.show_logs_tab = !cfg.show_logs_tab;
+            let _ = cfg.save();
+            cfg.show_logs_tab
+        };
+        if let Some(h) = h_slog.upgrade() {
+            h.set_show_logs_tab(next_val);
+        }
     });
 
     let c_sstat = Arc::clone(&config_arc);
+    let h_sstat = window_handle.clone();
     main_window.on_toggle_show_stats(move || {
-        let mut cfg = c_sstat.write();
-        cfg.show_stats_tab = !cfg.show_stats_tab;
-        let _ = cfg.save();
+        let next_val = {
+            let mut cfg = c_sstat.write();
+            cfg.show_stats_tab = !cfg.show_stats_tab;
+            let _ = cfg.save();
+            cfg.show_stats_tab
+        };
+        if let Some(h) = h_sstat.upgrade() {
+            h.set_show_stats_tab(next_val);
+        }
+    });
+
+    let c_cmp = Arc::clone(&config_arc);
+    let h_cmp = window_handle.clone();
+    main_window.on_toggle_compact_mode(move || {
+        let next_val = {
+            let mut cfg = c_cmp.write();
+            cfg.compact_ui_mode = !cfg.compact_ui_mode;
+            let _ = cfg.save();
+            cfg.compact_ui_mode
+        };
+        if let Some(h) = h_cmp.upgrade() {
+            h.set_compact_ui_mode(next_val);
+        }
+    });
+
+    let c_qvm = Arc::clone(&config_arc);
+    let h_qvm = window_handle.clone();
+    main_window.on_set_quota_view_mode(move |mode_slint| {
+        let mode_str = mode_slint.to_string();
+        {
+            let mut cfg = c_qvm.write();
+            cfg.quota_view_mode = mode_str.clone();
+            let _ = cfg.save();
+        }
+        if let Some(h) = h_qvm.upgrade() {
+            h.set_quota_view_mode(mode_str.into());
+        }
+    });
+
+    main_window.on_open_config_folder(move || {
+        let (p, _) = AppConfig::config_folder_info();
+        open_in_system(&p.to_string_lossy());
+    });
+
+    main_window.on_open_github_repo(move || {
+        open_in_system("https://github.com/qyzom/aroxy");
+    });
+
+    main_window.on_open_github_releases(move || {
+        open_in_system("https://github.com/qyzom/aroxy/releases");
+    });
+
+    let c_pport = Arc::clone(&config_arc);
+    let h_pport = window_handle.clone();
+    main_window.on_set_proxy_port_str(move |s| {
+        if let Ok(p) = s.to_string().trim().parse::<u16>() {
+            let mut cfg = c_pport.write();
+            cfg.port = p;
+            let _ = cfg.save();
+            if let Some(h) = h_pport.upgrade() {
+                h.set_proxy_port(p as i32);
+            }
+        }
+    });
+
+    let c_phost = Arc::clone(&config_arc);
+    let h_phost = window_handle.clone();
+    main_window.on_set_proxy_host_str(move |s| {
+        let host_str = s.to_string().trim().to_string();
+        if !host_str.is_empty() {
+            let mut cfg = c_phost.write();
+            cfg.host = host_str.clone();
+            let _ = cfg.save();
+            if let Some(h) = h_phost.upgrade() {
+                h.set_proxy_host(host_str.into());
+            }
+        }
+    });
+
+    let c_ptim = Arc::clone(&config_arc);
+    let h_ptim = window_handle.clone();
+    main_window.on_set_proxy_timeout_str(move |s| {
+        if let Ok(t) = s.to_string().trim().parse::<u64>() {
+            let mut cfg = c_ptim.write();
+            cfg.request_timeout_secs = t;
+            let _ = cfg.save();
+            if let Some(h) = h_ptim.upgrade() {
+                h.set_setting_timeout_secs(t as i32);
+            }
+        }
+    });
+
+    let c_phb = Arc::clone(&config_arc);
+    let h_phb = window_handle.clone();
+    main_window.on_set_proxy_heartbeat_str(move |s| {
+        if let Ok(hb) = s.to_string().trim().parse::<u64>() {
+            let mut cfg = c_phb.write();
+            cfg.heartbeat_interval_secs = hb;
+            let _ = cfg.save();
+            if let Some(h) = h_phb.upgrade() {
+                h.set_setting_heartbeat_secs(hb as i32);
+            }
+        }
     });
 
     let c_cmp = Arc::clone(&config_arc);
@@ -1152,8 +1371,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 quota_reset: acc.claude_gpt_reset.clone().into(),
                                 claude_gpt_percent: acc.claude_gpt_percent,
                                 claude_gpt_reset: acc.claude_gpt_reset.clone().into(),
+                                claude_gpt_weekly_percent: acc.claude_gpt_weekly_percent,
+                                claude_gpt_weekly_reset: acc.claude_gpt_weekly_reset.clone().into(),
                                 gemini_percent: acc.gemini_percent,
                                 gemini_reset: acc.gemini_reset.clone().into(),
+                                gemini_weekly_percent: acc.gemini_weekly_percent,
+                                gemini_weekly_reset: acc.gemini_weekly_reset.clone().into(),
                                 status: acc.status.clone().into(),
                                 is_active: acc.is_active,
                                 error_message: acc.error_message.clone().unwrap_or_default().into(),
@@ -1185,9 +1408,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 w.set_global_claude_percent(cfg.aggregate_claude_gpt_percent());
                 w.set_global_claude_label(cfg.format_claude_quota().into());
                 w.set_global_claude_reset(cfg.nearest_claude_reset().into());
+                w.set_global_claude_weekly_percent(cfg.aggregate_claude_gpt_weekly_percent());
+                w.set_global_claude_weekly_label(cfg.format_claude_weekly_quota().into());
+                w.set_global_claude_weekly_reset(cfg.nearest_claude_weekly_reset().into());
                 w.set_global_gemini_percent(cfg.aggregate_gemini_percent());
                 w.set_global_gemini_label(cfg.format_gemini_quota().into());
                 w.set_global_gemini_reset(cfg.nearest_gemini_reset().into());
+                w.set_global_gemini_weekly_percent(cfg.aggregate_gemini_weekly_percent());
+                w.set_global_gemini_weekly_label(cfg.format_gemini_weekly_quota().into());
+                w.set_global_gemini_weekly_reset(cfg.nearest_gemini_weekly_reset().into());
                 w.set_healthy_accounts_count(cfg.accounts.iter().filter(|a| a.is_active).count() as i32);
             }
 

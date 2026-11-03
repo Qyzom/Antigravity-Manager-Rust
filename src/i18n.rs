@@ -53,6 +53,7 @@ pub struct TranslationBundle {
     pub tab_logs: &'static str,
     pub tab_stats: &'static str,
     pub tab_settings: &'static str,
+    pub tab_about: &'static str,
 
     pub btn_stop_proxy: &'static str,
     pub btn_start_proxy: &'static str,
@@ -140,6 +141,14 @@ pub struct TranslationBundle {
     pub lbl_active_refresh: &'static str,
     pub lbl_pool_refresh: &'static str,
     pub info_error_label: &'static str,
+    pub about_title: &'static str,
+    pub about_subtitle: &'static str,
+    pub lbl_app_folder: &'static str,
+    pub btn_open_folder: &'static str,
+    pub lbl_quota_view_mode: &'static str,
+    pub opt_quota_both: &'static str,
+    pub opt_quota_5h: &'static str,
+    pub opt_quota_weekly: &'static str,
 }
 
 pub fn get_translations(lang: Language) -> TranslationBundle {
@@ -152,6 +161,7 @@ pub fn get_translations(lang: Language) -> TranslationBundle {
             tab_logs: "Логи трафика",
             tab_stats: "Статистика",
             tab_settings: "Настройки",
+            tab_about: "О программе",
 
             btn_stop_proxy: "ОСТАНОВИТЬ",
             btn_start_proxy: "ЗАПУСТИТЬ",
@@ -178,8 +188,8 @@ pub fn get_translations(lang: Language) -> TranslationBundle {
             btn_update: "Обновить",
             btn_info: "Инфо",
             btn_delete: "Удалить",
-            btn_enable: "ВКЛЮЧИТЬ",
-            btn_disable: "ОТКЛЮЧИТЬ",
+            btn_enable: "Включить",
+            btn_disable: "Отключить",
 
             mod_title: "Каталог моделей и тестирование",
             mod_subtitle: "Трансляция моделей в клиенты, группировка reasoning и тестовые запросы",
@@ -239,6 +249,14 @@ pub fn get_translations(lang: Language) -> TranslationBundle {
             lbl_active_refresh: "Интервал автообновления активного аккаунта",
             lbl_pool_refresh: "Интервал автообновления фонового пула",
             info_error_label: "Детали ошибки авторизации / апстрима",
+            about_title: "О программе Aroxy",
+            about_subtitle: "Архитектура, лицензия и информация о разработке",
+            lbl_app_folder: "Папка конфигурации и данных программы",
+            btn_open_folder: "Открыть папку",
+            lbl_quota_view_mode: "Режим отображения квоты (окно)",
+            opt_quota_both: "5-часовая и недельная",
+            opt_quota_5h: "Только 5-часовая",
+            opt_quota_weekly: "Только недельная",
         },
 
         Language::Zh => TranslationBundle {
@@ -249,6 +267,7 @@ pub fn get_translations(lang: Language) -> TranslationBundle {
             tab_logs: "流量日志",
             tab_stats: "统计分析",
             tab_settings: "系统设置",
+            tab_about: "关于",
 
             btn_stop_proxy: "停止代理",
             btn_start_proxy: "启动代理",
@@ -336,6 +355,14 @@ pub fn get_translations(lang: Language) -> TranslationBundle {
             lbl_active_refresh: "活跃主账户自动刷新频率",
             lbl_pool_refresh: "后台账户池自动刷新频率",
             info_error_label: "上游错误与认证详情",
+            about_title: "关于 Aroxy",
+            about_subtitle: "架构、开源许可证及开发者信息",
+            lbl_app_folder: "应用程序配置与数据目录",
+            btn_open_folder: "打开目录",
+            lbl_quota_view_mode: "配额指标视图模式",
+            opt_quota_both: "5小时与每周全部显示",
+            opt_quota_5h: "仅显示5小时滚动窗口",
+            opt_quota_weekly: "仅显示每周窗口",
         },
 
         Language::En => TranslationBundle {
@@ -346,6 +373,7 @@ pub fn get_translations(lang: Language) -> TranslationBundle {
             tab_logs: "Traffic Logs",
             tab_stats: "Statistics",
             tab_settings: "Settings",
+            tab_about: "About",
 
             btn_stop_proxy: "STOP PROXY",
             btn_start_proxy: "START PROXY",
@@ -372,8 +400,8 @@ pub fn get_translations(lang: Language) -> TranslationBundle {
             btn_update: "Update",
             btn_info: "Info",
             btn_delete: "Delete",
-            btn_enable: "ENABLE",
-            btn_disable: "DISABLE",
+            btn_enable: "Enable",
+            btn_disable: "Disable",
 
             mod_title: "Model Catalog & Test Playground",
             mod_subtitle: "Configure model broadcast toggles, reasoning aliases, and test prompts",
@@ -433,6 +461,14 @@ pub fn get_translations(lang: Language) -> TranslationBundle {
             lbl_active_refresh: "Active Working Account Auto-Refresh",
             lbl_pool_refresh: "Background Accounts Pool Auto-Refresh",
             info_error_label: "Upstream Authentication & Error Details",
+            about_title: "About Aroxy",
+            about_subtitle: "Architecture, open-source license, and build information",
+            lbl_app_folder: "Application Config & Data Directory",
+            btn_open_folder: "Open Folder",
+            lbl_quota_view_mode: "Quota Window Metric Display",
+            opt_quota_both: "Both (5h & Weekly)",
+            opt_quota_5h: "5-Hour Window Only",
+            opt_quota_weekly: "Weekly Window Only",
         },
     }
 }

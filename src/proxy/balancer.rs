@@ -192,9 +192,9 @@ impl LoadBalancer {
             .iter()
             .filter(|a| match family {
                 ModelFamily::ClaudeOrGpt => {
-                    a.claude_gpt_percent > 0 && a.tier.to_uppercase() != "FREE"
+                    a.claude_gpt_percent > 0 && a.claude_gpt_weekly_percent > 0 && a.tier.to_uppercase() != "FREE"
                 }
-                ModelFamily::Gemini => a.gemini_percent > 0,
+                ModelFamily::Gemini => a.gemini_percent > 0 && a.gemini_weekly_percent > 0,
             })
             .cloned()
             .collect();
@@ -261,8 +261,8 @@ impl LoadBalancer {
         let above_threshold: Vec<UpstreamAccount> = healthy_accounts
             .iter()
             .filter(|a| match family {
-                ModelFamily::ClaudeOrGpt => a.claude_gpt_percent > threshold,
-                ModelFamily::Gemini => a.gemini_percent > threshold,
+                ModelFamily::ClaudeOrGpt => a.claude_gpt_percent > threshold && a.claude_gpt_weekly_percent > threshold,
+                ModelFamily::Gemini => a.gemini_percent > threshold && a.gemini_weekly_percent > threshold,
             })
             .cloned()
             .collect();
@@ -360,8 +360,8 @@ impl LoadBalancer {
                 pool
                     .into_iter()
                     .max_by_key(|a| match family {
-                        ModelFamily::ClaudeOrGpt => a.claude_gpt_percent,
-                        ModelFamily::Gemini => a.gemini_percent,
+                        ModelFamily::ClaudeOrGpt => a.claude_gpt_percent.min(a.claude_gpt_weekly_percent),
+                        ModelFamily::Gemini => a.gemini_percent.min(a.gemini_weekly_percent),
                     })
                     .unwrap()
             }

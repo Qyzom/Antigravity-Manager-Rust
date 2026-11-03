@@ -116,9 +116,17 @@ pub struct UpstreamAccount {
     #[serde(default = "default_quota_reset")]
     pub claude_gpt_reset: String,
     #[serde(default = "default_pct_100")]
+    pub claude_gpt_weekly_percent: i32,
+    #[serde(default = "default_weekly_reset")]
+    pub claude_gpt_weekly_reset: String,
+    #[serde(default = "default_pct_100")]
     pub gemini_percent: i32,
     #[serde(default = "default_quota_reset")]
     pub gemini_reset: String,
+    #[serde(default = "default_pct_100")]
+    pub gemini_weekly_percent: i32,
+    #[serde(default = "default_weekly_reset")]
+    pub gemini_weekly_reset: String,
     #[serde(default = "default_status")]
     pub status: String,      // "ACTIVE", "DISABLED", "ERROR"
     pub is_active: bool,
@@ -126,6 +134,10 @@ pub struct UpstreamAccount {
     pub error_message: Option<String>,
     #[serde(default)]
     pub refresh_token: Option<String>,
+}
+
+fn default_weekly_reset() -> String {
+    "in 7d 00h".to_string()
 }
 
 fn default_pct_100() -> i32 {
@@ -156,6 +168,10 @@ fn default_language() -> String {
     "en".to_string()
 }
 
+fn default_quota_view_mode() -> String {
+    "both".to_string()
+}
+
 fn default_max_log_entries() -> usize {
     100
 }
@@ -171,6 +187,8 @@ pub struct AppConfig {
     pub expose_reasoning_variants: bool, // Exposes (low), (medium), (high) model clones
     #[serde(default = "default_quota_display_mode")]
     pub quota_display_mode: String,     // "percent" or "fraction"
+    #[serde(default = "default_quota_view_mode")]
+    pub quota_view_mode: String,        // "both", "5hour", "weekly"
     #[serde(default)]
     pub hide_sidebar_brand: bool,       // Collapses top brand in sidebar
     #[serde(default = "default_language")]
@@ -270,6 +288,7 @@ impl Default for AppConfig {
             portable_mode: false,
             expose_reasoning_variants: true,
             quota_display_mode: "percent".to_string(),
+            quota_view_mode: "both".to_string(),
             hide_sidebar_brand: false,
             language: "en".to_string(),
             log_enabled: true,
@@ -338,14 +357,6 @@ impl Default for AppConfig {
                 ModelCatalogItem {
                     id: "gemini-4-argon".to_string(),
                     display_name: "Gemini 4 Argon".to_string(),
-                    provider: "gemini".to_string(),
-                    tier: "Pro".to_string(),
-                    is_enabled: true,
-                    supports_thinking: true,
-                },
-                ModelCatalogItem {
-                    id: "gemini-3.9-flash".to_string(),
-                    display_name: "Gemini 3.9 Flash".to_string(),
                     provider: "gemini".to_string(),
                     tier: "Pro".to_string(),
                     is_enabled: true,
@@ -425,20 +436,21 @@ impl AppConfig {
         if path.exists() {
             if let Ok(content) = fs::read_to_string(&path) {
                 if let Ok(mut cfg) = serde_json::from_str::<AppConfig>(&content) {
-                    // Purge any fake models or obsolete internal models (chat_*, gemini-3.5, gemini-3-flash, o1, etc.)
-                    let has_obsolete = cfg.models.iter().any(|m| {
-                        m.id.starts_with("chat_")
-                            || m.id.contains("gemini-3.5")
-                            || m.id.contains("gemini-3-flash")
-                            || m.id == "o1"
-                            || m.id == "gpt-4o"
-                            || m.id == "gpt-4o-mini"
-                            || m.id == "o3-mini"
-                            || m.id == "claude-3-5-sonnet"
-                            || m.id == "gemini-2.5-flash"
-                    }) || !cfg.models.iter().any(|m| m.id == "gemini-3.9-flash");
+                    // Remove any internal test models or obsolete junk
+                    cfg.models.retain(|m| {
+                        !m.id.starts_with("chat_")
+                            && !m.id.contains("gemini-3.5")
+                            && !m.id.contains("gemini-3-flash")
+                            && m.id != "gemini-3.9-flash"
+                            && m.id != "o1"
+                            && m.id != "gpt-4o"
+                            && m.id != "gpt-4o-mini"
+                            && m.id != "o3-mini"
+                            && m.id != "claude-3-5-sonnet"
+                            && m.id != "gemini-2.5-flash"
+                    });
 
-                    if has_obsolete || cfg.models.is_empty() {
+                    if cfg.models.is_empty() {
                         let defaults = Self::default();
                         cfg.models = defaults.models;
                         let _ = cfg.save();
@@ -460,6 +472,22 @@ impl AppConfig {
         default_cfg
     }
 
+    pub fn config_folder_info() -> (PathBuf, u64) {
+        let path = Self::config_path();
+        let folder = path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."));
+        let mut total_size = 0u64;
+        if let Ok(entries) = fs::read_dir(&folder) {
+            for entry in entries.flatten() {
+                if let Ok(meta) = entry.metadata() {
+                    if meta.is_file() {
+                        total_size += meta.len();
+                    }
+                }
+            }
+        }
+        (folder, total_size)
+    }
+
     pub fn format_claude_quota(&self) -> String {
         let pct = self.aggregate_claude_gpt_percent();
         if self.quota_display_mode == "fraction" {
@@ -478,12 +506,39 @@ impl AppConfig {
         }
     }
 
+    pub fn format_claude_weekly_quota(&self) -> String {
+        let pct = self.aggregate_claude_gpt_weekly_percent();
+        if self.quota_display_mode == "fraction" {
+            format!("{:.2} Remaining", (pct as f64) / 100.0)
+        } else {
+            format!("{}% Available", pct)
+        }
+    }
+
+    pub fn format_gemini_weekly_quota(&self) -> String {
+        let pct = self.aggregate_gemini_weekly_percent();
+        if self.quota_display_mode == "fraction" {
+            format!("{:.2} Remaining", (pct as f64) / 100.0)
+        } else {
+            format!("{}% Available", pct)
+        }
+    }
+
     pub fn aggregate_claude_gpt_percent(&self) -> i32 {
         let active: Vec<_> = self.accounts.iter().filter(|a| a.is_active).collect();
         if active.is_empty() {
             return 100;
         }
         let sum: i32 = active.iter().map(|a| a.claude_gpt_percent).sum();
+        sum / active.len() as i32
+    }
+
+    pub fn aggregate_claude_gpt_weekly_percent(&self) -> i32 {
+        let active: Vec<_> = self.accounts.iter().filter(|a| a.is_active).collect();
+        if active.is_empty() {
+            return 100;
+        }
+        let sum: i32 = active.iter().map(|a| a.claude_gpt_weekly_percent).sum();
         sum / active.len() as i32
     }
 
@@ -496,6 +551,15 @@ impl AppConfig {
         sum / active.len() as i32
     }
 
+    pub fn aggregate_gemini_weekly_percent(&self) -> i32 {
+        let active: Vec<_> = self.accounts.iter().filter(|a| a.is_active).collect();
+        if active.is_empty() {
+            return 100;
+        }
+        let sum: i32 = active.iter().map(|a| a.gemini_weekly_percent).sum();
+        sum / active.len() as i32
+    }
+
     pub fn nearest_claude_reset(&self) -> String {
         self.accounts
             .iter()
@@ -505,6 +569,15 @@ impl AppConfig {
             .unwrap_or_else(|| "in 4h 00m".to_string())
     }
 
+    pub fn nearest_claude_weekly_reset(&self) -> String {
+        self.accounts
+            .iter()
+            .filter(|a| a.is_active)
+            .map(|a| a.claude_gpt_weekly_reset.clone())
+            .next()
+            .unwrap_or_else(|| "in 7d 00h".to_string())
+    }
+
     pub fn nearest_gemini_reset(&self) -> String {
         self.accounts
             .iter()
@@ -512,6 +585,15 @@ impl AppConfig {
             .map(|a| a.gemini_reset.clone())
             .next()
             .unwrap_or_else(|| "in 4h 00m".to_string())
+    }
+
+    pub fn nearest_gemini_weekly_reset(&self) -> String {
+        self.accounts
+            .iter()
+            .filter(|a| a.is_active)
+            .map(|a| a.gemini_weekly_reset.clone())
+            .next()
+            .unwrap_or_else(|| "in 7d 00h".to_string())
     }
 
     pub fn save(&self) -> std::io::Result<()> {

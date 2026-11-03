@@ -77,8 +77,12 @@ async fn oauth_callback(
                     let det = crate::proxy::antigravity::DetailedQuotaInfo {
                         claude_gpt_percent: 100,
                         claude_gpt_reset: "in 4h 00m".to_string(),
+                        claude_gpt_weekly_percent: 100,
+                        claude_gpt_weekly_reset: "in 7d 00h".to_string(),
                         gemini_percent: 100,
                         gemini_reset: "in 4h 00m".to_string(),
+                        gemini_weekly_percent: 100,
+                        gemini_weekly_reset: "in 7d 00h".to_string(),
                     };
                     (raw_token, None, "antigravity.user@gmail.com".to_string(), "PRO".to_string(), 0, 100_000, "in 4h 00m".to_string(), None, det)
                 }
@@ -104,8 +108,12 @@ async fn oauth_callback(
             existing.quota_reset = quota_reset;
             existing.claude_gpt_percent = detailed_quota.claude_gpt_percent;
             existing.claude_gpt_reset = detailed_quota.claude_gpt_reset;
+            existing.claude_gpt_weekly_percent = detailed_quota.claude_gpt_weekly_percent;
+            existing.claude_gpt_weekly_reset = detailed_quota.claude_gpt_weekly_reset;
             existing.gemini_percent = detailed_quota.gemini_percent;
             existing.gemini_reset = detailed_quota.gemini_reset;
+            existing.gemini_weekly_percent = detailed_quota.gemini_weekly_percent;
+            existing.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
             existing.status = "ACTIVE".to_string();
             existing.error_message = None;
             existing.is_active = true;
@@ -126,8 +134,12 @@ async fn oauth_callback(
                 quota_reset,
                 claude_gpt_percent: detailed_quota.claude_gpt_percent,
                 claude_gpt_reset: detailed_quota.claude_gpt_reset,
+                claude_gpt_weekly_percent: detailed_quota.claude_gpt_weekly_percent,
+                claude_gpt_weekly_reset: detailed_quota.claude_gpt_weekly_reset,
                 gemini_percent: detailed_quota.gemini_percent,
                 gemini_reset: detailed_quota.gemini_reset,
+                gemini_weekly_percent: detailed_quota.gemini_weekly_percent,
+                gemini_weekly_reset: detailed_quota.gemini_weekly_reset,
                 status: "ACTIVE".to_string(),
                 error_message: None,
                 is_active: true,

@@ -311,8 +311,12 @@ struct QuotaSummaryBucket {
 pub struct DetailedQuotaInfo {
     pub claude_gpt_percent: i32,
     pub claude_gpt_reset: String,
+    pub claude_gpt_weekly_percent: i32,
+    pub claude_gpt_weekly_reset: String,
     pub gemini_percent: i32,
     pub gemini_reset: String,
+    pub gemini_weekly_percent: i32,
+    pub gemini_weekly_reset: String,
 }
 
 pub async fn fetch_user_quota_summary(
@@ -331,43 +335,70 @@ pub async fn fetch_user_quota_summary(
         {
             if resp.status().is_success() {
                 if let Ok(data) = resp.json::<QuotaSummaryResponse>().await {
-                    let mut claude_frac = 1.0f64;
-                    let mut claude_reset = "in 4h 00m".to_string();
-                    let mut gemini_frac = 1.0f64;
-                    let mut gemini_reset = "in 4h 00m".to_string();
+                    let mut claude_5h_frac = 1.0f64;
+                    let mut claude_5h_reset = "in 4h 00m".to_string();
+                    let mut claude_week_frac = 1.0f64;
+                    let mut claude_week_reset = "in 7d 00h".to_string();
+
+                    let mut gemini_5h_frac = 1.0f64;
+                    let mut gemini_5h_reset = "in 4h 00m".to_string();
+                    let mut gemini_week_frac = 1.0f64;
+                    let mut gemini_week_reset = "in 7d 00h".to_string();
 
                     for group in data.groups {
                         let name = group.display_name.unwrap_or_default().to_lowercase();
                         let is_gemini = name.contains("gemini");
 
                         for bucket in group.buckets {
-                            if let Some(frac) = bucket.remaining_fraction {
-                                if is_gemini {
-                                    if frac < gemini_frac {
-                                        gemini_frac = frac;
-                                    }
-                                } else {
-                                    if frac < claude_frac {
-                                        claude_frac = frac;
-                                    }
-                                }
-                            }
+                            let frac = bucket.remaining_fraction.unwrap_or(1.0);
+                            let b_id = bucket.bucket_id.as_deref().unwrap_or("").to_lowercase();
+                            let win = bucket.window.as_deref().unwrap_or("").to_lowercase();
+
+                            let mut total_hours = 4;
+                            let mut formatted_reset = "in 4h 00m".to_string();
                             if let Some(rt) = bucket.reset_time {
                                 if let Ok(parsed_time) = DateTime::parse_from_rfc3339(&rt) {
                                     let now = Utc::now();
                                     let dur = parsed_time.with_timezone(&Utc).signed_duration_since(now);
                                     let total_min = dur.num_minutes().max(0);
-                                    let h = total_min / 60;
+                                    total_hours = dur.num_hours().max(0);
+                                    let days = total_hours / 24;
+                                    let h = total_hours % 24;
                                     let m = total_min % 60;
-                                    let formatted = if h > 0 {
+                                    formatted_reset = if days > 0 {
+                                        format!("in {}d {:02}h", days, h)
+                                    } else if h > 0 {
                                         format!("in {}h {:02}m", h, m)
                                     } else {
                                         format!("in {}m", m)
                                     };
-                                    if is_gemini {
-                                        gemini_reset = formatted;
-                                    } else {
-                                        claude_reset = formatted;
+                                }
+                            }
+
+                            let is_weekly = b_id.contains("week") || win.contains("week") || total_hours > 12;
+
+                            if is_gemini {
+                                if is_weekly {
+                                    if frac < gemini_week_frac {
+                                        gemini_week_frac = frac;
+                                        gemini_week_reset = formatted_reset;
+                                    }
+                                } else {
+                                    if frac < gemini_5h_frac {
+                                        gemini_5h_frac = frac;
+                                        gemini_5h_reset = formatted_reset;
+                                    }
+                                }
+                            } else {
+                                if is_weekly {
+                                    if frac < claude_week_frac {
+                                        claude_week_frac = frac;
+                                        claude_week_reset = formatted_reset;
+                                    }
+                                } else {
+                                    if frac < claude_5h_frac {
+                                        claude_5h_frac = frac;
+                                        claude_5h_reset = formatted_reset;
                                     }
                                 }
                             }
@@ -375,10 +406,14 @@ pub async fn fetch_user_quota_summary(
                     }
 
                     return DetailedQuotaInfo {
-                        claude_gpt_percent: (claude_frac * 100.0).round() as i32,
-                        claude_gpt_reset: claude_reset,
-                        gemini_percent: (gemini_frac * 100.0).round() as i32,
-                        gemini_reset: gemini_reset,
+                        claude_gpt_percent: (claude_5h_frac * 100.0).round() as i32,
+                        claude_gpt_reset: claude_5h_reset,
+                        claude_gpt_weekly_percent: (claude_week_frac * 100.0).round() as i32,
+                        claude_gpt_weekly_reset: claude_week_reset,
+                        gemini_percent: (gemini_5h_frac * 100.0).round() as i32,
+                        gemini_reset: gemini_5h_reset,
+                        gemini_weekly_percent: (gemini_week_frac * 100.0).round() as i32,
+                        gemini_weekly_reset: gemini_week_reset,
                     };
                 }
             }
@@ -388,8 +423,12 @@ pub async fn fetch_user_quota_summary(
     DetailedQuotaInfo {
         claude_gpt_percent: 100,
         claude_gpt_reset: "in 4h 00m".to_string(),
+        claude_gpt_weekly_percent: 100,
+        claude_gpt_weekly_reset: "in 7d 00h".to_string(),
         gemini_percent: 100,
         gemini_reset: "in 4h 00m".to_string(),
+        gemini_weekly_percent: 100,
+        gemini_weekly_reset: "in 7d 00h".to_string(),
     }
 }
 
@@ -425,6 +464,7 @@ pub async fn fetch_models_and_quota(
                             || id.starts_with("chat_")
                             || id.contains("gemini-3.5")
                             || id.contains("gemini-3-flash")
+                            || id.contains("gemini-3.9")
                         {
                             continue;
                         }
