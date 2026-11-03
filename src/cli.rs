@@ -3,7 +3,7 @@ use clap::Parser;
 #[derive(Parser, Debug)]
 #[command(
     name = "aroxy",
-    version = "0.1.0",
+    version = "0.0.1",
     about = "Ultra-lightweight AI API proxy & protocol emulator"
 )]
 pub struct CliArgs {

@@ -36,24 +36,15 @@ pub fn create_proxy_router(state: AppState) -> Router {
 }
 
 async fn health_check() -> impl IntoResponse {
-    (StatusCode::OK, Json(json!({"status": "ok", "service": "Aroxy"})))
+    (StatusCode::OK, Json(json!({"status": "ok", "service": "Aroxy", "version": "0.0.1"})))
 }
 
-async fn list_models() -> impl IntoResponse {
-    let models = json!({
+async fn list_models(State(state): State<AppState>) -> impl IntoResponse {
+    let models = state.config.read().get_broadcast_models();
+    Json(json!({
         "object": "list",
-        "data": [
-            {"id": "claude-3-7-sonnet", "object": "model", "owned_by": "anthropic"},
-            {"id": "claude-3-5-sonnet", "object": "model", "owned_by": "anthropic"},
-            {"id": "claude-3-5-haiku", "object": "model", "owned_by": "anthropic"},
-            {"id": "gpt-4o", "object": "model", "owned_by": "openai"},
-            {"id": "gpt-4o-mini", "object": "model", "owned_by": "openai"},
-            {"id": "o1", "object": "model", "owned_by": "openai"},
-            {"id": "o3-mini", "object": "model", "owned_by": "openai"},
-            {"id": "gemini-2.0-flash", "object": "model", "owned_by": "google"}
-        ]
-    });
-    Json(models)
+        "data": models
+    }))
 }
 
 async fn chat_completions(
@@ -81,11 +72,13 @@ async fn chat_completions(
         }
     };
 
-    let target_model = resolve_model(&requested_model, &account);
+    // Parse model name for reasoning suffixes (e.g. "claude-3-7-sonnet (medium)" or "-thinking-low") or native reasoning_effort
+    let (base_clean, reasoning_effort) = parse_model_and_reasoning(&requested_model, payload.reasoning_effort.as_deref());
+    let target_model = resolve_model(&base_clean, &account);
 
     // If upstream is Anthropic, map OpenAI -> Claude format
     if account.provider == "anthropic" {
-        let claude_req = convert_openai_to_claude(&payload, &target_model);
+        let claude_req = convert_openai_to_claude(&payload, &target_model, reasoning_effort);
         let mut req_headers = reqwest::header::HeaderMap::new();
         req_headers.insert("x-api-key", account.api_key.parse().unwrap());
         apply_fingerprint(&mut req_headers, &account.fingerprint);
@@ -137,6 +130,14 @@ async fn chat_completions(
         // Direct OpenAI or custom endpoint pass-through
         let mut forward_payload = payload;
         forward_payload.model = target_model;
+        if let Some(eff) = reasoning_effort {
+            match eff {
+                ReasoningEffort::Low => forward_payload.reasoning_effort = Some("low".to_string()),
+                ReasoningEffort::Medium => forward_payload.reasoning_effort = Some("medium".to_string()),
+                ReasoningEffort::High => forward_payload.reasoning_effort = Some("high".to_string()),
+                ReasoningEffort::Off => forward_payload.reasoning_effort = None,
+            }
+        }
 
         let mut req_headers = reqwest::header::HeaderMap::new();
         req_headers.insert("authorization", format!("Bearer {}", account.api_key).parse().unwrap());

@@ -3,8 +3,69 @@ use crate::proxy::mappers::claude::*;
 use crate::proxy::mappers::openai::*;
 use serde_json::Value;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReasoningEffort {
+    Off,
+    Low,
+    Medium,
+    High,
+}
+
+impl ReasoningEffort {
+    pub fn budget_tokens(&self) -> u32 {
+        match self {
+            ReasoningEffort::Off => 0,
+            ReasoningEffort::Low => 1024,
+            ReasoningEffort::Medium => 4096,
+            ReasoningEffort::High => 16384,
+        }
+    }
+}
+
+pub fn parse_model_and_reasoning(
+    raw_model: &str,
+    native_effort: Option<&str>,
+) -> (String, Option<ReasoningEffort>) {
+    let lower = raw_model.trim().to_lowercase();
+
+    // Check for effort suffix in model name
+    let (base_clean, suffix_effort) = if lower.ends_with(" (low)") {
+        (raw_model[..raw_model.len() - 6].trim().to_string(), Some(ReasoningEffort::Low))
+    } else if lower.ends_with(" (medium)") {
+        (raw_model[..raw_model.len() - 9].trim().to_string(), Some(ReasoningEffort::Medium))
+    } else if lower.ends_with(" (high)") {
+        (raw_model[..raw_model.len() - 7].trim().to_string(), Some(ReasoningEffort::High))
+    } else if lower.ends_with(" (no-thinking)") {
+        (raw_model[..raw_model.len() - 14].trim().to_string(), Some(ReasoningEffort::Off))
+    } else if lower.ends_with("-thinking-low") {
+        (raw_model[..raw_model.len() - 13].trim().to_string(), Some(ReasoningEffort::Low))
+    } else if lower.ends_with("-thinking-medium") {
+        (raw_model[..raw_model.len() - 16].trim().to_string(), Some(ReasoningEffort::Medium))
+    } else if lower.ends_with("-thinking-high") {
+        (raw_model[..raw_model.len() - 14].trim().to_string(), Some(ReasoningEffort::High))
+    } else if lower.ends_with("-no-thinking") {
+        (raw_model[..raw_model.len() - 12].trim().to_string(), Some(ReasoningEffort::Off))
+    } else {
+        (raw_model.to_string(), None)
+    };
+
+    let resolved_effort = suffix_effort.or_else(|| {
+        native_effort.and_then(|eff| match eff.to_lowercase().as_str() {
+            "low" => Some(ReasoningEffort::Low),
+            "medium" => Some(ReasoningEffort::Medium),
+            "high" => Some(ReasoningEffort::High),
+            "off" | "none" => Some(ReasoningEffort::Off),
+            _ => None,
+        })
+    });
+
+    (base_clean, resolved_effort)
+}
+
 pub fn resolve_model(requested_model: &str, account: &UpstreamAccount) -> String {
-    let lower = requested_model.to_lowercase();
+    let (base, _) = parse_model_and_reasoning(requested_model, None);
+    let lower = base.to_lowercase();
+
     match account.provider.as_str() {
         "anthropic" => {
             if lower.contains("claude-3-7") || lower.contains("sonnet-3.7") {
@@ -16,7 +77,7 @@ pub fn resolve_model(requested_model: &str, account: &UpstreamAccount) -> String
             } else if lower.contains("claude-3-opus") || lower.contains("opus") {
                 "claude-3-opus-20240229".to_string()
             } else {
-                requested_model.to_string()
+                base
             }
         }
         "openai" => {
@@ -24,12 +85,12 @@ pub fn resolve_model(requested_model: &str, account: &UpstreamAccount) -> String
                 "gpt-4o-mini".to_string()
             } else if lower.contains("gpt-4o") {
                 "gpt-4o".to_string()
+            } else if lower.contains("o3-mini") {
+                "o3-mini".to_string()
             } else if lower.contains("o1") {
                 "o1-preview".to_string()
-            } else if lower.contains("o3") {
-                "o3-mini".to_string()
             } else {
-                requested_model.to_string()
+                base
             }
         }
         "gemini" => {
@@ -39,11 +100,15 @@ pub fn resolve_model(requested_model: &str, account: &UpstreamAccount) -> String
                 "gemini-1.5-pro".to_string()
             }
         }
-        _ => requested_model.to_string(),
+        _ => base,
     }
 }
 
-pub fn convert_openai_to_claude(req: &OpenAIChatRequest, target_model: &str) -> ClaudeMessageRequest {
+pub fn convert_openai_to_claude(
+    req: &OpenAIChatRequest,
+    target_model: &str,
+    effort: Option<ReasoningEffort>,
+) -> ClaudeMessageRequest {
     let mut claude_messages = Vec::new();
     let mut system_prompt = None;
 
@@ -58,24 +123,36 @@ pub fn convert_openai_to_claude(req: &OpenAIChatRequest, target_model: &str) -> 
         }
     }
 
-    // Enable thinking if model supports it or requested
-    let is_thinking_model = target_model.contains("3-7") || target_model.contains("claude-3-7");
-    let thinking_config = if is_thinking_model {
-        Some(ClaudeThinkingConfig {
-            thinking_type: "enabled".to_string(),
-            budget_tokens: 2048,
-        })
+    let is_thinking_capable = target_model.contains("3-7") || target_model.contains("claude-3-7");
+    let thinking_config = if is_thinking_capable {
+        match effort {
+            Some(ReasoningEffort::Off) => None,
+            Some(eff) => Some(ClaudeThinkingConfig {
+                thinking_type: "enabled".to_string(),
+                budget_tokens: eff.budget_tokens(),
+            }),
+            None => Some(ClaudeThinkingConfig {
+                thinking_type: "enabled".to_string(),
+                budget_tokens: 4096, // default medium
+            }),
+        }
     } else {
         None
+    };
+
+    let max_tok = if thinking_config.is_some() {
+        req.max_tokens.unwrap_or(8192).max(4096)
+    } else {
+        req.max_tokens.unwrap_or(4096)
     };
 
     ClaudeMessageRequest {
         model: target_model.to_string(),
         messages: claude_messages,
         system: system_prompt,
-        max_tokens: req.max_tokens.unwrap_or(if is_thinking_model { 8192 } else { 4096 }),
+        max_tokens: max_tok,
         stream: req.stream,
-        temperature: if is_thinking_model { None } else { req.temperature },
+        temperature: if thinking_config.is_some() { None } else { req.temperature },
         thinking: thinking_config,
     }
 }

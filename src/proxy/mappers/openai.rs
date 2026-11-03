@@ -12,6 +12,8 @@ pub struct OpenAIChatRequest {
     #[serde(default)]
     pub max_tokens: Option<u32>,
     #[serde(default)]
+    pub reasoning_effort: Option<String>,
+    #[serde(default)]
     pub stream_options: Option<Value>,
     #[serde(flatten)]
     pub extra: std::collections::HashMap<String, Value>,

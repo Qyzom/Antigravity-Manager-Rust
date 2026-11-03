@@ -3,6 +3,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelCatalogItem {
+    pub id: String,
+    pub display_name: String,
+    pub provider: String,
+    pub is_enabled: bool,
+    pub supports_thinking: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpstreamAccount {
     pub id: String,
     pub name: String,
@@ -19,8 +28,10 @@ pub struct AppConfig {
     pub host: String,
     pub minimize_to_tray: bool,
     pub portable_mode: bool,
+    pub expose_reasoning_variants: bool, // Exposes (low), (medium), (high) model clones
     pub accounts: Vec<UpstreamAccount>,
     pub active_account_id: Option<String>,
+    pub models: Vec<ModelCatalogItem>,
 }
 
 impl Default for AppConfig {
@@ -30,6 +41,7 @@ impl Default for AppConfig {
             host: "127.0.0.1".to_string(),
             minimize_to_tray: true,
             portable_mode: false,
+            expose_reasoning_variants: true,
             accounts: vec![
                 UpstreamAccount {
                     id: "default-anthropic".to_string(),
@@ -51,13 +63,77 @@ impl Default for AppConfig {
                 },
             ],
             active_account_id: Some("default-anthropic".to_string()),
+            models: vec![
+                ModelCatalogItem {
+                    id: "claude-3-7-sonnet".to_string(),
+                    display_name: "Claude 3.7 Sonnet (Hybrid)".to_string(),
+                    provider: "anthropic".to_string(),
+                    is_enabled: true,
+                    supports_thinking: true,
+                },
+                ModelCatalogItem {
+                    id: "claude-3-5-sonnet".to_string(),
+                    display_name: "Claude 3.5 Sonnet".to_string(),
+                    provider: "anthropic".to_string(),
+                    is_enabled: true,
+                    supports_thinking: false,
+                },
+                ModelCatalogItem {
+                    id: "claude-3-5-haiku".to_string(),
+                    display_name: "Claude 3.5 Haiku".to_string(),
+                    provider: "anthropic".to_string(),
+                    is_enabled: true,
+                    supports_thinking: false,
+                },
+                ModelCatalogItem {
+                    id: "gpt-4o".to_string(),
+                    display_name: "GPT-4o (Omni)".to_string(),
+                    provider: "openai".to_string(),
+                    is_enabled: true,
+                    supports_thinking: false,
+                },
+                ModelCatalogItem {
+                    id: "gpt-4o-mini".to_string(),
+                    display_name: "GPT-4o Mini".to_string(),
+                    provider: "openai".to_string(),
+                    is_enabled: true,
+                    supports_thinking: false,
+                },
+                ModelCatalogItem {
+                    id: "o3-mini".to_string(),
+                    display_name: "o3-mini (Reasoning)".to_string(),
+                    provider: "openai".to_string(),
+                    is_enabled: true,
+                    supports_thinking: true,
+                },
+                ModelCatalogItem {
+                    id: "o1".to_string(),
+                    display_name: "o1 Preview".to_string(),
+                    provider: "openai".to_string(),
+                    is_enabled: true,
+                    supports_thinking: true,
+                },
+                ModelCatalogItem {
+                    id: "gemini-2.5-flash".to_string(),
+                    display_name: "Gemini 2.5 Flash (Thinking)".to_string(),
+                    provider: "gemini".to_string(),
+                    is_enabled: true,
+                    supports_thinking: true,
+                },
+                ModelCatalogItem {
+                    id: "gemini-2.5-pro".to_string(),
+                    display_name: "Gemini 2.5 Pro".to_string(),
+                    provider: "gemini".to_string(),
+                    is_enabled: true,
+                    supports_thinking: true,
+                },
+            ],
         }
     }
 }
 
 impl AppConfig {
     pub fn config_path() -> PathBuf {
-        // Check for portable config in current directory first
         let local_cfg = Path::new("aroxy.json");
         if local_cfg.exists() {
             return local_cfg.to_path_buf();
@@ -98,5 +174,39 @@ impl AppConfig {
         } else {
             self.accounts.iter().find(|a| a.is_active)
         }
+    }
+
+    pub fn get_broadcast_models(&self) -> Vec<serde_json::Value> {
+        let mut list = Vec::new();
+        for m in &self.models {
+            if !m.is_enabled {
+                continue;
+            }
+            // Base model
+            list.push(serde_json::json!({
+                "id": m.id,
+                "object": "model",
+                "owned_by": m.provider,
+                "display_name": m.display_name
+            }));
+
+            // If thinking variants are enabled, expose clones
+            if self.expose_reasoning_variants && m.supports_thinking {
+                for (suffix, label) in [
+                    (" (low)", "Low Effort"),
+                    (" (medium)", "Medium Effort"),
+                    (" (high)", "High Effort"),
+                    (" (no-thinking)", "Thinking Off"),
+                ] {
+                    list.push(serde_json::json!({
+                        "id": format!("{}{}", m.id, suffix),
+                        "object": "model",
+                        "owned_by": m.provider,
+                        "display_name": format!("{} [{}]", m.display_name, label)
+                    }));
+                }
+            }
+        }
+        list
     }
 }

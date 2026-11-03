@@ -1,6 +1,6 @@
 [package]
 name = "aroxy"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 authors = ["Qyzom <qyzom@users.noreply.github.com>", "qwezzxxx <351012934+qwezzxxx@users.noreply.github.com>"]
 description = "Ultra-lightweight high-performance AI API proxy & protocol emulator with Slint UI"

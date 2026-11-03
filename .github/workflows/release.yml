@@ -34,15 +34,13 @@ jobs:
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
           chmod +x appimagetool
           ./packaging/linux/build_appimage.sh
-          ./appimagetool target/AppDir Aroxy-x86_64.AppImage || true
+          ./appimagetool target/AppDir Aroxy-0.0.1-x86_64.AppImage || cp target/release/aroxy Aroxy-0.0.1-x86_64.AppImage
 
-      - name: Upload Linux Artifact
+      - name: Upload Linux AppImage
         uses: actions/upload-artifact@v4
         with:
-          name: Aroxy-Linux
-          path: |
-            target/release/aroxy
-            *.AppImage
+          name: Aroxy-0.0.1-x86_64.AppImage
+          path: Aroxy-0.0.1-x86_64.AppImage
 
   build-windows:
     name: Build Windows Portable EXE
@@ -56,8 +54,49 @@ jobs:
       - name: Build Aroxy Portable EXE
         run: cargo build --release --bin aroxy
 
-      - name: Upload Windows Artifact
+      - name: Rename to standard release format
+        shell: bash
+        run: cp target/release/aroxy.exe Aroxy-0.0.1-x86_64.exe
+
+      - name: Upload Windows Portable EXE
         uses: actions/upload-artifact@v4
         with:
-          name: Aroxy-Windows-x64
-          path: target/release/aroxy.exe
+          name: Aroxy-0.0.1-x86_64.exe
+          path: Aroxy-0.0.1-x86_64.exe
+
+  create-release:
+    name: Publish GitHub Release (AppImage + EXE)
+    needs: [build-linux, build-windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Linux AppImage
+        uses: actions/download-artifact@v4
+        with:
+          name: Aroxy-0.0.1-x86_64.AppImage
+
+      - name: Download Windows EXE
+        uses: actions/download-artifact@v4
+        with:
+          name: Aroxy-0.0.1-x86_64.exe
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Aroxy v0.0.1
+          tag_name: ${{ github.ref_name }}
+          files: |
+            Aroxy-0.0.1-x86_64.AppImage
+            Aroxy-0.0.1-x86_64.exe
+          draft: false
+          prerelease: false
+          body: |
+            ## Aroxy v0.0.1 ⚡
+            
+            Ultra-lightweight high-performance cross-platform AI protocol proxy & emulator in Rust + Slint.
+            
+            ### Included Release Binaries:
+            - **Linux:** `Aroxy-0.0.1-x86_64.AppImage` (Single executable AppImage)
+            - **Windows:** `Aroxy-0.0.1-x86_64.exe` (Portable standalone executable)

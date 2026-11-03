@@ -29,8 +29,8 @@ chmod +x "$APPDIR/AppRun"
 
 echo "==> AppDir structure prepared at $APPDIR"
 if command -v appimagetool &> /dev/null; then
-    appimagetool "$APPDIR" Aroxy-x86_64.AppImage
-    echo "==> AppImage created successfully: Aroxy-x86_64.AppImage"
+    appimagetool "$APPDIR" Aroxy-0.0.1-x86_64.AppImage
+    echo "==> AppImage created successfully: Aroxy-0.0.1-x86_64.AppImage"
 else
     echo "Notice: appimagetool not found locally. Ready for CI packaging."
 fi

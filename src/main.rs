@@ -104,6 +104,63 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     main_window.set_proxy_running(true);
     main_window.set_proxy_port(config_arc.read().port as i32);
 
+    // Models catalog model
+    let models_model = Rc::new(VecModel::<ModelItemData>::default());
+    {
+        let cfg = config_arc.read();
+        for m in &cfg.models {
+            models_model.push(ModelItemData {
+                id: m.id.clone().into(),
+                display_name: m.display_name.clone().into(),
+                provider: m.provider.clone().into(),
+                is_enabled: m.is_enabled,
+                supports_thinking: m.supports_thinking,
+            });
+        }
+    }
+    main_window.set_models(ModelRc::from(models_model.clone()));
+    main_window.set_expose_reasoning_variants(config_arc.read().expose_reasoning_variants);
+
+    // Toggle model callback
+    let c_mod = Arc::clone(&config_arc);
+    let m_mod = models_model.clone();
+    main_window.on_toggle_model(move |id_slint| {
+        let id_str = id_slint.to_string();
+        let mut next_val = false;
+        {
+            let mut cfg = c_mod.write();
+            if let Some(item) = cfg.models.iter_mut().find(|m| m.id == id_str) {
+                item.is_enabled = !item.is_enabled;
+                next_val = item.is_enabled;
+            }
+            let _ = cfg.save();
+        }
+        for i in 0..m_mod.row_count() {
+            if let Some(mut item) = m_mod.row_data(i) {
+                if item.id.as_str() == id_str {
+                    item.is_enabled = next_val;
+                    m_mod.set_row_data(i, item);
+                    break;
+                }
+            }
+        }
+    });
+
+    // Toggle reasoning variants callback
+    let c_var = Arc::clone(&config_arc);
+    let h_var = window_handle.clone();
+    main_window.on_toggle_reasoning_variants(move || {
+        let next_val = {
+            let mut cfg = c_var.write();
+            cfg.expose_reasoning_variants = !cfg.expose_reasoning_variants;
+            let _ = cfg.save();
+            cfg.expose_reasoning_variants
+        };
+        if let Some(h) = h_var.upgrade() {
+            h.set_expose_reasoning_variants(next_val);
+        }
+    });
+
     // Callbacks
     let p_running = Arc::clone(&proxy_running);
     let h_weak = window_handle.clone();

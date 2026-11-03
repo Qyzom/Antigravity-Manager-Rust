@@ -19,25 +19,46 @@ export struct AccountData {
     is_active: bool,
 }
 
-component NavButton inherits Rectangle {
+export struct ModelItemData {
+    id: string,
+    display_name: string,
+    provider: string,
+    is_enabled: bool,
+    supports_thinking: bool,
+}
+
+component NavItem inherits Rectangle {
     in property <string> text;
+    in property <string> icon_symbol: "•";
     in property <bool> is_active: false;
     callback clicked;
 
-    height: 36px;
-    border-radius: 8px;
-    background: root.is_active ? #ffffff : (touch.has-hover ? #22242e : transparent);
+    height: 40px;
+    border-radius: 9px;
+    background: root.is_active ? #353742 : (touch.has-hover ? #24252d : transparent);
     animate background { duration: 120ms; }
 
-    Text {
-        width: 100%;
-        height: 100%;
-        text: root.text;
-        font-size: 13px;
-        font-weight: root.is_active ? 700 : 500;
-        color: root.is_active ? #0c0d12 : (touch.has-hover ? #ffffff : #9499ad);
-        horizontal-alignment: center;
-        vertical-alignment: center;
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 12px;
+        alignment: start;
+
+        Text {
+            text: root.icon_symbol;
+            font-size: 14px;
+            font-weight: 700;
+            color: root.is_active ? #ffffff : (touch.has-hover ? #d2d5e2 : #868b9c);
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: root.text;
+            font-size: 13px;
+            font-weight: root.is_active ? 700 : 500;
+            color: root.is_active ? #ffffff : (touch.has-hover ? #e4e7f2 : #969ba8);
+            vertical-alignment: center;
+        }
     }
 
     touch := TouchArea {
@@ -55,12 +76,12 @@ component ActionButton inherits Rectangle {
     height: 34px;
     border-radius: 8px;
     background: root.is_danger 
-        ? (touch.pressed ? #b33939 : (touch.has-hover ? #e74c3c : #962d2d))
+        ? (touch.pressed ? #a82e2e : (touch.has-hover ? #d93838 : #8a2424))
         : (root.is_primary 
-            ? (touch.pressed ? #d8d8d8 : (touch.has-hover ? #ffffff : #eeeeee))
-            : (touch.pressed ? #191b22 : (touch.has-hover ? #2c303c : #20232c)));
+            ? (touch.pressed ? #e0e0e0 : (touch.has-hover ? #ffffff : #f2f2f2))
+            : (touch.pressed ? #191b22 : (touch.has-hover ? #31333d : #23252e)));
     border-width: root.is_primary ? 0px : 1px;
-    border-color: #353947;
+    border-color: #383b48;
     animate background { duration: 100ms; }
 
     Text {
@@ -69,7 +90,7 @@ component ActionButton inherits Rectangle {
         text: root.text;
         font-size: 12px;
         font-weight: 700;
-        color: root.is_danger ? #ffffff : (root.is_primary ? #0c0d12 : #e0e3ed);
+        color: root.is_danger ? #ffffff : (root.is_primary ? #121318 : #e0e3ed);
         horizontal-alignment: center;
         vertical-alignment: center;
     }
@@ -80,24 +101,51 @@ component ActionButton inherits Rectangle {
     }
 }
 
+component ToggleSwitch inherits Rectangle {
+    in property <bool> checked: false;
+    callback toggled;
+
+    width: 44px;
+    height: 24px;
+    border-radius: 12px;
+    background: root.checked ? #38d39f : #292b34;
+    animate background { duration: 120ms; }
+
+    Rectangle {
+        x: root.checked ? 22px : 3px;
+        y: 3px;
+        width: 18px;
+        height: 18px;
+        border-radius: 9px;
+        background: #ffffff;
+        animate x { duration: 120ms; }
+    }
+
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.toggled(); }
+    }
+}
+
 component StatCard inherits Rectangle {
     in property <string> title;
     in property <string> value;
     in property <string> subtext;
 
     border-radius: 10px;
-    background: #14161e;
+    background: #1a1b22;
     border-width: 1px;
-    border-color: #242735;
+    border-color: #272934;
 
     VerticalLayout {
         padding: 14px;
         spacing: 4px;
         Text {
             text: root.title;
-            font-size: 11px;
-            font-weight: 600;
+            font-size: 10px;
+            font-weight: 700;
             color: #797f94;
+            letter-spacing: 0.5px;
         }
         Text {
             text: root.value;
@@ -115,11 +163,11 @@ component StatCard inherits Rectangle {
 
 export component MainWindow inherits Window {
     title: "Aroxy — Minimalist AI Protocol Proxy";
-    min-width: 820px;
-    min-height: 560px;
-    preferred-width: 900px;
-    preferred-height: 620px;
-    background: #0c0d12;
+    min-width: 860px;
+    min-height: 580px;
+    preferred-width: 940px;
+    preferred-height: 640px;
+    background: #111217;
 
     in-out property <int> active_tab: 0;
     in-out property <bool> proxy_running: false;
@@ -128,9 +176,11 @@ export component MainWindow inherits Window {
     in-out property <string> total_requests: "0";
     in-out property <string> total_tokens: "0";
     in-out property <string> avg_latency: "0 ms";
+    in-out property <bool> expose_reasoning_variants: true;
 
     in-out property <[LogEntryData]> log_entries: [];
     in-out property <[AccountData]> accounts: [];
+    in-out property <[ModelItemData]> models: [];
 
     in-out property <string> new_acc_name: "";
     in-out property <string> new_acc_key: "";
@@ -142,88 +192,85 @@ export component MainWindow inherits Window {
     callback add_account();
     callback delete_account(string);
     callback activate_account(string);
+    callback toggle_model(string);
+    callback toggle_reasoning_variants();
 
     HorizontalLayout {
-        // Left Navigation Sidebar
+        // Modern Dark Sidebar (QPatcher Style)
         Rectangle {
-            width: 180px;
-            background: #11131a;
-            border-width: 0px;
-            border-color: #1e212b;
+            width: 200px;
+            background: #17181e;
 
             VerticalLayout {
                 padding: 16px;
-                spacing: 12px;
+                spacing: 8px;
 
-                // Logo Area
+                // Application Title
                 HorizontalLayout {
+                    padding-bottom: 8px;
+                    padding-left: 6px;
                     spacing: 8px;
                     alignment: start;
-                    Rectangle {
-                        width: 28px;
-                        height: 28px;
-                        border-radius: 6px;
-                        background: #ffffff;
-                        Text {
-                            text: "A";
-                            color: #0c0d12;
-                            font-size: 16px;
-                            font-weight: 900;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                        }
+                    Text {
+                        text: "Aroxy";
+                        font-size: 16px;
+                        font-weight: 800;
+                        color: #ffffff;
+                        vertical-alignment: center;
                     }
-                    VerticalLayout {
-                        alignment: center;
-                        Text {
-                            text: "AROXY";
-                            font-size: 14px;
-                            font-weight: 800;
-                            color: #ffffff;
-                            letter-spacing: 1px;
-                        }
-                        Text {
-                            text: "v0.1.0 • Core";
-                            font-size: 10px;
-                            color: #6d7285;
-                        }
+                    Text {
+                        text: "v0.0.1";
+                        font-size: 11px;
+                        font-weight: 600;
+                        color: #6a6f80;
+                        vertical-alignment: center;
                     }
                 }
 
-                Rectangle { height: 12px; }
+                Rectangle { height: 6px; }
 
                 // Navigation Items
-                NavButton {
-                    text: "Dashboard";
+                NavItem {
+                    text: "Overview";
+                    icon_symbol: "▤";
                     is_active: root.active_tab == 0;
                     clicked => { root.active_tab = 0; }
                 }
-                NavButton {
-                    text: "Accounts & FP";
+                NavItem {
+                    text: "Model Catalog";
+                    icon_symbol: "⊞";
                     is_active: root.active_tab == 1;
                     clicked => { root.active_tab = 1; }
                 }
-                NavButton {
-                    text: "Live Logs";
+                NavItem {
+                    text: "Accounts & FP";
+                    icon_symbol: "⚙";
                     is_active: root.active_tab == 2;
                     clicked => { root.active_tab = 2; }
                 }
-                NavButton {
-                    text: "Settings";
+                NavItem {
+                    text: "Traffic Logs";
+                    icon_symbol: "☰";
                     is_active: root.active_tab == 3;
                     clicked => { root.active_tab = 3; }
+                }
+                NavItem {
+                    text: "Settings";
+                    icon_symbol: "❖";
+                    is_active: root.active_tab == 4;
+                    clicked => { root.active_tab = 4; }
                 }
 
                 // Spacer
                 Rectangle { }
 
-                // Proxy Quick Status Pill
+                // Status Badge in Sidebar
                 Rectangle {
                     height: 38px;
                     border-radius: 8px;
-                    background: root.proxy_running ? #14281f : #221818;
+                    background: root.proxy_running ? #162a21 : #261919;
                     border-width: 1px;
-                    border-color: root.proxy_running ? #255a40 : #522727;
+                    border-color: root.proxy_running ? #24563d : #592525;
 
                     HorizontalLayout {
                         padding-left: 10px;
@@ -235,13 +282,13 @@ export component MainWindow inherits Window {
                             width: 8px;
                             height: 8px;
                             border-radius: 4px;
-                            background: root.proxy_running ? #3dd68c : #eb5757;
+                            background: root.proxy_running ? #38d39f : #f05454;
                         }
                         Text {
                             text: root.proxy_running ? "RUNNING :8045" : "OFFLINE";
                             font-size: 11px;
                             font-weight: 700;
-                            color: root.proxy_running ? #3dd68c : #eb5757;
+                            color: root.proxy_running ? #38d39f : #f05454;
                             vertical-alignment: center;
                         }
                     }
@@ -254,25 +301,27 @@ export component MainWindow inherits Window {
             padding: 24px;
             spacing: 20px;
 
-            // Header Bar
+            // Top Header Bar
             HorizontalLayout {
                 alignment: space-between;
                 VerticalLayout {
                     spacing: 2px;
                     Text {
-                        text: root.active_tab == 0 ? "Dashboard & Emulation"
-                            : root.active_tab == 1 ? "Upstream Accounts & Fingerprints"
-                            : root.active_tab == 2 ? "Real-time Traffic & Stream Inspector"
-                            : "System Configuration";
+                        text: root.active_tab == 0 ? "Dashboard & Status"
+                            : root.active_tab == 1 ? "Broadcasted Models & Reasoning"
+                            : root.active_tab == 2 ? "Upstream Providers & Signatures"
+                            : root.active_tab == 3 ? "Real-time Traffic & Stream Inspector"
+                            : "Preferences & System";
                         font-size: 20px;
                         font-weight: 800;
                         color: #ffffff;
                     }
                     Text {
-                        text: root.active_tab == 0 ? "Local OpenAI v1 / Claude / Gemini endpoint emulation"
-                            : root.active_tab == 1 ? "Manage provider keys and anti-detection client signatures"
-                            : root.active_tab == 2 ? "High-performance streaming logs with zero-lock buffering"
-                            : "Network, autostart, and tray daemon settings";
+                        text: root.active_tab == 0 ? "Local OpenAI v1 / Claude / Gemini endpoint emulator"
+                            : root.active_tab == 1 ? "Configure which models to broadcast and toggle reasoning effort clones"
+                            : root.active_tab == 2 ? "Manage provider credentials and client anti-detection fingerprints"
+                            : root.active_tab == 3 ? "Lock-free streaming metrics, tokens, and response latencies"
+                            : "Tray daemon, autostart, and local network ports";
                         font-size: 12px;
                         color: #797f94;
                     }
@@ -289,7 +338,7 @@ export component MainWindow inherits Window {
                 }
             }
 
-            // Tab 0: Dashboard
+            // Tab 0: Overview
             if root.active_tab == 0: VerticalLayout {
                 spacing: 16px;
 
@@ -318,10 +367,10 @@ export component MainWindow inherits Window {
                 }
 
                 Rectangle {
-                    background: #14161e;
+                    background: #181920;
                     border-radius: 12px;
                     border-width: 1px;
-                    border-color: #242735;
+                    border-color: #272834;
 
                     VerticalLayout {
                         padding: 20px;
@@ -340,7 +389,7 @@ export component MainWindow inherits Window {
                         Rectangle {
                             height: 38px;
                             border-radius: 8px;
-                            background: #0d0e14;
+                            background: #0f1015;
                             border-width: 1px;
                             border-color: #2b2f3f;
                             HorizontalLayout {
@@ -367,7 +416,7 @@ export component MainWindow inherits Window {
                             spacing: 12px;
                             Rectangle {
                                 border-radius: 8px;
-                                background: #1a1c26;
+                                background: #20222b;
                                 VerticalLayout {
                                     padding: 12px;
                                     spacing: 4px;
@@ -377,7 +426,7 @@ export component MainWindow inherits Window {
                             }
                             Rectangle {
                                 border-radius: 8px;
-                                background: #1a1c26;
+                                background: #20222b;
                                 VerticalLayout {
                                     padding: 12px;
                                     spacing: 4px;
@@ -390,15 +439,129 @@ export component MainWindow inherits Window {
                 }
             }
 
-            // Tab 1: Accounts & Fingerprints
+            // Tab 1: Model Catalog (New!)
             if root.active_tab == 1: VerticalLayout {
                 spacing: 14px;
 
+                // Master Toggle for Reasoning Effort Clones
                 Rectangle {
-                    background: #14161e;
+                    background: #181920;
                     border-radius: 10px;
                     border-width: 1px;
-                    border-color: #242735;
+                    border-color: #272834;
+
+                    VerticalLayout {
+                        padding: 16px;
+                        spacing: 8px;
+                        HorizontalLayout {
+                            alignment: space-between;
+                            VerticalLayout {
+                                spacing: 2px;
+                                Text {
+                                    text: "Expose Reasoning Effort Clones in /v1/models";
+                                    font-size: 14px;
+                                    font-weight: 700;
+                                    color: #ffffff;
+                                }
+                                Text {
+                                    text: "Dynamically creates (low), (medium), (high) model aliases so clients without reasoning sliders can select effort levels.";
+                                    font-size: 11px;
+                                    color: #8b90a4;
+                                }
+                            }
+                            ToggleSwitch {
+                                checked: root.expose_reasoning_variants;
+                                toggled => { root.toggle_reasoning_variants(); }
+                            }
+                        }
+                    }
+                }
+
+                // Models List
+                Rectangle {
+                    background: #181920;
+                    border-radius: 10px;
+                    border-width: 1px;
+                    border-color: #272834;
+
+                    VerticalLayout {
+                        padding: 16px;
+                        spacing: 8px;
+                        Text {
+                            text: "Available Models";
+                            font-size: 13px;
+                            font-weight: 700;
+                            color: #797f94;
+                        }
+
+                        for m in root.models: Rectangle {
+                            height: 44px;
+                            border-radius: 8px;
+                            background: m.is_enabled ? #20232d : #14151a;
+                            border-width: 1px;
+                            border-color: m.is_enabled ? #353b4c : #20222a;
+
+                            HorizontalLayout {
+                                padding-left: 14px;
+                                padding-right: 14px;
+                                alignment: space-between;
+
+                                HorizontalLayout {
+                                    spacing: 12px;
+                                    alignment: center;
+                                    Text {
+                                        text: m.display_name;
+                                        font-size: 13px;
+                                        font-weight: 700;
+                                        color: m.is_enabled ? #ffffff : #6f7485;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: m.id;
+                                        font-size: 11px;
+                                        color: #72788e;
+                                        vertical-alignment: center;
+                                    }
+                                    if m.supports_thinking: Rectangle {
+                                        height: 20px;
+                                        border-radius: 4px;
+                                        background: #2a382e;
+                                        HorizontalLayout {
+                                            padding-left: 6px;
+                                            padding-right: 6px;
+                                            Text {
+                                                text: "REASONING";
+                                                font-size: 9px;
+                                                font-weight: 800;
+                                                color: #38d39f;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    alignment: center;
+                                    ToggleSwitch {
+                                        checked: m.is_enabled;
+                                        toggled => { root.toggle_model(m.id); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Tab 2: Accounts & Fingerprints
+            if root.active_tab == 2: VerticalLayout {
+                spacing: 14px;
+
+                Rectangle {
+                    background: #181920;
+                    border-radius: 10px;
+                    border-width: 1px;
+                    border-color: #272834;
 
                     VerticalLayout {
                         padding: 16px;
@@ -441,10 +604,10 @@ export component MainWindow inherits Window {
 
                 // Accounts List
                 Rectangle {
-                    background: #14161e;
+                    background: #181920;
                     border-radius: 10px;
                     border-width: 1px;
-                    border-color: #242735;
+                    border-color: #272834;
 
                     VerticalLayout {
                         padding: 16px;
@@ -459,9 +622,9 @@ export component MainWindow inherits Window {
                         for acc in root.accounts: Rectangle {
                             height: 48px;
                             border-radius: 8px;
-                            background: acc.is_active ? #1b212f : #101219;
+                            background: acc.is_active ? #212635 : #14151a;
                             border-width: 1px;
-                            border-color: acc.is_active ? #38486b : #1d202b;
+                            border-color: acc.is_active ? #3c4a6b : #20222a;
 
                             HorizontalLayout {
                                 padding-left: 14px;
@@ -486,7 +649,7 @@ export component MainWindow inherits Window {
                                     Text {
                                         text: "FP: " + acc.fingerprint;
                                         font-size: 10px;
-                                        color: #4f556b;
+                                        color: #636b85;
                                         vertical-alignment: center;
                                     }
                                 }
@@ -512,8 +675,8 @@ export component MainWindow inherits Window {
                 }
             }
 
-            // Tab 2: Logs
-            if root.active_tab == 2: VerticalLayout {
+            // Tab 3: Logs
+            if root.active_tab == 3: VerticalLayout {
                 spacing: 12px;
 
                 HorizontalLayout {
@@ -533,10 +696,10 @@ export component MainWindow inherits Window {
                 }
 
                 Rectangle {
-                    background: #14161e;
+                    background: #181920;
                     border-radius: 10px;
                     border-width: 1px;
-                    border-color: #242735;
+                    border-color: #272834;
 
                     VerticalLayout {
                         padding: 12px;
@@ -559,7 +722,7 @@ export component MainWindow inherits Window {
                         for log in root.log_entries: Rectangle {
                             height: 32px;
                             border-radius: 6px;
-                            background: #0f1017;
+                            background: #121318;
 
                             HorizontalLayout {
                                 padding-left: 8px;
@@ -573,7 +736,7 @@ export component MainWindow inherits Window {
                                     width: 70px;
                                     font-size: 11px;
                                     font-weight: 700;
-                                    color: log.status == 200 ? #3dd68c : #eb5757;
+                                    color: log.status == 200 ? #38d39f : #f05454;
                                     vertical-alignment: center;
                                 }
                                 Text { text: log.tokens + ""; width: 70px; font-size: 11px; color: #9ea4b8; vertical-alignment: center; }
@@ -584,22 +747,22 @@ export component MainWindow inherits Window {
                 }
             }
 
-            // Tab 3: Settings
-            if root.active_tab == 3: VerticalLayout {
+            // Tab 4: Settings
+            if root.active_tab == 4: VerticalLayout {
                 spacing: 14px;
                 Rectangle {
-                    background: #14161e;
+                    background: #181920;
                     border-radius: 10px;
                     border-width: 1px;
-                    border-color: #242735;
+                    border-color: #272834;
 
                     VerticalLayout {
                         padding: 16px;
                         spacing: 12px;
-                        Text { text: "System & Network Preferences"; font-size: 14px; font-weight: 700; color: #ffffff; }
-                        Text { text: "• System Tray Daemon: Minimize on close to run silently in background."; font-size: 12px; color: #9ea4b8; }
-                        Text { text: "• Portable Config: Saves config next to binary in aroxy.json if portable mode is active."; font-size: 12px; color: #9ea4b8; }
-                        Text { text: "• Zero Telemetry: Completely offline, no phone-home, no update trackers, no analytics."; font-size: 12px; color: #9ea4b8; }
+                        Text { text: "System & Network Preferences (Aroxy v0.0.1)"; font-size: 14px; font-weight: 700; color: #ffffff; }
+                        Text { text: "• System Tray Daemon: Run silently in background without closing server."; font-size: 12px; color: #9ea4b8; }
+                        Text { text: "• Portable Config: Saves config next to binary in aroxy.json."; font-size: 12px; color: #9ea4b8; }
+                        Text { text: "• Zero Telemetry: Completely offline, no phone-home, no trackers, no ads."; font-size: 12px; color: #9ea4b8; }
                     }
                 }
             }
