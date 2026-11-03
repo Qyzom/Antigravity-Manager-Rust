@@ -1,5 +1,8 @@
 # Aroxy ⚡
 
+[![Release Build](https://github.com/Qyzom/Aroxy/actions/workflows/release.yml/badge.svg)](https://github.com/Qyzom/Aroxy/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
 > **Ultra-lightweight, high-performance cross-platform AI protocol proxy & emulator written in Rust + Slint.**
 
 Aroxy strips away the bloat of Electron, Tauri, WebViews, and telemetry from heavy AI proxy managers, delivering a pure native single binary (~20 MB RAM footprint) with instantaneous startup, system tray support, and rock-solid protocol emulation for **OpenAI v1**, **Anthropic Claude**, and **Google Gemini**.
