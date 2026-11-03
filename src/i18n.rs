@@ -131,6 +131,15 @@ pub struct TranslationBundle {
     pub lbl_autostart: &'static str,
     pub lbl_portable: &'static str,
     pub btn_save_settings: &'static str,
+    pub lbl_show_logs: &'static str,
+    pub lbl_show_stats: &'static str,
+    pub lbl_compact_ui: &'static str,
+    pub lbl_check_updates: &'static str,
+    pub lbl_clear_logs_exit: &'static str,
+    pub lbl_quota_protection: &'static str,
+    pub lbl_active_refresh: &'static str,
+    pub lbl_pool_refresh: &'static str,
+    pub info_error_label: &'static str,
 }
 
 pub fn get_translations(lang: Language) -> TranslationBundle {
@@ -221,6 +230,15 @@ pub fn get_translations(lang: Language) -> TranslationBundle {
             lbl_autostart: "Запуск при старте системы (Автозагрузка)",
             lbl_portable: "Портативный режим конфигурации (aroxy.json)",
             btn_save_settings: "Сохранить и применить настройки",
+            lbl_show_logs: "Показывать вкладку логов в меню",
+            lbl_show_stats: "Показывать вкладку статистики в меню",
+            lbl_compact_ui: "Компактный режим интерфейса",
+            lbl_check_updates: "Проверять обновления при запуске",
+            lbl_clear_logs_exit: "Очищать логи трафика при выходе",
+            lbl_quota_protection: "Порог защиты квоты аккаунтов (резерв)",
+            lbl_active_refresh: "Интервал автообновления активного аккаунта",
+            lbl_pool_refresh: "Интервал автообновления фонового пула",
+            info_error_label: "Детали ошибки авторизации / апстрима",
         },
 
         Language::Zh => TranslationBundle {
@@ -309,6 +327,15 @@ pub fn get_translations(lang: Language) -> TranslationBundle {
             lbl_autostart: "开机自启动",
             lbl_portable: "便携式配置模式 (aroxy.json)",
             btn_save_settings: "保存并应用设置",
+            lbl_show_logs: "在侧边栏显示流量日志",
+            lbl_show_stats: "在侧边栏显示统计分析",
+            lbl_compact_ui: "紧凑高密度界面模式",
+            lbl_check_updates: "启动时自动检查更新",
+            lbl_clear_logs_exit: "退出程序时自动清除日志",
+            lbl_quota_protection: "账户配额保护阈值 (保留储备)",
+            lbl_active_refresh: "活跃主账户自动刷新频率",
+            lbl_pool_refresh: "后台账户池自动刷新频率",
+            info_error_label: "上游错误与认证详情",
         },
 
         Language::En => TranslationBundle {
@@ -397,6 +424,15 @@ pub fn get_translations(lang: Language) -> TranslationBundle {
             lbl_autostart: "Start Minimized with Operating System",
             lbl_portable: "Portable Configuration Mode (aroxy.json)",
             btn_save_settings: "Save & Apply Settings",
+            lbl_show_logs: "Show Traffic Logs in Sidebar",
+            lbl_show_stats: "Show Statistics in Sidebar",
+            lbl_compact_ui: "Compact Interface Density Mode",
+            lbl_check_updates: "Check for Updates on Startup",
+            lbl_clear_logs_exit: "Auto-clear Traffic Logs on Exit",
+            lbl_quota_protection: "Account Quota Protection Threshold",
+            lbl_active_refresh: "Active Working Account Auto-Refresh",
+            lbl_pool_refresh: "Background Accounts Pool Auto-Refresh",
+            info_error_label: "Upstream Authentication & Error Details",
         },
     }
 }

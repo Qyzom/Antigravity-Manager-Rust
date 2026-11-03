@@ -30,6 +30,7 @@ export struct AccountData {
     gemini_reset: string,
     status: string,
     is_active: bool,
+    error_message: string,
 }
 
 export struct ModelItemData {
@@ -127,6 +128,15 @@ export struct I18nData {
     lbl_autostart: string,
     lbl_portable: string,
     btn_save_settings: string,
+    lbl_show_logs: string,
+    lbl_show_stats: string,
+    lbl_compact_ui: string,
+    lbl_check_updates: string,
+    lbl_clear_logs_exit: string,
+    lbl_quota_protection: string,
+    lbl_active_refresh: string,
+    lbl_pool_refresh: string,
+    info_error_label: string,
 }
 
 component NavItem inherits Rectangle {
@@ -220,7 +230,7 @@ component ToggleSwitch inherits Rectangle {
 
     Rectangle {
         x: root.checked ? 22px : 3px;
-        y: 2px;
+        y: 3px;
         width: 18px;
         height: 18px;
         border-radius: 9px;
@@ -289,12 +299,16 @@ component Badge inherits Rectangle {
         padding-left: 6px;
         padding-right: 6px;
         alignment: center;
-        Text {
-            text: root.text;
-            font-size: 10px;
-            font-weight: 700;
-            color: root.is_green ? #4ade80 : (root.is_amber ? #fbbf24 : (root.is_danger ? #f87171 : #d4d4d8));
-            vertical-alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.text;
+                font-size: 10px;
+                font-weight: 700;
+                color: root.is_green ? #4ade80 : (root.is_amber ? #fbbf24 : (root.is_danger ? #f87171 : #d4d4d8));
+                vertical-alignment: center;
+                horizontal-alignment: center;
+            }
         }
     }
 }
@@ -388,30 +402,47 @@ export component MainWindow inherits Window {
     in-out property <bool> failover_on_429: true;
     in-out property <int> setting_timeout_secs: 120;
     in-out property <int> setting_heartbeat_secs: 12;
+    in-out property <int> quota_protection_threshold: 5;
+
+    // Refresh Cadence
+    in-out property <int> active_account_refresh_mins: 2;
+    in-out property <int> pool_account_refresh_mins: 15;
 
     // Logs Controls
     in-out property <bool> logging_enabled: true;
     in-out property <int> max_log_capacity: 100;
+    in-out property <string> max_log_capacity_input: "100";
 
     // Statistics Detailed
     in-out property <int> stat_time_range_index: 0; // 0: Today, 1: 7D, 2: 30D, 3: All
     in-out property <string> stat_prompt_tokens: "0";
     in-out property <string> stat_completion_tokens: "0";
     in-out property <string> stat_thinking_tokens: "0";
+    in-out property <int> stat_prompt_pct: 50;
+    in-out property <int> stat_comp_pct: 40;
+    in-out property <int> stat_think_pct: 10;
     in-out property <string> stat_success_rate: "100%";
     in-out property <string> stat_error_count: "0";
     in-out property <string> stat_max_latency: "0 ms";
+    in-out property <string> stat_model_distribution: "Claude: 50% | Gemini: 50%";
 
-    // System Settings
+    // Preferences & Toggles
+    in-out property <bool> show_logs_tab: true;
+    in-out property <bool> show_stats_tab: true;
+    in-out property <bool> compact_ui_mode: false;
     in-out property <bool> setting_minimize_tray: true;
     in-out property <bool> setting_autostart: false;
     in-out property <bool> setting_portable_mode: false;
+    in-out property <bool> setting_check_updates: true;
+    in-out property <bool> setting_clear_logs_exit: false;
+    in-out property <string> info_account_error: "";
 
     // Callbacks
     callback toggle_proxy();
     callback clear_logs();
     callback toggle_logging();
     callback set_max_logs(int);
+    callback set_max_log_capacity_str(string);
     callback add_account();
     callback add_account_browser_oauth();
     callback delete_account(string);
@@ -429,10 +460,20 @@ export component MainWindow inherits Window {
     callback set_session_ttl(int);
     callback set_imbalance_threshold(int);
     callback toggle_failover_429();
+    callback set_quota_protection_threshold(int);
+    callback set_active_refresh_cadence(int);
+    callback set_pool_refresh_cadence(int);
+    callback toggle_show_logs();
+    callback toggle_show_stats();
+    callback toggle_compact_mode();
+    callback toggle_check_updates();
+    callback toggle_clear_logs_exit();
+    callback toggle_minimize_tray();
+    callback toggle_autostart();
+    callback toggle_portable_mode();
     callback set_language(int);
     callback set_quota_display_mode(string);
     callback toggle_hide_brand();
-    callback save_settings();
 
     // Main Layout
     HorizontalLayout {
@@ -488,12 +529,12 @@ export component MainWindow inherits Window {
                     is_active: root.active_tab == 3;
                     clicked => { root.active_tab = 3; }
                 }
-                NavItem {
+                if root.show_logs_tab: NavItem {
                     text: root.i18n.tab_logs;
                     is_active: root.active_tab == 4;
                     clicked => { root.active_tab = 4; }
                 }
-                NavItem {
+                if root.show_stats_tab: NavItem {
                     text: root.i18n.tab_stats;
                     is_active: root.active_tab == 5;
                     clicked => { root.active_tab = 5; }
@@ -571,37 +612,22 @@ export component MainWindow inherits Window {
                         alignment: start;
                         spacing: 14px;
 
-                        // 6 High-Density Stat Cards Filling the Width
+                        // 3 Clean, Focused Metric Cards
                         HorizontalLayout {
-                            spacing: 10px;
+                            spacing: 12px;
                             StatCard {
                                 title: root.i18n.stat_requests;
                                 value: root.total_requests;
-                                subtext: "Inbound API calls";
-                            }
-                            StatCard {
-                                title: root.i18n.stat_tokens;
-                                value: root.total_tokens;
-                                subtext: "Prompt + Completion";
-                            }
-                            StatCard {
-                                title: root.i18n.stat_latency;
-                                value: root.avg_latency;
-                                subtext: "TTFT stream average";
-                            }
-                            StatCard {
-                                title: root.i18n.stat_accounts;
-                                value: root.healthy_accounts_count + "";
-                                subtext: "Healthy in pool";
+                                subtext: "Total requests";
                             }
                             StatCard {
                                 title: root.i18n.stat_app_ram;
                                 value: root.app_memory;
-                                subtext: "Zero-bloat resident";
+                                subtext: "Private RAM";
                             }
                             StatCard {
                                 title: root.i18n.stat_proxy_engine;
-                                value: root.proxy_running ? "ONLINE" : "STANDBY";
+                                value: root.proxy_running ? ("ONLINE :" + root.proxy_port) : "STANDBY";
                                 subtext: root.proxy_engine_status;
                             }
                         }
@@ -619,15 +645,12 @@ export component MainWindow inherits Window {
 
                                 HorizontalLayout {
                                     alignment: space-between;
-                                    VerticalLayout {
-                                        spacing: 2px;
-                                        Text { text: root.i18n.quota_claude_title; font-size: 13px; font-weight: 700; color: #ffffff; }
-                                        Text { text: root.i18n.quota_claude_desc; font-size: 11px; color: #71717a; }
-                                    }
+                                    Text { text: root.i18n.quota_claude_title; font-size: 13px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
                                     Badge {
                                         text: "Resets " + root.global_claude_reset;
                                         is_green: root.global_claude_percent > 20;
-                                        is_danger: root.global_claude_percent <= 20;
+                                        is_amber: root.global_claude_percent > 0 && root.global_claude_percent <= 20;
+                                        is_danger: root.global_claude_percent <= 0;
                                     }
                                 }
 
@@ -643,7 +666,7 @@ export component MainWindow inherits Window {
                                         height: 8px;
                                         border-radius: 4px;
                                         width: parent.width * (root.global_claude_percent / 100.0);
-                                        background: root.global_claude_percent < 20 ? #ef4444 : (root.global_claude_percent < 50 ? #fbbf24 : #4ade80);
+                                        background: root.global_claude_percent <= 0 ? #ef4444 : (root.global_claude_percent <= 20 ? #eab308 : #4ade80);
                                     }
                                 }
 
@@ -653,12 +676,7 @@ export component MainWindow inherits Window {
                                         text: root.global_claude_label;
                                         font-size: 11px;
                                         font-weight: 700;
-                                        color: root.global_claude_percent < 20 ? #f87171 : (root.global_claude_percent < 50 ? #fbbf24 : #4ade80);
-                                    }
-                                    Text {
-                                        text: "Routing: Cache Affinity Pool";
-                                        font-size: 11px;
-                                        color: #71717a;
+                                        color: root.global_claude_percent <= 0 ? #f87171 : (root.global_claude_percent <= 20 ? #fbbf24 : #4ade80);
                                     }
                                 }
                             }
@@ -677,15 +695,12 @@ export component MainWindow inherits Window {
 
                                 HorizontalLayout {
                                     alignment: space-between;
-                                    VerticalLayout {
-                                        spacing: 2px;
-                                        Text { text: root.i18n.quota_gemini_title; font-size: 13px; font-weight: 700; color: #ffffff; }
-                                        Text { text: root.i18n.quota_gemini_desc; font-size: 11px; color: #71717a; }
-                                    }
+                                    Text { text: root.i18n.quota_gemini_title; font-size: 13px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
                                     Badge {
                                         text: "Resets " + root.global_gemini_reset;
                                         is_green: root.global_gemini_percent > 20;
-                                        is_danger: root.global_gemini_percent <= 20;
+                                        is_amber: root.global_gemini_percent > 0 && root.global_gemini_percent <= 20;
+                                        is_danger: root.global_gemini_percent <= 0;
                                     }
                                 }
 
@@ -701,7 +716,7 @@ export component MainWindow inherits Window {
                                         height: 8px;
                                         border-radius: 4px;
                                         width: parent.width * (root.global_gemini_percent / 100.0);
-                                        background: root.global_gemini_percent < 20 ? #ef4444 : (root.global_gemini_percent < 50 ? #fbbf24 : #4ade80);
+                                        background: root.global_gemini_percent <= 0 ? #ef4444 : (root.global_gemini_percent <= 20 ? #eab308 : #4ade80);
                                     }
                                 }
 
@@ -711,12 +726,7 @@ export component MainWindow inherits Window {
                                         text: root.global_gemini_label;
                                         font-size: 11px;
                                         font-weight: 700;
-                                        color: root.global_gemini_percent < 20 ? #f87171 : (root.global_gemini_percent < 50 ? #fbbf24 : #4ade80);
-                                    }
-                                    Text {
-                                        text: "Multi-Turn Optimized Pool";
-                                        font-size: 11px;
-                                        color: #71717a;
+                                        color: root.global_gemini_percent <= 0 ? #f87171 : (root.global_gemini_percent <= 20 ? #fbbf24 : #4ade80);
                                     }
                                 }
                             }
@@ -771,7 +781,54 @@ export component MainWindow inherits Window {
                             }
                         }
 
-                        Text { text: root.i18n.acc_pool_header; font-size: 11px; font-weight: 700; color: #71717a; }
+                        // Accounts Auto-Refresh Cadence Toolbar
+                        Rectangle {
+                            background: #18181b;
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: #27272a;
+
+                            VerticalLayout {
+                                padding: 12px;
+                                spacing: 10px;
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Text { text: root.i18n.lbl_active_refresh + ": " + root.active_account_refresh_mins + "m"; font-size: 12px; font-weight: 600; color: #ffffff; }
+                                        Text { text: "Fast sync for currently routed working account (1-10 min)"; font-size: 11px; color: #71717a; }
+                                    }
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        ActionButton { text: "1m"; is_primary: root.active_account_refresh_mins == 1; is_accent: root.active_account_refresh_mins == 1; clicked => { root.set_active_refresh_cadence(1); } }
+                                        ActionButton { text: "2m"; is_primary: root.active_account_refresh_mins == 2; is_accent: root.active_account_refresh_mins == 2; clicked => { root.set_active_refresh_cadence(2); } }
+                                        ActionButton { text: "5m"; is_primary: root.active_account_refresh_mins == 5; is_accent: root.active_account_refresh_mins == 5; clicked => { root.set_active_refresh_cadence(5); } }
+                                        ActionButton { text: "10m"; is_primary: root.active_account_refresh_mins == 10; is_accent: root.active_account_refresh_mins == 10; clicked => { root.set_active_refresh_cadence(10); } }
+                                    }
+                                }
+
+                                Rectangle { height: 1px; background: #27272a; }
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Text { text: root.i18n.lbl_pool_refresh + ": " + root.pool_account_refresh_mins + "m"; font-size: 12px; font-weight: 600; color: #ffffff; }
+                                        Text { text: "Background quota polling for standby pool accounts (1-60 min)"; font-size: 11px; color: #71717a; }
+                                    }
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        ActionButton { text: "5m"; is_primary: root.pool_account_refresh_mins == 5; is_accent: root.pool_account_refresh_mins == 5; clicked => { root.set_pool_refresh_cadence(5); } }
+                                        ActionButton { text: "15m"; is_primary: root.pool_account_refresh_mins == 15; is_accent: root.pool_account_refresh_mins == 15; clicked => { root.set_pool_refresh_cadence(15); } }
+                                        ActionButton { text: "30m"; is_primary: root.pool_account_refresh_mins == 30; is_accent: root.pool_account_refresh_mins == 30; clicked => { root.set_pool_refresh_cadence(30); } }
+                                        ActionButton { text: "60m"; is_primary: root.pool_account_refresh_mins == 60; is_accent: root.pool_account_refresh_mins == 60; clicked => { root.set_pool_refresh_cadence(60); } }
+                                    }
+                                }
+                            }
+                        }
+
+                        Text { text: root.i18n.acc_pool_header + " — " + root.healthy_accounts_count + " ACTIVE"; font-size: 11px; font-weight: 700; color: #71717a; }
 
                         // Account Cards
                         for acc in root.accounts: Rectangle {
@@ -796,7 +853,7 @@ export component MainWindow inherits Window {
                                         Badge {
                                             text: acc.status;
                                             is_green: acc.status == "ACTIVE";
-                                            is_danger: acc.status != "ACTIVE";
+                                            is_danger: acc.status == "ERROR";
                                         }
                                     }
 
@@ -835,7 +892,7 @@ export component MainWindow inherits Window {
                                             : "Claude & GPT: " + acc.claude_gpt_percent + "% Available";
                                         font-size: 11px;
                                         font-weight: 700;
-                                        color: acc.claude_gpt_percent < 20 ? #f87171 : (acc.claude_gpt_percent < 50 ? #fbbf24 : #4ade80);
+                                        color: acc.claude_gpt_percent <= 0 ? #f87171 : (acc.claude_gpt_percent <= 20 ? #fbbf24 : #4ade80);
                                     }
                                     Text {
                                         text: "Resets " + acc.claude_gpt_reset;
@@ -853,7 +910,7 @@ export component MainWindow inherits Window {
                                         height: 5px;
                                         border-radius: 3px;
                                         width: parent.width * (acc.claude_gpt_percent / 100.0);
-                                        background: acc.claude_gpt_percent < 20 ? #ef4444 : (acc.claude_gpt_percent < 50 ? #fbbf24 : #4ade80);
+                                        background: acc.claude_gpt_percent <= 0 ? #ef4444 : (acc.claude_gpt_percent <= 20 ? #eab308 : #4ade80);
                                     }
                                 }
 
@@ -866,7 +923,7 @@ export component MainWindow inherits Window {
                                             : "Gemini: " + acc.gemini_percent + "% Available";
                                         font-size: 11px;
                                         font-weight: 700;
-                                        color: acc.gemini_percent < 20 ? #f87171 : (acc.gemini_percent < 50 ? #fbbf24 : #4ade80);
+                                        color: acc.gemini_percent <= 0 ? #f87171 : (acc.gemini_percent <= 20 ? #fbbf24 : #4ade80);
                                     }
                                     Text {
                                         text: "Resets " + acc.gemini_reset;
@@ -884,7 +941,7 @@ export component MainWindow inherits Window {
                                         height: 5px;
                                         border-radius: 3px;
                                         width: parent.width * (acc.gemini_percent / 100.0);
-                                        background: acc.gemini_percent < 20 ? #ef4444 : (acc.gemini_percent < 50 ? #fbbf24 : #4ade80);
+                                        background: acc.gemini_percent <= 0 ? #ef4444 : (acc.gemini_percent <= 20 ? #eab308 : #4ade80);
                                     }
                                 }
                             }
@@ -939,12 +996,21 @@ export component MainWindow inherits Window {
                                 alignment: space-between;
 
                                 HorizontalLayout {
-                                    spacing: 10px;
+                                    spacing: 8px;
                                     alignment: start;
-                                    Text { text: model.display_name; font-size: 13px; font-weight: 600; color: #ffffff; vertical-alignment: center; }
-                                    Badge { text: model.id; }
-                                    Badge { text: model.tier; is_green: model.tier == "PRO" || model.tier == "Pro"; }
-                                    if model.supports_thinking: Badge { text: "Thinking"; is_amber: true; }
+                                    Text {
+                                        text: model.display_name;
+                                        font-size: 13px;
+                                        font-weight: 600;
+                                        color: model.is_enabled ? #ffffff : #71717a;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: "— " + model.id;
+                                        font-size: 11px;
+                                        color: #71717a;
+                                        vertical-alignment: center;
+                                    }
                                 }
 
                                 HorizontalLayout {
@@ -1139,10 +1205,68 @@ export component MainWindow inherits Window {
                                         Text { text: root.i18n.lbl_failover; font-size: 12px; font-weight: 600; color: #fafafa; }
                                         Text { text: "Silently and instantly failover to another healthy account if upstream returns 429"; font-size: 11px; color: #71717a; }
                                     }
-                                    ToggleSwitch {
-                                        checked: root.failover_on_429;
-                                        toggled => { root.toggle_failover_429(); }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        ToggleSwitch {
+                                            checked: root.failover_on_429;
+                                            toggled => { root.toggle_failover_429(); }
+                                        }
                                     }
+                                }
+                            }
+                        }
+
+                        // Account Quota Protection Threshold Box
+                        Rectangle {
+                            background: #18181b;
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: #27272a;
+
+                            VerticalLayout {
+                                padding: 16px;
+                                spacing: 12px;
+
+                                Text { text: root.i18n.lbl_quota_protection; font-size: 13px; font-weight: 700; color: #ffffff; }
+
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    ActionButton {
+                                        text: "0% (Off)";
+                                        is_primary: root.quota_protection_threshold == 0;
+                                        is_accent: root.quota_protection_threshold == 0;
+                                        clicked => { root.set_quota_protection_threshold(0); }
+                                    }
+                                    ActionButton {
+                                        text: "5% (Default)";
+                                        is_primary: root.quota_protection_threshold == 5;
+                                        is_accent: root.quota_protection_threshold == 5;
+                                        clicked => { root.set_quota_protection_threshold(5); }
+                                    }
+                                    ActionButton {
+                                        text: "10%";
+                                        is_primary: root.quota_protection_threshold == 10;
+                                        is_accent: root.quota_protection_threshold == 10;
+                                        clicked => { root.set_quota_protection_threshold(10); }
+                                    }
+                                    ActionButton {
+                                        text: "15%";
+                                        is_primary: root.quota_protection_threshold == 15;
+                                        is_accent: root.quota_protection_threshold == 15;
+                                        clicked => { root.set_quota_protection_threshold(15); }
+                                    }
+                                    ActionButton {
+                                        text: "20%";
+                                        is_primary: root.quota_protection_threshold == 20;
+                                        is_accent: root.quota_protection_threshold == 20;
+                                        clicked => { root.set_quota_protection_threshold(20); }
+                                    }
+                                }
+
+                                Text {
+                                    text: "• Accounts whose remaining quota drops to or below this threshold are held in reserve to protect against total depletion.";
+                                    font-size: 11px;
+                                    color: #a1a1aa;
                                 }
                             }
                         }
@@ -1238,33 +1362,29 @@ export component MainWindow inherits Window {
                                             spacing: 8px;
                                             alignment: center;
                                             Text { text: root.i18n.lbl_enable_logging; font-size: 12px; font-weight: 600; color: #ffffff; vertical-alignment: center; }
-                                            ToggleSwitch {
-                                                checked: root.logging_enabled;
-                                                toggled => { root.toggle_logging(); }
+                                            VerticalLayout {
+                                                alignment: center;
+                                                ToggleSwitch {
+                                                    checked: root.logging_enabled;
+                                                    toggled => { root.toggle_logging(); }
+                                                }
                                             }
                                         }
 
                                         HorizontalLayout {
-                                            spacing: 6px;
+                                            spacing: 8px;
                                             alignment: center;
-                                            Text { text: root.i18n.lbl_max_logs + ":"; font-size: 11px; color: #71717a; vertical-alignment: center; }
-                                            ActionButton {
-                                                text: "50";
-                                                is_primary: root.max_log_capacity == 50;
-                                                is_accent: root.max_log_capacity == 50;
-                                                clicked => { root.set_max_logs(50); }
+                                            Text { text: root.i18n.lbl_max_logs + ":"; font-size: 11px; color: #a1a1aa; vertical-alignment: center; }
+                                            LineEdit {
+                                                width: 60px;
+                                                text <=> root.max_log_capacity_input;
+                                                accepted => { root.set_max_log_capacity_str(self.text); }
                                             }
                                             ActionButton {
                                                 text: "100";
                                                 is_primary: root.max_log_capacity == 100;
                                                 is_accent: root.max_log_capacity == 100;
                                                 clicked => { root.set_max_logs(100); }
-                                            }
-                                            ActionButton {
-                                                text: "250";
-                                                is_primary: root.max_log_capacity == 250;
-                                                is_accent: root.max_log_capacity == 250;
-                                                clicked => { root.set_max_logs(250); }
                                             }
                                             ActionButton {
                                                 text: "500";
@@ -1398,9 +1518,19 @@ export component MainWindow inherits Window {
                             }
                         }
 
-                        // Quality of Service
+                        // Quality of Service & Latency
                         HorizontalLayout {
                             spacing: 12px;
+                            StatCard {
+                                title: "AVG LATENCY";
+                                value: root.avg_latency;
+                                subtext: "Average response time";
+                            }
+                            StatCard {
+                                title: "TOTAL TOKENS";
+                                value: root.total_tokens;
+                                subtext: "Cumulative volume";
+                            }
                             StatCard {
                                 title: "SUCCESS RATE";
                                 value: root.stat_success_rate;
@@ -1438,17 +1568,17 @@ export component MainWindow inherits Window {
 
                                     HorizontalLayout {
                                         Rectangle {
-                                            horizontal-stretch: 45;
+                                            horizontal-stretch: root.stat_prompt_pct > 0 ? root.stat_prompt_pct : 1;
                                             background: #3b82f6;
                                             border-radius: 7px;
                                         }
                                         Rectangle {
-                                            horizontal-stretch: 40;
+                                            horizontal-stretch: root.stat_comp_pct > 0 ? root.stat_comp_pct : 1;
                                             background: #10b981;
                                             border-radius: 7px;
                                         }
                                         Rectangle {
-                                            horizontal-stretch: 15;
+                                            horizontal-stretch: root.stat_think_pct > 0 ? root.stat_think_pct : 1;
                                             background: #f59e0b;
                                             border-radius: 7px;
                                         }
@@ -1461,21 +1591,36 @@ export component MainWindow inherits Window {
                                         alignment: center;
                                         spacing: 6px;
                                         Rectangle { width: 8px; height: 8px; border-radius: 4px; background: #3b82f6; }
-                                        Text { text: "Prompt (45%)"; font-size: 11px; color: #a1a1aa; vertical-alignment: center; }
+                                        Text { text: "Prompt (" + root.stat_prompt_pct + "%)"; font-size: 11px; color: #a1a1aa; vertical-alignment: center; }
                                     }
                                     HorizontalLayout {
                                         alignment: center;
                                         spacing: 6px;
                                         Rectangle { width: 8px; height: 8px; border-radius: 4px; background: #10b981; }
-                                        Text { text: "Output (40%)"; font-size: 11px; color: #a1a1aa; vertical-alignment: center; }
+                                        Text { text: "Output (" + root.stat_comp_pct + "%)"; font-size: 11px; color: #a1a1aa; vertical-alignment: center; }
                                     }
                                     HorizontalLayout {
                                         alignment: center;
                                         spacing: 6px;
                                         Rectangle { width: 8px; height: 8px; border-radius: 4px; background: #f59e0b; }
-                                        Text { text: "Thinking (15%)"; font-size: 11px; color: #a1a1aa; vertical-alignment: center; }
+                                        Text { text: "Thinking (" + root.stat_think_pct + "%)"; font-size: 11px; color: #a1a1aa; vertical-alignment: center; }
                                     }
                                 }
+                            }
+                        }
+
+                        // Model Family Breakdown
+                        Rectangle {
+                            background: #18181b;
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: #27272a;
+
+                            VerticalLayout {
+                                padding: 14px;
+                                spacing: 4px;
+                                Text { text: "Model Traffic Distribution"; font-size: 13px; font-weight: 700; color: #ffffff; }
+                                Text { text: root.stat_model_distribution; font-size: 12px; color: #a1a1aa; }
                             }
                         }
                     }
@@ -1535,20 +1680,21 @@ export component MainWindow inherits Window {
                                 HorizontalLayout {
                                     alignment: space-between;
                                     VerticalLayout {
+                                        horizontal-stretch: 1;
                                         spacing: 2px;
                                         Text { text: root.i18n.lbl_quota_mode; font-size: 12px; color: #e4e4e7; }
-                                        Text { text: "Choose between percentage gauges and original remaining fraction"; font-size: 11px; color: #71717a; }
+                                        Text { text: "Choose gauge format"; font-size: 11px; color: #71717a; }
                                     }
                                     HorizontalLayout {
                                         spacing: 6px;
                                         ActionButton {
-                                            text: root.i18n.opt_quota_percent;
+                                            text: "Percent (%)";
                                             is_primary: root.quota_display_mode == "percent";
                                             is_accent: root.quota_display_mode == "percent";
                                             clicked => { root.set_quota_display_mode("percent"); }
                                         }
                                         ActionButton {
-                                            text: root.i18n.opt_quota_fraction;
+                                            text: "Fraction (0-1)";
                                             is_primary: root.quota_display_mode == "fraction";
                                             is_accent: root.quota_display_mode == "fraction";
                                             clicked => { root.set_quota_display_mode("fraction"); }
@@ -1560,13 +1706,71 @@ export component MainWindow inherits Window {
                                 HorizontalLayout {
                                     alignment: space-between;
                                     VerticalLayout {
+                                        horizontal-stretch: 1;
                                         spacing: 2px;
                                         Text { text: root.i18n.lbl_hide_brand; font-size: 12px; color: #e4e4e7; }
-                                        Text { text: "Hides Aroxy brand header in sidebar, smoothly shifting navigation tabs up"; font-size: 11px; color: #71717a; }
+                                        Text { text: "Collapses Aroxy brand header in sidebar"; font-size: 11px; color: #71717a; }
                                     }
-                                    ToggleSwitch {
-                                        checked: root.hide_sidebar_brand;
-                                        toggled => { root.toggle_hide_brand(); }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        ToggleSwitch {
+                                            checked: root.hide_sidebar_brand;
+                                            toggled => { root.toggle_hide_brand(); }
+                                        }
+                                    }
+                                }
+
+                                // Show Traffic Logs in Sidebar Toggle
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        spacing: 2px;
+                                        Text { text: root.i18n.lbl_show_logs; font-size: 12px; color: #e4e4e7; }
+                                        Text { text: "Display traffic logs tab in sidebar navigation"; font-size: 11px; color: #71717a; }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        ToggleSwitch {
+                                            checked: root.show_logs_tab;
+                                            toggled => { root.toggle_show_logs(); }
+                                        }
+                                    }
+                                }
+
+                                // Show Statistics in Sidebar Toggle
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        spacing: 2px;
+                                        Text { text: root.i18n.lbl_show_stats; font-size: 12px; color: #e4e4e7; }
+                                        Text { text: "Display statistics tab in sidebar navigation"; font-size: 11px; color: #71717a; }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        ToggleSwitch {
+                                            checked: root.show_stats_tab;
+                                            toggled => { root.toggle_show_stats(); }
+                                        }
+                                    }
+                                }
+
+                                // Compact Interface Mode Toggle
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        spacing: 2px;
+                                        Text { text: root.i18n.lbl_compact_ui; font-size: 12px; color: #e4e4e7; }
+                                        Text { text: "High-density layout optimized for compact screens"; font-size: 11px; color: #71717a; }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        ToggleSwitch {
+                                            checked: root.compact_ui_mode;
+                                            toggled => { root.toggle_compact_mode(); }
+                                        }
                                     }
                                 }
                             }
@@ -1588,48 +1792,94 @@ export component MainWindow inherits Window {
                                 HorizontalLayout {
                                     alignment: space-between;
                                     VerticalLayout {
+                                        horizontal-stretch: 1;
                                         spacing: 2px;
                                         Text { text: root.i18n.lbl_tray; font-size: 12px; color: #e4e4e7; }
-                                        Text { text: "Keeps the proxy daemon serving API requests silently in the background"; font-size: 11px; color: #71717a; }
+                                        Text { text: "Keeps the proxy daemon serving API requests in the background"; font-size: 11px; color: #71717a; }
                                     }
-                                    ToggleSwitch {
-                                        checked: root.setting_minimize_tray;
-                                        toggled => { root.setting_minimize_tray = !root.setting_minimize_tray; }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        ToggleSwitch {
+                                            checked: root.setting_minimize_tray;
+                                            toggled => {
+                                                root.setting_minimize_tray = !root.setting_minimize_tray;
+                                                root.toggle_minimize_tray();
+                                            }
+                                        }
                                     }
                                 }
 
                                 HorizontalLayout {
                                     alignment: space-between;
                                     VerticalLayout {
+                                        horizontal-stretch: 1;
                                         spacing: 2px;
                                         Text { text: root.i18n.lbl_autostart; font-size: 12px; color: #e4e4e7; }
-                                        Text { text: "Launches Aroxy daemon on user login"; font-size: 11px; color: #71717a; }
+                                        Text { text: "Launches Aroxy daemon automatically on system login"; font-size: 11px; color: #71717a; }
                                     }
-                                    ToggleSwitch {
-                                        checked: root.setting_autostart;
-                                        toggled => { root.setting_autostart = !root.setting_autostart; }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        ToggleSwitch {
+                                            checked: root.setting_autostart;
+                                            toggled => {
+                                                root.setting_autostart = !root.setting_autostart;
+                                                root.toggle_autostart();
+                                            }
+                                        }
                                     }
                                 }
 
                                 HorizontalLayout {
                                     alignment: space-between;
                                     VerticalLayout {
+                                        horizontal-stretch: 1;
                                         spacing: 2px;
                                         Text { text: root.i18n.lbl_portable; font-size: 12px; color: #e4e4e7; }
-                                        Text { text: "Store configuration in aroxy.json next to binary instead of OS AppData"; font-size: 11px; color: #71717a; }
+                                        Text { text: "Store configuration in aroxy.json next to binary"; font-size: 11px; color: #71717a; }
                                     }
-                                    ToggleSwitch {
-                                        checked: root.setting_portable_mode;
-                                        toggled => { root.setting_portable_mode = !root.setting_portable_mode; }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        ToggleSwitch {
+                                            checked: root.setting_portable_mode;
+                                            toggled => {
+                                                root.setting_portable_mode = !root.setting_portable_mode;
+                                                root.toggle_portable_mode();
+                                            }
+                                        }
                                     }
                                 }
 
                                 HorizontalLayout {
-                                    alignment: end;
-                                    ActionButton {
-                                        text: root.i18n.btn_save_settings;
-                                        is_accent: true;
-                                        clicked => { root.save_settings(); }
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        spacing: 2px;
+                                        Text { text: root.i18n.lbl_check_updates; font-size: 12px; color: #e4e4e7; }
+                                        Text { text: "Silently check for new versions on GitHub releases"; font-size: 11px; color: #71717a; }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        ToggleSwitch {
+                                            checked: root.setting_check_updates;
+                                            toggled => { root.toggle_check_updates(); }
+                                        }
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        spacing: 2px;
+                                        Text { text: root.i18n.lbl_clear_logs_exit; font-size: 12px; color: #e4e4e7; }
+                                        Text { text: "Purge memory logs when application process terminates"; font-size: 11px; color: #71717a; }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        ToggleSwitch {
+                                            checked: root.setting_clear_logs_exit;
+                                            toggled => { root.toggle_clear_logs_exit(); }
+                                        }
                                     }
                                 }
                             }
@@ -1682,6 +1932,19 @@ export component MainWindow inherits Window {
                     Text { text: "Claude & GPT Quota: " + root.info_account_claude; font-size: 12px; color: #d4d4d8; }
                     Text { text: "Gemini Quota: " + root.info_account_gemini; font-size: 12px; color: #d4d4d8; }
                     Text { text: "Active Catalog: " + root.info_account_models; font-size: 12px; color: #71717a; }
+                }
+
+                if root.info_account_error != "": Rectangle {
+                    border-radius: 6px;
+                    background: #2b1414;
+                    border-width: 1px;
+                    border-color: #7f1d1d;
+                    VerticalLayout {
+                        padding: 10px;
+                        spacing: 4px;
+                        Text { text: root.i18n.info_error_label + ":"; font-size: 11px; font-weight: 700; color: #f87171; }
+                        Text { text: root.info_account_error; font-size: 11px; color: #fca5a5; wrap: word-wrap; }
+                    }
                 }
             }
         }

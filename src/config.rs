@@ -120,8 +120,12 @@ pub struct UpstreamAccount {
     #[serde(default = "default_quota_reset")]
     pub gemini_reset: String,
     #[serde(default = "default_status")]
-    pub status: String,      // "Active", "Cooling Down", "Expired"
+    pub status: String,      // "ACTIVE", "DISABLED", "ERROR"
     pub is_active: bool,
+    #[serde(default)]
+    pub error_message: Option<String>,
+    #[serde(default)]
+    pub refresh_token: Option<String>,
 }
 
 fn default_pct_100() -> i32 {
@@ -195,6 +199,22 @@ pub struct AppConfig {
     pub heartbeat_interval_secs: u64,
     #[serde(default = "default_fingerprint")]
     pub default_fingerprint: String,
+    #[serde(default = "default_protection_threshold")]
+    pub quota_protection_threshold: u8,
+    #[serde(default = "default_active_refresh_mins")]
+    pub active_account_refresh_mins: u32,
+    #[serde(default = "default_pool_refresh_mins")]
+    pub pool_account_refresh_mins: u32,
+    #[serde(default = "default_true")]
+    pub show_logs_tab: bool,
+    #[serde(default = "default_true")]
+    pub show_stats_tab: bool,
+    #[serde(default)]
+    pub compact_ui_mode: bool,
+    #[serde(default = "default_true")]
+    pub check_updates_startup: bool,
+    #[serde(default)]
+    pub clear_logs_on_exit: bool,
     pub accounts: Vec<UpstreamAccount>,
     pub active_account_id: Option<String>,
     pub models: Vec<ModelCatalogItem>,
@@ -228,6 +248,18 @@ fn default_fingerprint() -> String {
     "Claude Code 2.x".to_string()
 }
 
+fn default_protection_threshold() -> u8 {
+    5
+}
+
+fn default_active_refresh_mins() -> u32 {
+    2
+}
+
+fn default_pool_refresh_mins() -> u32 {
+    15
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -252,6 +284,14 @@ impl Default for AppConfig {
             request_timeout_secs: 120,
             heartbeat_interval_secs: 12,
             default_fingerprint: "Claude Code 2.x".to_string(),
+            quota_protection_threshold: 5,
+            active_account_refresh_mins: 2,
+            pool_account_refresh_mins: 15,
+            show_logs_tab: true,
+            show_stats_tab: true,
+            compact_ui_mode: false,
+            check_updates_startup: true,
+            clear_logs_on_exit: false,
             accounts: Vec::new(),
             active_account_id: None,
             models: vec![
@@ -262,14 +302,6 @@ impl Default for AppConfig {
                     tier: "Pro".to_string(),
                     is_enabled: true,
                     supports_thinking: true,
-                },
-                ModelCatalogItem {
-                    id: "claude-3-5-sonnet".to_string(),
-                    display_name: "Claude 3.5 Sonnet".to_string(),
-                    provider: "anthropic".to_string(),
-                    tier: "Pro".to_string(),
-                    is_enabled: true,
-                    supports_thinking: false,
                 },
                 ModelCatalogItem {
                     id: "claude-sonnet-4-6".to_string(),
@@ -306,6 +338,14 @@ impl Default for AppConfig {
                 ModelCatalogItem {
                     id: "gemini-4-argon".to_string(),
                     display_name: "Gemini 4 Argon".to_string(),
+                    provider: "gemini".to_string(),
+                    tier: "Pro".to_string(),
+                    is_enabled: true,
+                    supports_thinking: true,
+                },
+                ModelCatalogItem {
+                    id: "gemini-3.9-flash".to_string(),
+                    display_name: "Gemini 3.9 Flash".to_string(),
                     provider: "gemini".to_string(),
                     tier: "Pro".to_string(),
                     is_enabled: true,
@@ -352,14 +392,6 @@ impl Default for AppConfig {
                     supports_thinking: true,
                 },
                 ModelCatalogItem {
-                    id: "gemini-2.5-flash".to_string(),
-                    display_name: "Gemini 2.5 Flash Lite".to_string(),
-                    provider: "gemini".to_string(),
-                    tier: "Free".to_string(),
-                    is_enabled: true,
-                    supports_thinking: true,
-                },
-                ModelCatalogItem {
                     id: "gpt-oss-120b-medium".to_string(),
                     display_name: "GPT-OSS 120B (Medium)".to_string(),
                     provider: "openai".to_string(),
@@ -402,7 +434,9 @@ impl AppConfig {
                             || m.id == "gpt-4o"
                             || m.id == "gpt-4o-mini"
                             || m.id == "o3-mini"
-                    });
+                            || m.id == "claude-3-5-sonnet"
+                            || m.id == "gemini-2.5-flash"
+                    }) || !cfg.models.iter().any(|m| m.id == "gemini-3.9-flash");
 
                     if has_obsolete || cfg.models.is_empty() {
                         let defaults = Self::default();
@@ -410,9 +444,11 @@ impl AppConfig {
                         let _ = cfg.save();
                     }
 
-                    // Normalize accounts status to uppercase
+                    // Normalize accounts status to uppercase, preserving ERROR state
                     for acc in &mut cfg.accounts {
-                        acc.status = if acc.is_active { "ACTIVE".to_string() } else { "DISABLED".to_string() };
+                        if acc.status != "ERROR" {
+                            acc.status = if acc.is_active { "ACTIVE".to_string() } else { "DISABLED".to_string() };
+                        }
                     }
 
                     return cfg;

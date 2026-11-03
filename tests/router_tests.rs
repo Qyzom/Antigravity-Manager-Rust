@@ -30,6 +30,8 @@ mod tests {
             gemini_percent: 100,
             gemini_reset: "in 2h".into(),
             status: "Active".into(),
+            error_message: None,
+            refresh_token: None,
             is_active: true,
         };
 
@@ -279,6 +281,8 @@ mod tests {
             gemini_percent: 100,
             gemini_reset: "in 3h".into(),
             status: "Active".into(),
+            error_message: None,
+            refresh_token: None,
             is_active: true,
         };
 
@@ -298,6 +302,8 @@ mod tests {
             gemini_percent: 100,
             gemini_reset: "in 2h".into(),
             status: "Active".into(),
+            error_message: None,
+            refresh_token: None,
             is_active: true,
         };
 
@@ -348,6 +354,8 @@ mod tests {
             gemini_percent: 100,
             gemini_reset: "in 4h".into(),
             status: "Active".into(),
+            error_message: None,
+            refresh_token: None,
             is_active: true,
         };
 
@@ -368,6 +376,8 @@ mod tests {
             gemini_percent: 90,
             gemini_reset: "in 2h".into(),
             status: "Active".into(),
+            error_message: None,
+            refresh_token: None,
             is_active: true,
         };
 
@@ -470,5 +480,179 @@ mod tests {
 
         // Turn 1 and Turn 2 MUST have the exact same fingerprint to ensure prompt cache hit!
         assert_eq!(sid1, sid2);
+    }
+
+    #[test]
+    fn test_multimodal_vision_conversion() {
+        use aroxy::proxy::antigravity::{build_antigravity_payload, build_antigravity_payload_from_claude};
+        use aroxy::proxy::mappers::openai::{OpenAIChatRequest, OpenAIMessage};
+        use serde_json::json;
+
+        // 1. Anthropic-style base64 image block
+        let anthropic_img_req = json!({
+            "model": "claude-3-7-sonnet",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        { "type": "text", "text": "What is in this screenshot?" },
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",
+                                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+                            }
+                        }
+                    ]
+                }
+            ]
+        });
+
+        let pa_payload1 = build_antigravity_payload_from_claude(&anthropic_img_req, "gemini-2.5-pro", None, None);
+        let contents1 = pa_payload1["request"]["contents"].as_array().expect("must have contents array");
+        let parts1 = contents1[0]["parts"].as_array().expect("must have parts array");
+        assert_eq!(parts1.len(), 2);
+        assert_eq!(parts1[0]["text"], "What is in this screenshot?");
+        assert_eq!(parts1[1]["inlineData"]["mimeType"], "image/png");
+        assert!(parts1[1]["inlineData"]["data"].as_str().unwrap().starts_with("iVBORw"));
+
+        // 2. OpenAI-style image_url data URI
+        let openai_img_req = OpenAIChatRequest {
+            model: "gpt-4o".into(),
+            messages: vec![
+                OpenAIMessage {
+                    role: "user".into(),
+                    content: json!([
+                        { "type": "text", "text": "Inspect this image" },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/"
+                            }
+                        }
+                    ]),
+                    reasoning_content: None,
+                    refusal: None,
+                    name: None,
+                }
+            ],
+            stream: false,
+            temperature: None,
+            max_tokens: None,
+            reasoning_effort: None,
+            stream_options: None,
+            extra: Default::default(),
+        };
+
+        let pa_payload2 = build_antigravity_payload(&openai_img_req, "gemini-2.5-pro", None, None);
+        let contents2 = pa_payload2["request"]["contents"].as_array().expect("must have contents array");
+        let parts2 = contents2[0]["parts"].as_array().expect("must have parts array");
+        assert_eq!(parts2.len(), 2);
+        assert_eq!(parts2[0]["text"], "Inspect this image");
+        assert_eq!(parts2[1]["inlineData"]["mimeType"], "image/jpeg");
+        assert_eq!(parts2[1]["inlineData"]["data"], "/9j/4AAQSkZJRgABAQEASABIAAD/");
+    }
+
+    #[test]
+    fn test_quota_protection_threshold_and_error_exclusion() {
+        use aroxy::config::{AppConfig, RoutingStrategy, UpstreamAccount};
+        use aroxy::proxy::balancer::LoadBalancer;
+
+        let balancer = LoadBalancer::new();
+        let mut cfg = AppConfig::default();
+        cfg.routing_strategy = RoutingStrategy::QuotaAware;
+        cfg.quota_protection_threshold = 10; // Protect accounts under 10%
+
+        let acc_low = UpstreamAccount {
+            id: "acc-low".into(),
+            name: "low@gmail.com".into(),
+            provider: "antigravity".into(),
+            base_url: "https://api.anthropic.com".into(),
+            api_key: "tok-low".into(),
+            fingerprint: "Claude Code 2.x".into(),
+            tier: "PRO".into(),
+            quota_used: 95000,
+            quota_limit: 100000,
+            quota_reset: "in 1h".into(),
+            claude_gpt_percent: 5, // 5% < 10% threshold!
+            claude_gpt_reset: "in 1h".into(),
+            gemini_percent: 5,
+            gemini_reset: "in 1h".into(),
+            status: "ACTIVE".into(),
+            error_message: None,
+            refresh_token: None,
+            is_active: true,
+        };
+
+        let acc_healthy = UpstreamAccount {
+            id: "acc-healthy".into(),
+            name: "healthy@gmail.com".into(),
+            provider: "antigravity".into(),
+            base_url: "https://api.anthropic.com".into(),
+            api_key: "tok-healthy".into(),
+            fingerprint: "Claude Code 2.x".into(),
+            tier: "PRO".into(),
+            quota_used: 50000,
+            quota_limit: 100000,
+            quota_reset: "in 2h".into(),
+            claude_gpt_percent: 50,
+            claude_gpt_reset: "in 2h".into(),
+            gemini_percent: 50,
+            gemini_reset: "in 2h".into(),
+            status: "ACTIVE".into(),
+            error_message: None,
+            refresh_token: None,
+            is_active: true,
+        };
+
+        let acc_error = UpstreamAccount {
+            id: "acc-error".into(),
+            name: "error@gmail.com".into(),
+            provider: "antigravity".into(),
+            base_url: "https://api.anthropic.com".into(),
+            api_key: "tok-error".into(),
+            fingerprint: "Claude Code 2.x".into(),
+            tier: "PRO".into(),
+            quota_used: 0,
+            quota_limit: 100000,
+            quota_reset: "in 2h".into(),
+            claude_gpt_percent: 100, // high quota, but status ERROR
+            claude_gpt_reset: "in 2h".into(),
+            gemini_percent: 100,
+            gemini_reset: "in 2h".into(),
+            status: "ERROR".into(),
+            error_message: Some("Invalid credentials".into()),
+            refresh_token: None,
+            is_active: false,
+        };
+
+        cfg.accounts = vec![acc_low.clone(), acc_healthy.clone(), acc_error.clone()];
+
+        // acc_error must be completely ignored.
+        // acc_low is under threshold (5% < 10%), so balancer routes to acc-healthy.
+        let chosen = balancer.select_account(&cfg, "claude-sonnet-4-6", None).expect("must select account");
+        assert_eq!(chosen.id, "acc-healthy");
+
+        // If only acc_low and acc_error exist, balancer falls back gracefully to acc_low rather than failing
+        cfg.accounts = vec![acc_low.clone(), acc_error.clone()];
+        let fallback = balancer.select_account(&cfg, "claude-sonnet-4-6", None).expect("must select fallback");
+        assert_eq!(fallback.id, "acc-low");
+    }
+
+    #[test]
+    fn test_jwt_email_extraction() {
+        use aroxy::proxy::antigravity::extract_email_from_jwt;
+
+        // Valid JWT structure with header.payload.signature
+        // payload: {"email":"developer@antigravity.test","sub":"12345"}
+        // base64url of {"email":"developer@antigravity.test","sub":"12345"}:
+        // eyJlbWFpbCI6ImRldmVsb3BlckBhbnRpZ3Jhdml0eS50ZXN0Iiwic3ViIjoiMTIzNDUifQ
+        let fake_jwt = "eyJhbGciOiJSUzI1NiJ9.eyJlbWFpbCI6ImRldmVsb3BlckBhbnRpZ3Jhdml0eS50ZXN0Iiwic3ViIjoiMTIzNDUifQ.signaturesig";
+        let email = extract_email_from_jwt(fake_jwt);
+        assert_eq!(email, Some("developer@antigravity.test".to_string()));
+
+        // Invalid JWT
+        assert_eq!(extract_email_from_jwt("random-junk"), None);
     }
 }

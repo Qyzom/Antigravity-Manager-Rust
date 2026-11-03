@@ -224,13 +224,13 @@ impl LoadBalancer {
             };
         }
 
-        // 2. Filter healthy accounts (not in cooldown)
+        // 2. Filter healthy accounts (not in cooldown, active, not in ERROR)
         let mut healthy_accounts: Vec<UpstreamAccount> = {
             let cds = self.account_cooldowns.read();
             quota_eligible
                 .iter()
                 .filter(|a| {
-                    if a.status != "Active" {
+                    if !a.status.eq_ignore_ascii_case("ACTIVE") || !a.is_active {
                         return false;
                     }
                     if let Some(exp) = cds.get(&a.id) {
@@ -254,6 +254,24 @@ impl LoadBalancer {
         if healthy_accounts.is_empty() {
             return Err(RoutingError::AllCoolingDown);
         }
+
+        // Apply Quota Protection Threshold:
+        // Accounts with remaining quota <= threshold (default 5%) are held in reserve
+        let threshold = config.quota_protection_threshold as i32;
+        let above_threshold: Vec<UpstreamAccount> = healthy_accounts
+            .iter()
+            .filter(|a| match family {
+                ModelFamily::ClaudeOrGpt => a.claude_gpt_percent > threshold,
+                ModelFamily::Gemini => a.gemini_percent > threshold,
+            })
+            .cloned()
+            .collect();
+
+        let pool = if !above_threshold.is_empty() {
+            above_threshold
+        } else {
+            healthy_accounts.clone()
+        };
 
         // 3. Routing strategy overrides (e.g. strict Failover)
         if config.routing_strategy == RoutingStrategy::Failover {
@@ -334,12 +352,12 @@ impl LoadBalancer {
         let chosen_acc = match config.routing_strategy {
             RoutingStrategy::RoundRobin => {
                 let idx = (self.rr_counter.fetch_add(1, Ordering::Relaxed) as usize)
-                    % healthy_accounts.len();
-                healthy_accounts[idx].clone()
+                    % pool.len();
+                pool[idx].clone()
             }
             RoutingStrategy::QuotaAware | RoutingStrategy::Failover => {
                 // Select account with maximum remaining percentage for this family
-                healthy_accounts
+                pool
                     .into_iter()
                     .max_by_key(|a| match family {
                         ModelFamily::ClaudeOrGpt => a.claude_gpt_percent,

@@ -106,6 +106,15 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_autostart: t.lbl_autostart.into(),
         lbl_portable: t.lbl_portable.into(),
         btn_save_settings: t.btn_save_settings.into(),
+        lbl_show_logs: t.lbl_show_logs.into(),
+        lbl_show_stats: t.lbl_show_stats.into(),
+        lbl_compact_ui: t.lbl_compact_ui.into(),
+        lbl_check_updates: t.lbl_check_updates.into(),
+        lbl_clear_logs_exit: t.lbl_clear_logs_exit.into(),
+        lbl_quota_protection: t.lbl_quota_protection.into(),
+        lbl_active_refresh: t.lbl_active_refresh.into(),
+        lbl_pool_refresh: t.lbl_pool_refresh.into(),
+        info_error_label: t.info_error_label.into(),
     };
     ui.set_i18n(i18n_struct);
     ui.set_current_language(lang.to_index());
@@ -176,6 +185,129 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // Background dual-cadence account refresh task
+    let bg_cfg = Arc::clone(&config_arc);
+    let bg_ver = Arc::clone(&cfg_version);
+    let mut bg_stop_rx = stop_receiver.clone();
+
+    tokio::spawn(async move {
+        let mut last_active_refresh = tokio::time::Instant::now();
+        let mut last_pool_refresh = tokio::time::Instant::now();
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .unwrap_or_default();
+
+        loop {
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_secs(10)) => {}
+                _ = bg_stop_rx.changed() => {
+                    break;
+                }
+            }
+
+            let (active_id, active_mins, pool_mins) = {
+                let cfg = bg_cfg.read();
+                (
+                    cfg.active_account_id.clone(),
+                    cfg.active_account_refresh_mins.clamp(1, 10),
+                    cfg.pool_account_refresh_mins.clamp(1, 60),
+                )
+            };
+
+            let now = tokio::time::Instant::now();
+            let refresh_active = now.duration_since(last_active_refresh) >= Duration::from_secs((active_mins as u64) * 60);
+            let refresh_pool = now.duration_since(last_pool_refresh) >= Duration::from_secs((pool_mins as u64) * 60);
+
+            if refresh_active || refresh_pool {
+                let mut accounts_to_refresh = Vec::new();
+                {
+                    let cfg = bg_cfg.read();
+                    for acc in &cfg.accounts {
+                        if acc.status == "ERROR" || !acc.is_active {
+                            continue;
+                        }
+                        let is_active_acc = active_id.as_deref() == Some(&acc.id);
+                        if is_active_acc && refresh_active {
+                            accounts_to_refresh.push((acc.id.clone(), acc.api_key.clone(), acc.refresh_token.clone(), true));
+                        } else if !is_active_acc && refresh_pool {
+                            accounts_to_refresh.push((acc.id.clone(), acc.api_key.clone(), acc.refresh_token.clone(), false));
+                        }
+                    }
+                }
+
+                if refresh_active {
+                    last_active_refresh = now;
+                }
+                if refresh_pool {
+                    last_pool_refresh = now;
+                }
+
+                for (id, mut token, refresh_tok, is_active_acc) in accounts_to_refresh {
+                    let mut quota_res = antigravity::fetch_models_and_quota(&client, &token, None).await;
+
+                    if quota_res.is_err() {
+                        if let Some(ref rtok) = refresh_tok {
+                            if let Ok(ref_res) = antigravity::refresh_token(&client, rtok).await {
+                                token = ref_res.access_token.clone();
+                                {
+                                    let mut cfg = bg_cfg.write();
+                                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id) {
+                                        acc.api_key = token.clone();
+                                    }
+                                    let _ = cfg.save();
+                                }
+                                quota_res = antigravity::fetch_models_and_quota(&client, &token, None).await;
+                            }
+                        }
+                    }
+
+                    match quota_res {
+                        Ok((models, used, limit, reset, detailed_quota)) => {
+                            {
+                                let mut cfg = bg_cfg.write();
+                                if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id) {
+                                    acc.quota_used = used;
+                                    acc.quota_limit = limit;
+                                    acc.quota_reset = reset;
+                                    acc.claude_gpt_percent = detailed_quota.claude_gpt_percent;
+                                    acc.claude_gpt_reset = detailed_quota.claude_gpt_reset;
+                                    acc.gemini_percent = detailed_quota.gemini_percent;
+                                    acc.gemini_reset = detailed_quota.gemini_reset;
+                                    acc.error_message = None;
+                                    acc.status = "ACTIVE".to_string();
+                                }
+                                if is_active_acc {
+                                    let clean: Vec<_> = models.into_iter().filter(|x| !x.id.starts_with("chat_") && !x.id.contains("gemini-3.5")).collect();
+                                    if !clean.is_empty() {
+                                        cfg.models = clean;
+                                    }
+                                }
+                                let _ = cfg.save();
+                            }
+                            bg_ver.fetch_add(1, Ordering::SeqCst);
+                        }
+                        Err(e) => {
+                            let err_str = e.to_string();
+                            if err_str.contains("401") || err_str.contains("403") || err_str.contains("invalid_grant") {
+                                {
+                                    let mut cfg = bg_cfg.write();
+                                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id) {
+                                        acc.status = "ERROR".to_string();
+                                        acc.is_active = false;
+                                        acc.error_message = Some(format!("Authentication failed: {}", err_str));
+                                    }
+                                    let _ = cfg.save();
+                                }
+                                bg_ver.fetch_add(1, Ordering::SeqCst);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+
     if args.headless {
         log::info!("Aroxy running in headless daemon mode. Press Ctrl+C to stop.");
         tokio::signal::ctrl_c().await?;
@@ -212,6 +344,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_group_reasoning_clones(cfg.group_reasoning_clones);
         main_window.set_quota_display_mode(cfg.quota_display_mode.clone().into());
         main_window.set_hide_sidebar_brand(cfg.hide_sidebar_brand);
+        main_window.set_show_logs_tab(cfg.show_logs_tab);
+        main_window.set_show_stats_tab(cfg.show_stats_tab);
+        main_window.set_compact_ui_mode(cfg.compact_ui_mode);
+        main_window.set_setting_check_updates(cfg.check_updates_startup);
+        main_window.set_setting_clear_logs_exit(cfg.clear_logs_on_exit);
+        main_window.set_quota_protection_threshold(cfg.quota_protection_threshold as i32);
+        main_window.set_active_account_refresh_mins(cfg.active_account_refresh_mins as i32);
+        main_window.set_pool_account_refresh_mins(cfg.pool_account_refresh_mins as i32);
         main_window.set_setting_timeout_secs(cfg.request_timeout_secs as i32);
         main_window.set_setting_heartbeat_secs(cfg.heartbeat_interval_secs as i32);
         main_window.set_setting_minimize_tray(cfg.minimize_to_tray);
@@ -224,6 +364,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_failover_on_429(cfg.failover_on_429);
         main_window.set_logging_enabled(cfg.log_enabled);
         main_window.set_max_log_capacity(cfg.max_log_entries as i32);
+        main_window.set_max_log_capacity_input(cfg.max_log_entries.to_string().into());
 
         for acc in &cfg.accounts {
             accounts_model.push(AccountData {
@@ -244,6 +385,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 gemini_reset: acc.gemini_reset.clone().into(),
                 status: acc.status.clone().into(),
                 is_active: acc.is_active,
+                error_message: acc.error_message.clone().unwrap_or_default().into(),
             });
         }
 
@@ -374,10 +516,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tokio::spawn(async move {
                 let http_client = reqwest::Client::new();
                 let mut access_token = token.clone();
+                let mut refresh_token_opt = None;
 
                 if token.starts_with("1//") {
+                    refresh_token_opt = Some(token.clone());
                     if let Ok(tok_res) = antigravity::refresh_token(&http_client, &token).await {
                         access_token = tok_res.access_token;
+                        if tok_res.refresh_token.is_some() {
+                            refresh_token_opt = tok_res.refresh_token;
+                        }
                     }
                 }
 
@@ -422,6 +569,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     gemini_percent: detailed_quota.gemini_percent,
                     gemini_reset: detailed_quota.gemini_reset,
                     status: "ACTIVE".to_string(),
+                    error_message: None,
+                    refresh_token: refresh_token_opt,
                     is_active: true,
                 };
 
@@ -526,6 +675,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 h.set_info_account_claude(format!("{}% Available (Resets {})", acc.claude_gpt_percent, acc.claude_gpt_reset).into());
                 h.set_info_account_gemini(format!("{}% Available (Resets {})", acc.gemini_percent, acc.gemini_reset).into());
                 h.set_info_account_models(format!("{} upstream models available", cfg.models.len()).into());
+                h.set_info_account_error(acc.error_message.clone().unwrap_or_default().into());
                 h.set_show_account_info(true);
             }
         }
@@ -795,21 +945,122 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // Save Settings Callback
-    let c_set = Arc::clone(&config_arc);
-    let h_set = window_handle.clone();
-    main_window.on_save_settings(move || {
-        if let Some(h) = h_set.upgrade() {
-            let autostart_enabled = h.get_setting_autostart();
-            let _ = set_autostart(autostart_enabled);
+    // Instant Auto-Save Preferences Callbacks
+    let c_tray = Arc::clone(&config_arc);
+    main_window.on_toggle_minimize_tray(move || {
+        let mut cfg = c_tray.write();
+        cfg.minimize_to_tray = !cfg.minimize_to_tray;
+        let _ = cfg.save();
+    });
 
-            let mut cfg = c_set.write();
-            cfg.minimize_to_tray = h.get_setting_minimize_tray();
-            cfg.portable_mode = h.get_setting_portable_mode();
-            cfg.autostart = autostart_enabled;
-            cfg.request_timeout_secs = h.get_setting_timeout_secs() as u64;
-            cfg.heartbeat_interval_secs = h.get_setting_heartbeat_secs() as u64;
+    let c_auto = Arc::clone(&config_arc);
+    main_window.on_toggle_autostart(move || {
+        let next_val = {
+            let mut cfg = c_auto.write();
+            cfg.autostart = !cfg.autostart;
             let _ = cfg.save();
+            cfg.autostart
+        };
+        let _ = set_autostart(next_val);
+    });
+
+    let c_port = Arc::clone(&config_arc);
+    main_window.on_toggle_portable_mode(move || {
+        let mut cfg = c_port.write();
+        cfg.portable_mode = !cfg.portable_mode;
+        let _ = cfg.save();
+    });
+
+    let c_upd = Arc::clone(&config_arc);
+    main_window.on_toggle_check_updates(move || {
+        let mut cfg = c_upd.write();
+        cfg.check_updates_startup = !cfg.check_updates_startup;
+        let _ = cfg.save();
+    });
+
+    let c_clx = Arc::clone(&config_arc);
+    main_window.on_toggle_clear_logs_exit(move || {
+        let mut cfg = c_clx.write();
+        cfg.clear_logs_on_exit = !cfg.clear_logs_on_exit;
+        let _ = cfg.save();
+    });
+
+    let c_slog = Arc::clone(&config_arc);
+    main_window.on_toggle_show_logs(move || {
+        let mut cfg = c_slog.write();
+        cfg.show_logs_tab = !cfg.show_logs_tab;
+        let _ = cfg.save();
+    });
+
+    let c_sstat = Arc::clone(&config_arc);
+    main_window.on_toggle_show_stats(move || {
+        let mut cfg = c_sstat.write();
+        cfg.show_stats_tab = !cfg.show_stats_tab;
+        let _ = cfg.save();
+    });
+
+    let c_cmp = Arc::clone(&config_arc);
+    main_window.on_toggle_compact_mode(move || {
+        let mut cfg = c_cmp.write();
+        cfg.compact_ui_mode = !cfg.compact_ui_mode;
+        let _ = cfg.save();
+    });
+
+    let c_qpt = Arc::clone(&config_arc);
+    let h_qpt = window_handle.clone();
+    main_window.on_set_quota_protection_threshold(move |val| {
+        {
+            let mut cfg = c_qpt.write();
+            cfg.quota_protection_threshold = val as u8;
+            let _ = cfg.save();
+        }
+        if let Some(h) = h_qpt.upgrade() {
+            h.set_quota_protection_threshold(val);
+        }
+    });
+
+    let c_arc = Arc::clone(&config_arc);
+    let h_arc = window_handle.clone();
+    main_window.on_set_active_refresh_cadence(move |mins| {
+        {
+            let mut cfg = c_arc.write();
+            cfg.active_account_refresh_mins = mins as u32;
+            let _ = cfg.save();
+        }
+        if let Some(h) = h_arc.upgrade() {
+            h.set_active_account_refresh_mins(mins);
+        }
+    });
+
+    let c_prc = Arc::clone(&config_arc);
+    let h_prc = window_handle.clone();
+    main_window.on_set_pool_refresh_cadence(move |mins| {
+        {
+            let mut cfg = c_prc.write();
+            cfg.pool_account_refresh_mins = mins as u32;
+            let _ = cfg.save();
+        }
+        if let Some(h) = h_prc.upgrade() {
+            h.set_pool_account_refresh_mins(mins);
+        }
+    });
+
+    let s_mlog = Arc::clone(&stats_arc);
+    let c_mlog = Arc::clone(&config_arc);
+    let h_mlog = window_handle.clone();
+    main_window.on_set_max_log_capacity_str(move |val_slint| {
+        if let Ok(num) = val_slint.to_string().trim().parse::<usize>() {
+            let clamped = num.clamp(10, 5000);
+            s_mlog.max_log_capacity.store(clamped, Ordering::Relaxed);
+            {
+                let mut cfg = c_mlog.write();
+                cfg.max_log_entries = clamped;
+                let _ = cfg.save();
+            }
+            if let Some(h) = h_mlog.upgrade() {
+                h.set_max_log_capacity(clamped as i32);
+                h.set_max_log_capacity_input(clamped.to_string().into());
+            }
         }
     });
 
@@ -852,6 +1103,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             w.set_stat_prompt_tokens(prompt_tok.to_string().into());
             w.set_stat_completion_tokens(comp_tok.to_string().into());
             w.set_stat_thinking_tokens(think_tok.to_string().into());
+
+            let total_tok = prompt_tok + comp_tok + think_tok;
+            if total_tok > 0 {
+                let p_pct = ((prompt_tok as f64 / total_tok as f64) * 100.0).round() as i32;
+                let c_pct = ((comp_tok as f64 / total_tok as f64) * 100.0).round() as i32;
+                let t_pct = 100 - p_pct - c_pct;
+                w.set_stat_prompt_pct(p_pct.max(1));
+                w.set_stat_comp_pct(c_pct.max(1));
+                w.set_stat_think_pct(t_pct.max(1));
+            } else {
+                w.set_stat_prompt_pct(50);
+                w.set_stat_comp_pct(40);
+                w.set_stat_think_pct(10);
+            }
+
             let succ_rate = if reqs > 0 {
                 format!("{:.1}%", (succ as f64 / reqs as f64) * 100.0)
             } else {
@@ -890,6 +1156,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 gemini_reset: acc.gemini_reset.clone().into(),
                                 status: acc.status.clone().into(),
                                 is_active: acc.is_active,
+                                error_message: acc.error_message.clone().unwrap_or_default().into(),
                             }
                         })
                         .collect::<Vec<_>>(),
@@ -951,5 +1218,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     slint::run_event_loop()?;
 
     let _ = stop_sender.send(true);
+    if config_arc.read().clear_logs_on_exit {
+        stats_arc.clear_logs();
+    }
     Ok(())
 }

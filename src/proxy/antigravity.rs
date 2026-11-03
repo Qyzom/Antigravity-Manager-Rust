@@ -43,6 +43,26 @@ pub struct GoogleTokenResponse {
     pub refresh_token: Option<String>,
     pub expires_in: Option<i64>,
     pub token_type: Option<String>,
+    pub id_token: Option<String>,
+}
+
+pub fn extract_email_from_jwt(jwt: &str) -> Option<String> {
+    let parts: Vec<&str> = jwt.split('.').collect();
+    if parts.len() >= 2 {
+        let payload = parts[1];
+        use base64::Engine;
+        let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(payload)
+            .or_else(|_| base64::engine::general_purpose::STANDARD.decode(payload));
+        if let Ok(bytes) = decoded {
+            if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                if let Some(email) = val.get("email").and_then(|e| e.as_str()) {
+                    return Some(email.to_string());
+                }
+            }
+        }
+    }
+    None
 }
 
 #[derive(Debug, Deserialize)]
@@ -488,18 +508,46 @@ pub fn build_antigravity_payload(
     let mut system_parts = Vec::new();
 
     for msg in &req.messages {
-        let content_str = match &msg.content {
-            Value::String(s) => s.clone(),
-            other => other.to_string(),
-        };
+        let mut msg_parts = Vec::new();
+        match &msg.content {
+            Value::String(s) => {
+                msg_parts.push(serde_json::json!({ "text": s }));
+            }
+            Value::Array(arr) => {
+                for item in arr {
+                    let item_type = item.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                    if item_type == "text" {
+                        if let Some(t) = item.get("text").and_then(|t| t.as_str()) {
+                            msg_parts.push(serde_json::json!({ "text": t }));
+                        }
+                    } else if item_type == "image_url" {
+                        if let Some(img_url) = item.get("image_url").and_then(|u| u.get("url").and_then(|s| s.as_str())) {
+                            if let Some(rest) = img_url.strip_prefix("data:") {
+                                if let Some((mime, b64)) = rest.split_once(";base64,") {
+                                    msg_parts.push(serde_json::json!({
+                                        "inlineData": {
+                                            "mimeType": mime,
+                                            "data": b64
+                                        }
+                                    }));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            other => {
+                msg_parts.push(serde_json::json!({ "text": other.to_string() }));
+            }
+        }
 
         if msg.role == "system" || msg.role == "developer" {
-            system_parts.push(serde_json::json!({ "text": content_str }));
+            system_parts.extend(msg_parts);
         } else {
             let role = if msg.role == "assistant" { "model" } else { "user" };
             contents.push(serde_json::json!({
                 "role": role,
-                "parts": [{ "text": content_str }]
+                "parts": msg_parts
             }));
         }
     }
@@ -587,6 +635,19 @@ pub fn build_antigravity_payload_from_claude(
                     if b_type == "text" {
                         if let Some(t) = block.get("text").and_then(|v| v.as_str()) {
                             parts.push(serde_json::json!({ "text": t }));
+                        }
+                    } else if b_type == "image" {
+                        if let Some(source) = block.get("source") {
+                            let media_type = source.get("media_type").and_then(|m| m.as_str()).unwrap_or("image/png");
+                            let b64_data = source.get("data").and_then(|d| d.as_str()).unwrap_or("");
+                            if !b64_data.is_empty() {
+                                parts.push(serde_json::json!({
+                                    "inlineData": {
+                                        "mimeType": media_type,
+                                        "data": b64_data
+                                    }
+                                }));
+                            }
                         }
                     } else if b_type == "thinking" {
                         if let Some(th) = block.get("thinking").and_then(|v| v.as_str()) {

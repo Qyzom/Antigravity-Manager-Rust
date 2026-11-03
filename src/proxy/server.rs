@@ -45,15 +45,22 @@ async fn oauth_callback(
     let port = state.config.read().port;
     let redirect_uri = format!("http://127.0.0.1:{}/oauth/callback", port);
 
-    let (access_token, email, tier, quota_used, quota_limit, quota_reset, models, detailed_quota) =
+    let (access_token, refresh_token_opt, email, tier, quota_used, quota_limit, quota_reset, models, detailed_quota) =
         if let Some(code) = params.get("code") {
             match crate::proxy::antigravity::exchange_code(&state.http_client, code, &redirect_uri).await {
                 Ok(token_resp) => {
                     let acc_token = token_resp.access_token;
-                    let email = match crate::proxy::antigravity::fetch_user_info(&state.http_client, &acc_token).await {
-                        Ok(info) => info.email,
-                        Err(_) => "antigravity.user@gmail.com".to_string(),
-                    };
+                    let ref_token = token_resp.refresh_token;
+                    let email = token_resp
+                        .id_token
+                        .as_deref()
+                        .and_then(crate::proxy::antigravity::extract_email_from_jwt)
+                        .unwrap_or_else(|| {
+                            futures_util::FutureExt::now_or_never(crate::proxy::antigravity::fetch_user_info(&state.http_client, &acc_token))
+                                .and_then(|r| r.ok())
+                                .map(|i| i.email)
+                                .unwrap_or_else(|| "antigravity.user@gmail.com".to_string())
+                        });
                     let (project_id, tier) = crate::proxy::antigravity::fetch_project_and_tier(&state.http_client, &acc_token).await;
                     let (models, used, limit, reset, det) = match crate::proxy::antigravity::fetch_models_and_quota(&state.http_client, &acc_token, project_id.as_deref()).await {
                         Ok(res) => (Some(res.0), res.1, res.2, res.3, res.4),
@@ -62,7 +69,7 @@ async fn oauth_callback(
                             (None, 0, 100_000, "in 4h 00m".to_string(), det)
                         }
                     };
-                    (acc_token, email, tier, used, limit, reset, models, det)
+                    (acc_token, ref_token, email, tier, used, limit, reset, models, det)
                 }
                 Err(e) => {
                     log::warn!("OAuth exchange error: {}", e);
@@ -73,14 +80,14 @@ async fn oauth_callback(
                         gemini_percent: 100,
                         gemini_reset: "in 4h 00m".to_string(),
                     };
-                    (raw_token, "antigravity.user@gmail.com".to_string(), "PRO".to_string(), 0, 100_000, "in 4h 00m".to_string(), None, det)
+                    (raw_token, None, "antigravity.user@gmail.com".to_string(), "PRO".to_string(), 0, 100_000, "in 4h 00m".to_string(), None, det)
                 }
             }
         } else {
             let raw_token = params.get("token").or_else(|| params.get("access_token")).cloned().unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
             let email = params.get("email").cloned().unwrap_or_else(|| "antigravity.user@gmail.com".to_string());
             let det = crate::proxy::antigravity::fetch_user_quota_summary(&state.http_client, &raw_token).await;
-            (raw_token, email, "PRO".to_string(), 0, 100_000, "in 4h 00m".to_string(), None, det)
+            (raw_token, None, email, "PRO".to_string(), 0, 100_000, "in 4h 00m".to_string(), None, det)
         };
 
     // Add or update account in config
@@ -88,6 +95,9 @@ async fn oauth_callback(
         let mut cfg = state.config.write();
         if let Some(existing) = cfg.accounts.iter_mut().find(|a| a.name == email) {
             existing.api_key = access_token;
+            if refresh_token_opt.is_some() {
+                existing.refresh_token = refresh_token_opt;
+            }
             existing.tier = tier.clone();
             existing.quota_used = quota_used;
             existing.quota_limit = quota_limit;
@@ -96,7 +106,8 @@ async fn oauth_callback(
             existing.claude_gpt_reset = detailed_quota.claude_gpt_reset;
             existing.gemini_percent = detailed_quota.gemini_percent;
             existing.gemini_reset = detailed_quota.gemini_reset;
-            existing.status = "Active".to_string();
+            existing.status = "ACTIVE".to_string();
+            existing.error_message = None;
             existing.is_active = true;
             cfg.active_account_id = Some(existing.id.clone());
         } else {
@@ -107,6 +118,7 @@ async fn oauth_callback(
                 provider: "antigravity".to_string(),
                 base_url: "https://api.anthropic.com".to_string(),
                 api_key: access_token,
+                refresh_token: refresh_token_opt,
                 fingerprint: "Claude Code 2.x".to_string(),
                 tier: tier.clone(),
                 quota_used,
@@ -116,7 +128,8 @@ async fn oauth_callback(
                 claude_gpt_reset: detailed_quota.claude_gpt_reset,
                 gemini_percent: detailed_quota.gemini_percent,
                 gemini_reset: detailed_quota.gemini_reset,
-                status: "Active".to_string(),
+                status: "ACTIVE".to_string(),
+                error_message: None,
                 is_active: true,
             });
             cfg.active_account_id = Some(new_id);
@@ -286,22 +299,40 @@ async fn execute_chat_request(
 
         let status = res.status();
         let is_429 = status == StatusCode::TOO_MANY_REQUESTS;
+        let is_auth_error = status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
 
         if !status.is_success() {
             let err_text = res.text().await.unwrap_or_default();
             let lat = start_time.elapsed().as_millis() as u64;
             state.stats.record_request("POST", "/v1/chat/completions", requested_model, status.as_u16(), 0, lat);
-            if let Ok(parsed) = serde_json::from_str::<Value>(&err_text) {
-                let msg = parsed.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).unwrap_or(&err_text);
-                return ((status, Json(json!({
-                    "error": {
-                        "message": format!("Google Antigravity Upstream: {}", msg),
-                        "type": "upstream_error",
-                        "code": status.as_u16().to_string()
+
+            let error_msg = if let Ok(parsed) = serde_json::from_str::<Value>(&err_text) {
+                parsed.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).unwrap_or(&err_text).to_string()
+            } else {
+                err_text.clone()
+            };
+
+            if is_auth_error || error_msg.contains("invalid_grant") || error_msg.contains("PERMISSION_DENIED") {
+                log::warn!("Upstream account auth failed for {}: {}", account.name, error_msg);
+                {
+                    let mut cfg = state.config.write();
+                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
+                        acc.status = "ERROR".to_string();
+                        acc.is_active = false;
+                        acc.error_message = Some(format!("HTTP {}: {}", status.as_u16(), error_msg));
                     }
-                }))).into_response(), is_429);
+                    let _ = cfg.save();
+                }
+                state.cfg_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             }
-            return ((status, err_text).into_response(), is_429);
+
+            return ((status, Json(json!({
+                "error": {
+                    "message": format!("Google Antigravity Upstream: {}", error_msg),
+                    "type": "upstream_error",
+                    "code": status.as_u16().to_string()
+                }
+            }))).into_response(), is_429 || is_auth_error);
         }
 
         if is_streaming {
@@ -430,22 +461,40 @@ async fn execute_chat_request(
 
         let status = res.status();
         let is_429 = status == StatusCode::TOO_MANY_REQUESTS;
+        let is_auth_error = status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
 
         if !status.is_success() {
             let err_text = res.text().await.unwrap_or_default();
             let lat = start_time.elapsed().as_millis() as u64;
             state.stats.record_request("POST", "/v1/chat/completions", requested_model, status.as_u16(), 0, lat);
-            if let Ok(parsed) = serde_json::from_str::<Value>(&err_text) {
-                let msg = parsed.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).unwrap_or(&err_text);
-                return ((status, Json(json!({
-                    "error": {
-                        "message": format!("Google Antigravity Upstream: {}", msg),
-                        "type": "upstream_error",
-                        "code": status.as_u16().to_string()
+
+            let error_msg = if let Ok(parsed) = serde_json::from_str::<Value>(&err_text) {
+                parsed.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).unwrap_or(&err_text).to_string()
+            } else {
+                err_text.clone()
+            };
+
+            if is_auth_error || error_msg.contains("invalid_grant") || error_msg.contains("PERMISSION_DENIED") {
+                log::warn!("Upstream account auth failed for {}: {}", account.name, error_msg);
+                {
+                    let mut cfg = state.config.write();
+                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
+                        acc.status = "ERROR".to_string();
+                        acc.is_active = false;
+                        acc.error_message = Some(format!("HTTP {}: {}", status.as_u16(), error_msg));
                     }
-                }))).into_response(), is_429);
+                    let _ = cfg.save();
+                }
+                state.cfg_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             }
-            return ((status, err_text).into_response(), is_429);
+
+            return ((status, Json(json!({
+                "error": {
+                    "message": format!("Google Antigravity Upstream: {}", error_msg),
+                    "type": "upstream_error",
+                    "code": status.as_u16().to_string()
+                }
+            }))).into_response(), is_429 || is_auth_error);
         }
 
         if is_streaming {
@@ -669,22 +718,40 @@ async fn execute_claude_request(
 
         let status = res.status();
         let is_429 = status == StatusCode::TOO_MANY_REQUESTS;
+        let is_auth_error = status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
 
         if !status.is_success() {
             let err_text = res.text().await.unwrap_or_default();
             let lat = start_time.elapsed().as_millis() as u64;
             state.stats.record_request("POST", "/v1/messages", requested_model, status.as_u16(), 0, lat);
-            if let Ok(parsed) = serde_json::from_str::<Value>(&err_text) {
-                let msg = parsed.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).unwrap_or(&err_text);
-                return ((status, Json(json!({
-                    "type": "error",
-                    "error": {
-                        "type": "api_error",
-                        "message": format!("Google Antigravity: {}", msg)
+
+            let error_msg = if let Ok(parsed) = serde_json::from_str::<Value>(&err_text) {
+                parsed.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).unwrap_or(&err_text).to_string()
+            } else {
+                err_text.clone()
+            };
+
+            if is_auth_error || error_msg.contains("invalid_grant") || error_msg.contains("PERMISSION_DENIED") {
+                log::warn!("Upstream account auth failed for {}: {}", account.name, error_msg);
+                {
+                    let mut cfg = state.config.write();
+                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
+                        acc.status = "ERROR".to_string();
+                        acc.is_active = false;
+                        acc.error_message = Some(format!("HTTP {}: {}", status.as_u16(), error_msg));
                     }
-                }))).into_response(), is_429);
+                    let _ = cfg.save();
+                }
+                state.cfg_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             }
-            return ((status, err_text).into_response(), is_429);
+
+            return ((status, Json(json!({
+                "type": "error",
+                "error": {
+                    "type": "api_error",
+                    "message": format!("Google Antigravity: {}", error_msg)
+                }
+            }))).into_response(), is_429 || is_auth_error);
         }
 
         if is_streaming {
