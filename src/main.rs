@@ -27,6 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config_arc = Arc::new(RwLock::new(config));
     let stats_arc = Arc::new(ProxyStats::new());
+    let balancer_arc = Arc::new(aroxy::proxy::balancer::LoadBalancer::new());
     let cfg_version = Arc::new(AtomicU64::new(1));
     let (stop_sender, stop_receiver) = watch::channel(false);
 
@@ -35,6 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Spawn proxy server in background
     let s_cfg = Arc::clone(&config_arc);
     let s_stats = Arc::clone(&stats_arc);
+    let s_balancer = Arc::clone(&balancer_arc);
     let mut s_stop_rx = stop_receiver.clone();
 
     tokio::spawn(async move {
@@ -50,6 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let state = AppState {
             config: s_cfg,
             stats: s_stats,
+            balancer: s_balancer,
             http_client: client,
         };
 
@@ -150,6 +153,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_healthy_accounts_count(cfg.accounts.iter().filter(|a| a.is_active).count() as i32);
         main_window.set_routing_strategy_index(cfg.routing_strategy.to_index());
         main_window.set_quota_refresh_interval(cfg.quota_refresh_interval_secs as i32);
+        main_window.set_cache_affinity_mode_index(cfg.cache_affinity_mode.to_index());
+        main_window.set_session_sticky_ttl_secs(cfg.session_sticky_ttl_secs as i32);
+        main_window.set_quota_imbalance_threshold(cfg.quota_imbalance_threshold as i32);
+        main_window.set_failover_on_429(cfg.failover_on_429);
     }
 
     // Toggle model callback
@@ -366,6 +373,64 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // Set cache affinity mode callback
+    let c_cam = Arc::clone(&config_arc);
+    let h_cam = window_handle.clone();
+    main_window.on_set_cache_affinity_mode(move |index| {
+        let mode = aroxy::config::CacheAffinityMode::from_index(index);
+        {
+            let mut cfg = c_cam.write();
+            cfg.cache_affinity_mode = mode;
+            let _ = cfg.save();
+        }
+        if let Some(h) = h_cam.upgrade() {
+            h.set_cache_affinity_mode_index(index);
+        }
+    });
+
+    // Set session sticky TTL callback
+    let c_ttl = Arc::clone(&config_arc);
+    let h_ttl = window_handle.clone();
+    main_window.on_set_session_ttl(move |ttl| {
+        {
+            let mut cfg = c_ttl.write();
+            cfg.session_sticky_ttl_secs = ttl as u64;
+            let _ = cfg.save();
+        }
+        if let Some(h) = h_ttl.upgrade() {
+            h.set_session_sticky_ttl_secs(ttl);
+        }
+    });
+
+    // Set imbalance threshold callback
+    let c_imb = Arc::clone(&config_arc);
+    let h_imb = window_handle.clone();
+    main_window.on_set_imbalance_threshold(move |thresh| {
+        {
+            let mut cfg = c_imb.write();
+            cfg.quota_imbalance_threshold = thresh as u32;
+            let _ = cfg.save();
+        }
+        if let Some(h) = h_imb.upgrade() {
+            h.set_quota_imbalance_threshold(thresh);
+        }
+    });
+
+    // Toggle 429 failover callback
+    let c_fo = Arc::clone(&config_arc);
+    let h_fo = window_handle.clone();
+    main_window.on_toggle_failover_429(move || {
+        let next_val = {
+            let mut cfg = c_fo.write();
+            cfg.failover_on_429 = !cfg.failover_on_429;
+            let _ = cfg.save();
+            cfg.failover_on_429
+        };
+        if let Some(h) = h_fo.upgrade() {
+            h.set_failover_on_429(next_val);
+        }
+    });
+
     // Run Playground Test Callback
     let h_play = window_handle.clone();
     let port_play = config_arc.read().port;
@@ -464,6 +529,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let timer = slint::Timer::default();
     let s_timer = Arc::clone(&stats_arc);
     let c_timer = Arc::clone(&config_arc);
+    let b_timer = Arc::clone(&balancer_arc);
     let v_timer = Arc::clone(&cfg_version);
     let mut last_seen_version: u64 = 0;
     let w_timer = window_handle.clone();
@@ -476,6 +542,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             w.set_total_requests(reqs.to_string().into());
             w.set_total_tokens(tokens.to_string().into());
             w.set_avg_latency(format!("{} ms", avg_lat).into());
+
+            // Balancer & Cache Affinity metrics
+            let (_routed, _hits, failovers, hit_rate, active_pins) = b_timer.get_metrics();
+            w.set_balancer_hit_rate(format!("{:.1}%", hit_rate).into());
+            w.set_balancer_active_sessions(active_pins as i32);
+            w.set_balancer_failover_count(failovers as i32);
 
             // Detailed stats
             let (_, succ, errs, prompt_tok, comp_tok, think_tok, _, max_lat) = s_timer.get_detailed_stats();

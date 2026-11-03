@@ -246,4 +246,145 @@ mod tests {
         assert_eq!(oai.choices[0].message.content, Value::String("Code output here.".into()));
         assert_eq!(oai.choices[0].finish_reason.as_deref(), Some("stop"));
     }
+
+    #[test]
+    fn test_balancer_cache_affinity_and_failover() {
+        use aroxy::config::{CacheAffinityMode, RoutingStrategy};
+        use aroxy::proxy::balancer::LoadBalancer;
+
+        let balancer = LoadBalancer::new();
+        let mut cfg = AppConfig::default();
+        cfg.routing_strategy = RoutingStrategy::QuotaAware;
+        cfg.cache_affinity_mode = CacheAffinityMode::CacheFirst;
+        cfg.session_sticky_ttl_secs = 600;
+        cfg.quota_imbalance_threshold = 25;
+
+        let acc_a = UpstreamAccount {
+            id: "acc-a".into(),
+            name: "account.a@gmail.com".into(),
+            provider: "antigravity".into(),
+            base_url: "https://api.anthropic.com".into(),
+            api_key: "token-a".into(),
+            fingerprint: "Claude Code 2.x".into(),
+            tier: "PRO".into(),
+            quota_used: 20000,
+            quota_limit: 100000,
+            quota_reset: "in 3h".into(),
+            status: "Active".into(),
+            is_active: true,
+        };
+
+        let acc_b = UpstreamAccount {
+            id: "acc-b".into(),
+            name: "account.b@gmail.com".into(),
+            provider: "antigravity".into(),
+            base_url: "https://api.anthropic.com".into(),
+            api_key: "token-b".into(),
+            fingerprint: "Claude Code 2.x".into(),
+            tier: "PRO".into(),
+            quota_used: 50000,
+            quota_limit: 100000,
+            quota_reset: "in 2h".into(),
+            status: "Active".into(),
+            is_active: true,
+        };
+
+        cfg.accounts = vec![acc_a.clone(), acc_b.clone()];
+
+        // Request 1 in conversation session "chat-1": should pick acc_a (80k remaining > 50k remaining)
+        let chosen1 = balancer.select_account(&cfg, Some("chat-1")).expect("must pick account");
+        assert_eq!(chosen1.id, "acc-a");
+
+        // Request 2 in same session: should stick to acc_a for prompt caching (Cache hit!)
+        let chosen2 = balancer.select_account(&cfg, Some("chat-1")).expect("must pick account");
+        assert_eq!(chosen2.id, "acc-a");
+
+        let (_, hits, _, _, active_pins) = balancer.get_metrics();
+        assert_eq!(hits, 1);
+        assert_eq!(active_pins, 1);
+
+        // Test Cooldown Failover: mark acc-a as rate-limited (429)
+        balancer.mark_cooldown("acc-a", 30);
+        let chosen3 = balancer.select_account(&cfg, Some("chat-1")).expect("must failover");
+        assert_eq!(chosen3.id, "acc-b"); // Automatically routed to acc-b!
+    }
+
+    #[test]
+    fn test_extract_session_fingerprint_multiturn() {
+        use aroxy::proxy::balancer::LoadBalancer;
+
+        // Turn 1
+        let req1 = OpenAIChatRequest {
+            model: "claude-3-7-sonnet".into(),
+            messages: vec![
+                OpenAIMessage {
+                    role: "system".into(),
+                    content: Value::String("You are a helpful coding assistant".into()),
+                    reasoning_content: None,
+                    refusal: None,
+                    name: None,
+                },
+                OpenAIMessage {
+                    role: "user".into(),
+                    content: Value::String("Refactor this function to be lock-free".into()),
+                    reasoning_content: None,
+                    refusal: None,
+                    name: None,
+                },
+            ],
+            stream: true,
+            temperature: None,
+            max_tokens: None,
+            reasoning_effort: None,
+            stream_options: None,
+            extra: Default::default(),
+        };
+
+        // Turn 2 of the SAME conversation (assistant reply + next user follow-up)
+        let req2 = OpenAIChatRequest {
+            model: "claude-3-7-sonnet".into(),
+            messages: vec![
+                OpenAIMessage {
+                    role: "system".into(),
+                    content: Value::String("You are a helpful coding assistant".into()),
+                    reasoning_content: None,
+                    refusal: None,
+                    name: None,
+                },
+                OpenAIMessage {
+                    role: "user".into(),
+                    content: Value::String("Refactor this function to be lock-free".into()),
+                    reasoning_content: None,
+                    refusal: None,
+                    name: None,
+                },
+                OpenAIMessage {
+                    role: "assistant".into(),
+                    content: Value::String("Here is the lock-free implementation...".into()),
+                    reasoning_content: None,
+                    refusal: None,
+                    name: None,
+                },
+                OpenAIMessage {
+                    role: "user".into(),
+                    content: Value::String("Can you add unit tests for it?".into()),
+                    reasoning_content: None,
+                    refusal: None,
+                    name: None,
+                },
+            ],
+            stream: true,
+            temperature: None,
+            max_tokens: None,
+            reasoning_effort: None,
+            stream_options: None,
+            extra: Default::default(),
+        };
+
+        let sid1 = LoadBalancer::extract_session_fingerprint(&req1, None);
+        let sid2 = LoadBalancer::extract_session_fingerprint(&req2, None);
+
+        // Turn 1 and Turn 2 MUST have the exact same fingerprint to ensure prompt cache hit!
+        assert_eq!(sid1, sid2);
+    }
 }

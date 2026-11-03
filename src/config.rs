@@ -41,6 +41,45 @@ impl RoutingStrategy {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CacheAffinityMode {
+    CacheFirst,       // Maximum KV cache reuse: pins session strictly to account until rate-limited or depleted
+    Balanced,         // Hybrid: sticky session, but rotates smoothly if other accounts have > threshold more quota
+    AggressiveSpread, // Quota leveling: rotates across healthy accounts on every request
+}
+
+impl Default for CacheAffinityMode {
+    fn default() -> Self {
+        Self::Balanced
+    }
+}
+
+impl CacheAffinityMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::CacheFirst => "Cache-First (Maximum Speed)",
+            Self::Balanced => "Balanced (Smart Hybrid)",
+            Self::AggressiveSpread => "Aggressive Spread (Quota Leveling)",
+        }
+    }
+
+    pub fn from_index(index: i32) -> Self {
+        match index {
+            0 => Self::CacheFirst,
+            1 => Self::Balanced,
+            _ => Self::AggressiveSpread,
+        }
+    }
+
+    pub fn to_index(&self) -> i32 {
+        match self {
+            Self::CacheFirst => 0,
+            Self::Balanced => 1,
+            Self::AggressiveSpread => 2,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelCatalogItem {
     pub id: String,
@@ -104,6 +143,14 @@ pub struct AppConfig {
     pub expose_reasoning_variants: bool, // Exposes (low), (medium), (high) model clones
     #[serde(default)]
     pub routing_strategy: RoutingStrategy,
+    #[serde(default)]
+    pub cache_affinity_mode: CacheAffinityMode,
+    #[serde(default = "default_session_ttl")]
+    pub session_sticky_ttl_secs: u64,
+    #[serde(default = "default_imbalance_threshold")]
+    pub quota_imbalance_threshold: u32,
+    #[serde(default = "default_true")]
+    pub failover_on_429: bool,
     #[serde(default = "default_refresh_interval")]
     pub quota_refresh_interval_secs: u64,
     #[serde(default = "default_timeout")]
@@ -115,6 +162,18 @@ pub struct AppConfig {
     pub accounts: Vec<UpstreamAccount>,
     pub active_account_id: Option<String>,
     pub models: Vec<ModelCatalogItem>,
+}
+
+fn default_session_ttl() -> u64 {
+    900 // 15 minutes
+}
+
+fn default_imbalance_threshold() -> u32 {
+    25 // 25%
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_refresh_interval() -> u64 {
@@ -143,6 +202,10 @@ impl Default for AppConfig {
             portable_mode: false,
             expose_reasoning_variants: true,
             routing_strategy: RoutingStrategy::QuotaAware,
+            cache_affinity_mode: CacheAffinityMode::Balanced,
+            session_sticky_ttl_secs: 900,
+            quota_imbalance_threshold: 25,
+            failover_on_429: true,
             quota_refresh_interval_secs: 300,
             request_timeout_secs: 120,
             heartbeat_interval_secs: 12,

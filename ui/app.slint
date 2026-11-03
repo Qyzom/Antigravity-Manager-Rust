@@ -250,9 +250,16 @@ export component MainWindow inherits Window {
     in-out property <string> playground_response: "";
     in-out property <bool> playground_running: false;
 
-    // Proxy Layer
+    // Proxy Layer & Cache Balancer
     in-out property <int> routing_strategy_index: 0;
     in-out property <int> quota_refresh_interval: 300;
+    in-out property <int> cache_affinity_mode_index: 1; // 0: CacheFirst, 1: Balanced, 2: AggressiveSpread
+    in-out property <int> session_sticky_ttl_secs: 900;
+    in-out property <int> quota_imbalance_threshold: 25;
+    in-out property <bool> failover_on_429: true;
+    in-out property <string> balancer_hit_rate: "100.0%";
+    in-out property <int> balancer_active_sessions: 0;
+    in-out property <int> balancer_failover_count: 0;
 
     // Statistics Detailed
     in-out property <string> stat_prompt_tokens: "0";
@@ -281,6 +288,10 @@ export component MainWindow inherits Window {
     callback toggle_model(string);
     callback toggle_reasoning_variants();
     callback set_routing_strategy(int);
+    callback set_cache_affinity_mode(int);
+    callback set_session_ttl(int);
+    callback set_imbalance_threshold(int);
+    callback toggle_failover_429();
     callback run_playground_test();
     callback save_settings();
 
@@ -912,6 +923,178 @@ export component MainWindow inherits Window {
                                     font-size: 11px;
                                     color: #a1a1aa;
                                 }
+                            }
+                        }
+
+                        // Cache Affinity & Balancer Aggressiveness Box
+                        Rectangle {
+                            background: #18181b;
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: #27272a;
+
+                            VerticalLayout {
+                                padding: 16px;
+                                spacing: 12px;
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Text { text: "Prompt Cache Affinity & Balancing Aggressiveness"; font-size: 13px; font-weight: 700; color: #ffffff; }
+                                        Text { text: "Controls how hard Aroxy pins sessions to accounts for 100k+ token KV cache hits vs aggressive quota distribution"; font-size: 11px; color: #71717a; }
+                                    }
+                                    Badge {
+                                        text: "Hit Rate: " + root.balancer_hit_rate;
+                                        is_green: true;
+                                    }
+                                }
+
+                                // 3 Balancer Modes
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    ActionButton {
+                                        text: "Cache-First (Max Speed)";
+                                        is_primary: root.cache_affinity_mode_index == 0;
+                                        is_accent: root.cache_affinity_mode_index == 0;
+                                        clicked => { root.set_cache_affinity_mode(0); }
+                                    }
+                                    ActionButton {
+                                        text: "Balanced (Smart Hybrid)";
+                                        is_primary: root.cache_affinity_mode_index == 1;
+                                        is_accent: root.cache_affinity_mode_index == 1;
+                                        clicked => { root.set_cache_affinity_mode(1); }
+                                    }
+                                    ActionButton {
+                                        text: "Aggressive Spread (Leveling)";
+                                        is_primary: root.cache_affinity_mode_index == 2;
+                                        is_accent: root.cache_affinity_mode_index == 2;
+                                        clicked => { root.set_cache_affinity_mode(2); }
+                                    }
+                                }
+
+                                Text {
+                                    text: root.cache_affinity_mode_index == 0
+                                        ? "• Cache-First: Maximizes upstream KV Prompt Caching (95%+ hit rate, 10x faster TTFT). Keeps conversation thread strictly pinned to the same account until rate-limited (429) or depleted."
+                                        : (root.cache_affinity_mode_index == 1
+                                            ? "• Balanced: Pins conversation to preserve prompt caching, but smoothly rotates if another account has > " + root.quota_imbalance_threshold + "% more quota to prevent pool starvation."
+                                            : "• Aggressive Spread: Rotates across all healthy accounts on every single request, completely disregarding prompt cache for maximum uniform quota consumption.");
+                                    font-size: 11px;
+                                    color: #a1a1aa;
+                                }
+
+                                // Fine Tuning Parameters Row
+                                HorizontalLayout {
+                                    spacing: 12px;
+
+                                    // Sticky TTL Box
+                                    Rectangle {
+                                        border-radius: 6px;
+                                        background: #121214;
+                                        border-width: 1px;
+                                        border-color: #27272a;
+                                        VerticalLayout {
+                                            padding: 10px;
+                                            spacing: 6px;
+                                            Text { text: "SESSION PIN DURATION (TTL)"; font-size: 10px; font-weight: 700; color: #71717a; }
+                                            HorizontalLayout {
+                                                spacing: 6px;
+                                                ActionButton {
+                                                    text: "5m";
+                                                    is_primary: root.session_sticky_ttl_secs == 300;
+                                                    is_accent: root.session_sticky_ttl_secs == 300;
+                                                    clicked => { root.set_session_ttl(300); }
+                                                }
+                                                ActionButton {
+                                                    text: "15m";
+                                                    is_primary: root.session_sticky_ttl_secs == 900;
+                                                    is_accent: root.session_sticky_ttl_secs == 900;
+                                                    clicked => { root.set_session_ttl(900); }
+                                                }
+                                                ActionButton {
+                                                    text: "30m";
+                                                    is_primary: root.session_sticky_ttl_secs == 1800;
+                                                    is_accent: root.session_sticky_ttl_secs == 1800;
+                                                    clicked => { root.set_session_ttl(1800); }
+                                                }
+                                                ActionButton {
+                                                    text: "60m";
+                                                    is_primary: root.session_sticky_ttl_secs == 3600;
+                                                    is_accent: root.session_sticky_ttl_secs == 3600;
+                                                    clicked => { root.set_session_ttl(3600); }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Quota Imbalance Threshold Box
+                                    Rectangle {
+                                        border-radius: 6px;
+                                        background: #121214;
+                                        border-width: 1px;
+                                        border-color: #27272a;
+                                        VerticalLayout {
+                                            padding: 10px;
+                                            spacing: 6px;
+                                            Text { text: "ROTATION IMBALANCE SENSITIVITY"; font-size: 10px; font-weight: 700; color: #71717a; }
+                                            HorizontalLayout {
+                                                spacing: 6px;
+                                                ActionButton {
+                                                    text: "15% (Eager)";
+                                                    is_primary: root.quota_imbalance_threshold == 15;
+                                                    is_accent: root.quota_imbalance_threshold == 15;
+                                                    clicked => { root.set_imbalance_threshold(15); }
+                                                }
+                                                ActionButton {
+                                                    text: "25% (Optimal)";
+                                                    is_primary: root.quota_imbalance_threshold == 25;
+                                                    is_accent: root.quota_imbalance_threshold == 25;
+                                                    clicked => { root.set_imbalance_threshold(25); }
+                                                }
+                                                ActionButton {
+                                                    text: "40% (Sticky)";
+                                                    is_primary: root.quota_imbalance_threshold == 40;
+                                                    is_accent: root.quota_imbalance_threshold == 40;
+                                                    clicked => { root.set_imbalance_threshold(40); }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Zero-Downtime 429 Failover Toggle
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Text { text: "Seamless Zero-Downtime 429 Failover"; font-size: 12px; font-weight: 600; color: #fafafa; }
+                                        Text { text: "Instantly and silently retries request on next healthy account when an upstream account hits rate limits"; font-size: 11px; color: #71717a; }
+                                    }
+                                    ToggleSwitch {
+                                        checked: root.failover_on_429;
+                                        toggled => { root.toggle_failover_429(); }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Balancer Live Stat Cards
+                        HorizontalLayout {
+                            spacing: 12px;
+                            StatCard {
+                                title: "CACHE AFFINITY HIT RATE";
+                                value: root.balancer_hit_rate;
+                                subtext: "Prompt caching continuity";
+                            }
+                            StatCard {
+                                title: "PINNED THREADS";
+                                value: root.balancer_active_sessions + "";
+                                subtext: "Active conversational sessions";
+                            }
+                            StatCard {
+                                title: "AUTOMATIC FAILOVERS";
+                                value: root.balancer_failover_count + "";
+                                subtext: "Seamless 429 rotations";
                             }
                         }
 
