@@ -646,6 +646,7 @@ impl AppConfig {
             list.push(serde_json::json!({
                 "id": m.id,
                 "object": "model",
+                "created": 1700000000,
                 "owned_by": m.provider,
                 "display_name": m.display_name,
                 "tier": m.tier
@@ -662,6 +663,7 @@ impl AppConfig {
                     list.push(serde_json::json!({
                         "id": format!("{}{}", m.id, suffix),
                         "object": "model",
+                        "created": 1700000000,
                         "owned_by": m.provider,
                         "display_name": format!("{} [{}]", m.display_name, label),
                         "tier": m.tier

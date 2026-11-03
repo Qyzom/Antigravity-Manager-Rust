@@ -164,8 +164,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut s_stop_rx = stop_receiver.clone();
 
     tokio::spawn(async move {
-        let port = s_cfg.read().port;
-        let addr = format!("127.0.0.1:{}", port);
+        let (host, port) = {
+            let cfg = s_cfg.read();
+            (cfg.host.clone(), cfg.port)
+        };
+        let addr = format!("{}:{}", host, port);
         log::info!("Starting Aroxy core server on http://{}", addr);
 
         let client = reqwest::Client::builder()
@@ -1590,6 +1593,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .collect::<Vec<_>>(),
                 );
             }
+        }
+    });
+
+    // Window close intercept for Minimize to System Tray
+    let c_close = Arc::clone(&config_arc);
+    let w_close = window_handle.clone();
+    main_window.window().on_close_requested(move || {
+        if c_close.read().minimize_to_tray {
+            if let Some(w) = w_close.upgrade() {
+                let _ = w.hide();
+            }
+            slint::CloseRequestResponse::KeepWindowShown
+        } else {
+            slint::CloseRequestResponse::HideWindow
         }
     });
 
