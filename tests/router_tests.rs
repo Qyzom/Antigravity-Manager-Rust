@@ -36,6 +36,7 @@ mod tests {
             status: "Active".into(),
             error_message: None,
             refresh_token: None,
+            project_id: None,
             is_active: true,
         };
 
@@ -292,6 +293,7 @@ mod tests {
             status: "Active".into(),
             error_message: None,
             refresh_token: None,
+            project_id: None,
             is_active: true,
         };
 
@@ -317,6 +319,7 @@ mod tests {
             status: "Active".into(),
             error_message: None,
             refresh_token: None,
+            project_id: None,
             is_active: true,
         };
 
@@ -373,6 +376,7 @@ mod tests {
             status: "Active".into(),
             error_message: None,
             refresh_token: None,
+            project_id: None,
             is_active: true,
         };
 
@@ -399,6 +403,7 @@ mod tests {
             status: "Active".into(),
             error_message: None,
             refresh_token: None,
+            project_id: None,
             is_active: true,
         };
 
@@ -607,6 +612,7 @@ mod tests {
             status: "ACTIVE".into(),
             error_message: None,
             refresh_token: None,
+            project_id: None,
             is_active: true,
         };
 
@@ -632,6 +638,7 @@ mod tests {
             status: "ACTIVE".into(),
             error_message: None,
             refresh_token: None,
+            project_id: None,
             is_active: true,
         };
 
@@ -657,6 +664,7 @@ mod tests {
             status: "ERROR".into(),
             error_message: Some("Invalid credentials".into()),
             refresh_token: None,
+            project_id: None,
             is_active: false,
         };
 

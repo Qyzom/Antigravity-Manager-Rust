@@ -28,13 +28,18 @@ pub const GOOGLE_USERINFO_URL: &str = "https://www.googleapis.com/oauth2/v2/user
 pub const GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 
 pub const LOAD_PROJECT_ENDPOINTS: [&str; 2] = [
-    "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
     "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+    "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
 ];
 
 pub const FETCH_MODELS_ENDPOINTS: [&str; 2] = [
-    "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
     "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+    "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+];
+
+pub const STREAM_ENDPOINTS: [&str; 2] = [
+    "https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+    "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
 ];
 
 #[derive(Debug, Deserialize)]
@@ -276,9 +281,9 @@ pub async fn fetch_project_and_tier(
 }
 
 const QUOTA_SUMMARY_ENDPOINTS: [&str; 3] = [
+    "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
     "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
     "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:retrieveUserQuotaSummary",
-    "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
 ];
 
 #[derive(Debug, Deserialize)]

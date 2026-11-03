@@ -134,6 +134,8 @@ pub struct UpstreamAccount {
     pub error_message: Option<String>,
     #[serde(default)]
     pub refresh_token: Option<String>,
+    #[serde(default)]
+    pub project_id: Option<String>,
 }
 
 fn default_weekly_reset() -> String {
@@ -299,7 +301,7 @@ impl Default for AppConfig {
             language: "en".to_string(),
             log_enabled: true,
             max_log_entries: 100,
-            group_reasoning_clones: true,
+            group_reasoning_clones: false,
             routing_strategy: RoutingStrategy::QuotaAware,
             cache_affinity_mode: CacheAffinityMode::Balanced,
             session_sticky_ttl_secs: 900,
@@ -456,6 +458,15 @@ impl AppConfig {
                     // Deduplicate models by ID
                     let mut seen_ids = std::collections::HashSet::new();
                     cfg.models.retain(|m| seen_ids.insert(m.id.clone()));
+
+                    // Auto-recover any accounts previously marked with transient error
+                    for acc in &mut cfg.accounts {
+                        if acc.status == "ERROR" {
+                            acc.status = "ACTIVE".to_string();
+                            acc.is_active = true;
+                            acc.error_message = None;
+                        }
+                    }
 
                     // Ensure modern gemini-3.8-flash exists
                     if !cfg.models.iter().any(|m| m.id == "gemini-3.8-flash") {

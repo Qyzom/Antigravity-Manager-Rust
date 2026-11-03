@@ -28,15 +28,47 @@ pub fn parse_model_and_reasoning(
 ) -> (String, Option<ReasoningEffort>) {
     let lower = raw_model.trim().to_lowercase();
 
-    // Check for effort suffix in model name
+    // Check for effort suffix in model name across all common formats
     let (base_clean, suffix_effort) = if lower.ends_with(" (low)") {
         (raw_model[..raw_model.len() - 6].trim().to_string(), Some(ReasoningEffort::Low))
+    } else if lower.ends_with(" [low effort]") {
+        (raw_model[..raw_model.len() - 13].trim().to_string(), Some(ReasoningEffort::Low))
+    } else if lower.ends_with(" (low effort)") {
+        (raw_model[..raw_model.len() - 13].trim().to_string(), Some(ReasoningEffort::Low))
+    } else if lower.ends_with(" [low]") {
+        (raw_model[..raw_model.len() - 6].trim().to_string(), Some(ReasoningEffort::Low))
+    } else if lower.ends_with(":low") {
+        (raw_model[..raw_model.len() - 4].trim().to_string(), Some(ReasoningEffort::Low))
     } else if lower.ends_with(" (medium)") {
         (raw_model[..raw_model.len() - 9].trim().to_string(), Some(ReasoningEffort::Medium))
+    } else if lower.ends_with(" [medium effort]") {
+        (raw_model[..raw_model.len() - 16].trim().to_string(), Some(ReasoningEffort::Medium))
+    } else if lower.ends_with(" (medium effort)") {
+        (raw_model[..raw_model.len() - 16].trim().to_string(), Some(ReasoningEffort::Medium))
+    } else if lower.ends_with(" [medium]") {
+        (raw_model[..raw_model.len() - 9].trim().to_string(), Some(ReasoningEffort::Medium))
+    } else if lower.ends_with(":medium") {
+        (raw_model[..raw_model.len() - 7].trim().to_string(), Some(ReasoningEffort::Medium))
     } else if lower.ends_with(" (high)") {
         (raw_model[..raw_model.len() - 7].trim().to_string(), Some(ReasoningEffort::High))
+    } else if lower.ends_with(" [high effort]") {
+        (raw_model[..raw_model.len() - 14].trim().to_string(), Some(ReasoningEffort::High))
+    } else if lower.ends_with(" (high effort)") {
+        (raw_model[..raw_model.len() - 14].trim().to_string(), Some(ReasoningEffort::High))
+    } else if lower.ends_with(" [high]") {
+        (raw_model[..raw_model.len() - 7].trim().to_string(), Some(ReasoningEffort::High))
+    } else if lower.ends_with(":high") {
+        (raw_model[..raw_model.len() - 5].trim().to_string(), Some(ReasoningEffort::High))
     } else if lower.ends_with(" (no-thinking)") {
         (raw_model[..raw_model.len() - 14].trim().to_string(), Some(ReasoningEffort::Off))
+    } else if lower.ends_with(" [thinking off]") {
+        (raw_model[..raw_model.len() - 15].trim().to_string(), Some(ReasoningEffort::Off))
+    } else if lower.ends_with(" (thinking off)") {
+        (raw_model[..raw_model.len() - 15].trim().to_string(), Some(ReasoningEffort::Off))
+    } else if lower.ends_with(" [no-thinking]") {
+        (raw_model[..raw_model.len() - 14].trim().to_string(), Some(ReasoningEffort::Off))
+    } else if lower.ends_with(":off") {
+        (raw_model[..raw_model.len() - 4].trim().to_string(), Some(ReasoningEffort::Off))
     } else if lower.ends_with("-thinking-low") {
         (raw_model[..raw_model.len() - 13].trim().to_string(), Some(ReasoningEffort::Low))
     } else if lower.ends_with("-thinking-medium") {

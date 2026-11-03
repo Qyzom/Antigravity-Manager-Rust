@@ -152,6 +152,19 @@ export struct I18nData {
     opt_quota_both: string,
     opt_quota_5h: string,
     opt_quota_weekly: string,
+    lbl_endpoints_title: string,
+    lbl_endpoints_protocol: string,
+    lbl_endpoints_path: string,
+    lbl_endpoints_models: string,
+    lbl_master_key_title: string,
+    lbl_master_key_desc: string,
+    btn_copy_key: string,
+    btn_regenerate_key: string,
+    lbl_quota_protection_desc: string,
+    lbl_failover_desc: string,
+    opt_cache_first: string,
+    opt_cache_balanced: string,
+    opt_cache_spread: string,
 }
 
 component NavItem inherits Rectangle {
@@ -1396,19 +1409,19 @@ export component MainWindow inherits Window {
                                 HorizontalLayout {
                                     spacing: 10px;
                                     ActionButton {
-                                        text: "Cache-First (Speed)";
+                                        text: root.i18n.opt_cache_first;
                                         is_primary: root.cache_affinity_mode_index == 0;
                                         is_accent: root.cache_affinity_mode_index == 0;
                                         clicked => { root.set_cache_affinity_mode(0); }
                                     }
                                     ActionButton {
-                                        text: "Balanced (Hybrid)";
+                                        text: root.i18n.opt_cache_balanced;
                                         is_primary: root.cache_affinity_mode_index == 1;
                                         is_accent: root.cache_affinity_mode_index == 1;
                                         clicked => { root.set_cache_affinity_mode(1); }
                                     }
                                     ActionButton {
-                                        text: "Aggressive Spread";
+                                        text: root.i18n.opt_cache_spread;
                                         is_primary: root.cache_affinity_mode_index == 2;
                                         is_accent: root.cache_affinity_mode_index == 2;
                                         clicked => { root.set_cache_affinity_mode(2); }
@@ -1420,7 +1433,7 @@ export component MainWindow inherits Window {
                                     VerticalLayout {
                                         spacing: 2px;
                                         Text { text: root.i18n.lbl_failover; font-size: 12px; font-weight: 600; color: #fafafa; }
-                                        Text { text: "Silently and instantly failover to another healthy account if upstream returns 429"; font-size: 11px; color: #71717a; }
+                                        Text { text: root.i18n.lbl_failover_desc; font-size: 11px; color: #71717a; }
                                     }
                                     VerticalLayout {
                                         alignment: center;
@@ -1481,7 +1494,7 @@ export component MainWindow inherits Window {
                                 }
 
                                 Text {
-                                    text: "• Accounts whose remaining quota drops to or below this threshold are held in reserve to protect against total depletion.";
+                                    text: root.i18n.lbl_quota_protection_desc;
                                     font-size: 11px;
                                     color: #a1a1aa;
                                 }
@@ -1499,14 +1512,14 @@ export component MainWindow inherits Window {
                                 padding: 16px;
                                 spacing: 8px;
 
-                                Text { text: "Active Protocol Endpoints"; font-size: 13px; font-weight: 700; color: #ffffff; }
+                                Text { text: root.i18n.lbl_endpoints_title; font-size: 13px; font-weight: 700; color: #ffffff; }
 
                                 // Table Header
                                 HorizontalLayout {
                                     padding-left: 10px;
                                     padding-right: 10px;
-                                    Text { text: "PROTOCOL"; width: 180px; font-size: 10px; font-weight: 700; color: #71717a; }
-                                    Text { text: "ENDPOINT PATH"; horizontal-stretch: 1; font-size: 10px; font-weight: 700; color: #71717a; }
+                                    Text { text: root.i18n.lbl_endpoints_protocol; width: 180px; font-size: 10px; font-weight: 700; color: #71717a; }
+                                    Text { text: root.i18n.lbl_endpoints_path; horizontal-stretch: 1; font-size: 10px; font-weight: 700; color: #71717a; }
                                 }
 
                                 Rectangle {
@@ -1540,7 +1553,7 @@ export component MainWindow inherits Window {
                                     HorizontalLayout {
                                         padding-left: 10px;
                                         padding-right: 10px;
-                                        Text { text: "Model Catalog"; width: 180px; font-size: 12px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
+                                        Text { text: root.i18n.lbl_endpoints_models; width: 180px; font-size: 12px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
                                         Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/models"; horizontal-stretch: 1; font-size: 11px; color: #38bdf8; vertical-alignment: center; }
                                     }
                                 }
@@ -1558,22 +1571,22 @@ export component MainWindow inherits Window {
                                 padding: 16px;
                                 spacing: 10px;
 
-                                Text { text: "Master Client Authorization Key"; font-size: 13px; font-weight: 700; color: #ffffff; }
-                                Text { text: "Clients connecting to Aroxy (Cursor, VS Code, Cline) can pass this key in Authorization: Bearer header."; font-size: 11px; color: #71717a; }
+                                Text { text: root.i18n.lbl_master_key_title; font-size: 13px; font-weight: 700; color: #ffffff; }
+                                Text { text: root.i18n.lbl_master_key_desc; font-size: 11px; color: #71717a; }
 
                                 HorizontalLayout {
-                                    spacing: 10px;
+                                    spacing: 8px;
                                     LineEdit {
                                         horizontal-stretch: 1;
                                         text: root.master_api_key;
                                     }
                                     ActionButton {
-                                        text: root.master_key_status_text;
+                                        text: root.master_key_status_text != "" ? root.master_key_status_text : root.i18n.btn_copy_key;
                                         is_primary: true;
                                         clicked => { root.copy_master_key(); }
                                     }
                                     ActionButton {
-                                        text: "Regenerate";
+                                        text: root.i18n.btn_regenerate_key;
                                         is_danger: true;
                                         clicked => { root.regenerate_master_key(); }
                                     }
@@ -2406,13 +2419,13 @@ export component MainWindow inherits Window {
     // MODAL 1: ACCOUNT DETAILS DIALOG
     // ============================================================
     if root.show_account_info: Rectangle {
-        background: #000000cc;
+        background: #000000aa;
         TouchArea {
             clicked => { root.show_account_info = false; }
         }
 
         modal_card1 := Rectangle {
-            width: 600px;
+            width: 520px;
             height: modal_inner1.min-height;
             background: #141416;
             border-radius: 12px;
@@ -2421,18 +2434,18 @@ export component MainWindow inherits Window {
             clip: true;
 
             // Absorb touches inside so clicking inside won't close modal
-            TouchArea { }
+            TouchArea { clicked => { } }
 
             modal_inner1 := VerticalLayout {
-                padding: 16px;
-                spacing: 10px;
+                padding: 14px;
+                spacing: 8px;
 
                 HorizontalLayout {
                     alignment: space-between;
                     HorizontalLayout {
                         spacing: 8px;
                         alignment: start;
-                        Text { text: root.info_account_name; font-size: 14px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
+                        Text { text: root.info_account_name; font-size: 13px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
                         VerticalLayout {
                             alignment: center;
                             Badge { text: root.info_account_tier; is_green: root.info_account_tier == "PRO" || root.info_account_tier == "Pro"; }
@@ -2443,7 +2456,7 @@ export component MainWindow inherits Window {
                         }
                     }
                     ActionButton {
-                        text: "Close";
+                        text: root.i18n.btn_close;
                         is_primary: false;
                         clicked => { root.show_account_info = false; }
                     }
@@ -2459,8 +2472,8 @@ export component MainWindow inherits Window {
                     border-color: #27272a;
 
                     VerticalLayout {
-                        padding: 10px;
-                        spacing: 6px;
+                        padding: 8px;
+                        spacing: 4px;
 
                         Text { text: "Claude & GPT Quota (Anthropic & OpenAI OSS)"; font-size: 11px; font-weight: 700; color: #ffffff; }
 
@@ -2533,8 +2546,8 @@ export component MainWindow inherits Window {
                     border-color: #27272a;
 
                     VerticalLayout {
-                        padding: 10px;
-                        spacing: 6px;
+                        padding: 8px;
+                        spacing: 4px;
 
                         Text { text: "Gemini Quota (Google Cloud Code / Gemini 3.x & 4)"; font-size: 11px; font-weight: 700; color: #ffffff; }
 
@@ -2607,8 +2620,8 @@ export component MainWindow inherits Window {
                     border-color: #27272a;
 
                     VerticalLayout {
-                        padding: 10px;
-                        spacing: 5px;
+                        padding: 8px;
+                        spacing: 4px;
 
                         HorizontalLayout {
                             alignment: space-between;
@@ -2650,13 +2663,13 @@ export component MainWindow inherits Window {
     // MODAL 2: TEST MODEL REQUEST DIALOG
     // ============================================================
     if root.show_test_dialog: Rectangle {
-        background: #000000cc;
+        background: #000000aa;
         TouchArea {
             clicked => { root.show_test_dialog = false; }
         }
 
         modal_card2 := Rectangle {
-            width: 600px;
+            width: 520px;
             height: modal_inner2.min-height;
             background: #141416;
             border-radius: 12px;
@@ -2664,18 +2677,18 @@ export component MainWindow inherits Window {
             border-color: #27272a;
             clip: true;
 
-            // Absorb touches inside
-            TouchArea { }
+            // Absorb touches inside so clicking inside won't close modal
+            TouchArea { clicked => { } }
 
             modal_inner2 := VerticalLayout {
-                padding: 16px;
-                spacing: 10px;
+                padding: 14px;
+                spacing: 8px;
 
                 HorizontalLayout {
                     alignment: space-between;
                     HorizontalLayout {
                         spacing: 8px;
-                        Text { text: root.i18n.test_dialog_title; font-size: 14px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
+                        Text { text: root.i18n.test_dialog_title; font-size: 13px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
                         Badge { text: root.test_model_id; is_green: true; }
                     }
                     ActionButton {
@@ -2695,28 +2708,28 @@ export component MainWindow inherits Window {
 
                 // Parameters Bar
                 HorizontalLayout {
-                    spacing: 10px;
+                    spacing: 8px;
                     VerticalLayout {
                         horizontal-stretch: 1;
-                        spacing: 3px;
+                        spacing: 2px;
                         Text { text: root.i18n.test_timeout_label; font-size: 10px; font-weight: 600; color: #71717a; }
                         LineEdit { text <=> root.test_timeout_secs; }
                     }
                     VerticalLayout {
                         horizontal-stretch: 1;
-                        spacing: 3px;
+                        spacing: 2px;
                         Text { text: root.i18n.test_max_tokens_label; font-size: 10px; font-weight: 600; color: #71717a; }
                         LineEdit { text <=> root.test_max_tokens; }
                     }
                     VerticalLayout {
                         horizontal-stretch: 1;
-                        spacing: 3px;
+                        spacing: 2px;
                         Text { text: "Temperature"; font-size: 10px; font-weight: 600; color: #71717a; }
                         LineEdit { text <=> root.test_temperature; }
                     }
                     VerticalLayout {
-                        width: 90px;
-                        spacing: 3px;
+                        width: 85px;
+                        spacing: 2px;
                         alignment: center;
                         Text { text: root.i18n.test_stream_toggle; font-size: 10px; font-weight: 600; color: #71717a; }
                         ToggleSwitch {
@@ -2731,7 +2744,7 @@ export component MainWindow inherits Window {
                     alignment: space-between;
                     Text {
                         text: "Status: " + root.test_status + " | " + root.test_latency + " | " + root.test_tokens + " tok";
-                        font-size: 11px;
+                        font-size: 10px;
                         color: #a1a1aa;
                         vertical-alignment: center;
                     }
@@ -2753,7 +2766,7 @@ export component MainWindow inherits Window {
 
                 // Output Viewer
                 Rectangle {
-                    height: 80px;
+                    height: 70px;
                     border-radius: 6px;
                     background: #111113;
                     border-width: 1px;
@@ -2779,13 +2792,13 @@ export component MainWindow inherits Window {
     // MODAL 3: LOG DETAILS INSPECTOR
     // ============================================================
     if root.show_log_modal: Rectangle {
-        background: #000000cc;
+        background: #000000aa;
         TouchArea {
             clicked => { root.show_log_modal = false; }
         }
 
         modal_card3 := Rectangle {
-            width: 500px;
+            width: 480px;
             height: modal_inner3.min-height;
             background: #141416;
             border-radius: 12px;
@@ -2793,18 +2806,18 @@ export component MainWindow inherits Window {
             border-color: #27272a;
             clip: true;
 
-            // Absorb touches inside
-            TouchArea { }
+            // Absorb touches inside so clicking inside won't close modal
+            TouchArea { clicked => { } }
 
             modal_inner3 := VerticalLayout {
-                padding: 16px;
-                spacing: 10px;
+                padding: 14px;
+                spacing: 8px;
 
                 HorizontalLayout {
                     alignment: space-between;
-                    Text { text: "HTTP Request Inspector"; font-size: 14px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
+                    Text { text: "HTTP Request Inspector"; font-size: 13px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
                     ActionButton {
-                        text: "Close";
+                        text: root.i18n.btn_close;
                         is_primary: false;
                         clicked => { root.show_log_modal = false; }
                     }
@@ -2813,14 +2826,14 @@ export component MainWindow inherits Window {
                 Rectangle { height: 1px; background: #27272a; }
 
                 HorizontalLayout {
-                    spacing: 10px;
+                    spacing: 8px;
                     Badge { text: root.modal_log_method; is_green: true; }
                     Text { text: root.modal_log_path; font-size: 12px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
                     Badge { text: root.modal_log_status; is_green: root.modal_log_status == "200 OK"; is_danger: root.modal_log_status != "200 OK"; }
                 }
 
                 VerticalLayout {
-                    spacing: 6px;
+                    spacing: 5px;
                     Text { text: "Timestamp: " + root.modal_log_time; font-size: 11px; color: #a1a1aa; }
                     Text { text: "Dispatched Model: " + root.modal_log_model; font-size: 11px; color: #a1a1aa; }
                     Text { text: "Processed Tokens: " + root.modal_log_tokens; font-size: 11px; color: #a1a1aa; }

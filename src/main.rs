@@ -133,6 +133,19 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         opt_quota_both: t.opt_quota_both.into(),
         opt_quota_5h: t.opt_quota_5h.into(),
         opt_quota_weekly: t.opt_quota_weekly.into(),
+        lbl_endpoints_title: t.lbl_endpoints_title.into(),
+        lbl_endpoints_protocol: t.lbl_endpoints_protocol.into(),
+        lbl_endpoints_path: t.lbl_endpoints_path.into(),
+        lbl_endpoints_models: t.lbl_endpoints_models.into(),
+        lbl_master_key_title: t.lbl_master_key_title.into(),
+        lbl_master_key_desc: t.lbl_master_key_desc.into(),
+        btn_copy_key: t.btn_copy_key.into(),
+        btn_regenerate_key: t.btn_regenerate_key.into(),
+        lbl_quota_protection_desc: t.lbl_quota_protection_desc.into(),
+        lbl_failover_desc: t.lbl_failover_desc.into(),
+        opt_cache_first: t.opt_cache_first.into(),
+        opt_cache_balanced: t.opt_cache_balanced.into(),
+        opt_cache_spread: t.opt_cache_spread.into(),
     };
     ui.set_i18n(i18n_struct);
     ui.set_current_language(lang.to_index());
@@ -342,17 +355,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .build()
             .unwrap_or_default();
 
-        let (acc_id, token, refresh_tok) = {
+        let (acc_id, token, refresh_tok, project_id) = {
             let cfg = startup_cfg.read();
-            if let Some(acc) = cfg.accounts.iter().find(|a| a.is_active && a.status != "ERROR" && !a.api_key.is_empty()) {
-                (acc.id.clone(), acc.api_key.clone(), acc.refresh_token.clone())
+            if let Some(acc) = cfg.accounts.iter().find(|a| a.is_active && !a.api_key.is_empty()) {
+                (acc.id.clone(), acc.api_key.clone(), acc.refresh_token.clone(), acc.project_id.clone())
             } else {
                 return;
             }
         };
 
+        let mut active_pid = project_id;
+        if active_pid.is_none() {
+            let (pid_opt, tier) = antigravity::fetch_project_and_tier(&client, &token).await;
+            if pid_opt.is_some() {
+                active_pid = pid_opt.clone();
+                let mut cfg = startup_cfg.write();
+                if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == acc_id) {
+                    acc.project_id = pid_opt;
+                    acc.tier = tier;
+                }
+                let _ = cfg.save();
+            }
+        }
+
         log::info!("Synchronizing active upstream models on proxy launch...");
-        let mut res = antigravity::fetch_models_and_quota(&client, &token, None).await;
+        let mut res = antigravity::fetch_models_and_quota(&client, &token, active_pid.as_deref()).await;
 
         if res.is_err() {
             if let Some(ref rtok) = refresh_tok {
@@ -368,7 +395,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         let _ = cfg.save();
                     }
-                    res = antigravity::fetch_models_and_quota(&client, &new_tok, None).await;
+                    res = antigravity::fetch_models_and_quota(&client, &new_tok, active_pid.as_deref()).await;
                 }
             }
         }
@@ -714,6 +741,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     status: "ACTIVE".to_string(),
                     error_message: None,
                     refresh_token: refresh_token_opt,
+                    project_id,
                     is_active: true,
                 };
 
@@ -793,14 +821,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (token, project_id) = {
                 let cfg = c_clone.read();
                 if let Some(acc) = cfg.accounts.iter().find(|a| a.id == id_str) {
-                    (acc.api_key.clone(), None::<String>)
+                    (acc.api_key.clone(), acc.project_id.clone())
                 } else {
                     return;
                 }
             };
 
             let client = reqwest::Client::new();
-            let res = antigravity::fetch_models_and_quota(&client, &token, project_id.as_deref()).await;
+            let mut resolved_pid = project_id;
+            if resolved_pid.is_none() {
+                let (pid_opt, tier) = antigravity::fetch_project_and_tier(&client, &token).await;
+                if pid_opt.is_some() {
+                    resolved_pid = pid_opt.clone();
+                    let mut cfg = c_clone.write();
+                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id_str) {
+                        acc.project_id = pid_opt;
+                        acc.tier = tier;
+                    }
+                    let _ = cfg.save();
+                }
+            }
+
+            let res = antigravity::fetch_models_and_quota(&client, &token, resolved_pid.as_deref()).await;
             let success = match res {
                 Ok((models, used, limit, reset, detailed_quota)) => {
                     {
@@ -875,14 +917,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         let _ = arboard::Clipboard::new().and_then(|mut cb| cb.set_text(key));
         if let Some(h) = h_mkey.upgrade() {
-            h.set_master_key_status_text("Copied ✓".into());
+            h.set_master_key_status_text("✓".into());
         }
         let h_timer = h_mkey.clone();
         tokio::spawn(async move {
             tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(h) = h_timer.upgrade() {
-                    h.set_master_key_status_text("Copy Key".into());
+                    h.set_master_key_status_text("".into());
                 }
             });
         });
@@ -899,14 +941,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         if let Some(h) = h_regen.upgrade() {
             h.set_master_api_key(new_key.into());
-            h.set_master_key_status_text("Regenerated ✓".into());
+            h.set_master_key_status_text("✓".into());
         }
         let h_timer = h_regen.clone();
         tokio::spawn(async move {
             tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(h) = h_timer.upgrade() {
-                    h.set_master_key_status_text("Copy Key".into());
+                    h.set_master_key_status_text("".into());
                 }
             });
         });

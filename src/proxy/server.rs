@@ -51,7 +51,7 @@ async fn oauth_callback(
     let port = state.config.read().port;
     let redirect_uri = format!("http://127.0.0.1:{}/oauth/callback", port);
 
-    let (access_token, refresh_token_opt, email, tier, quota_used, quota_limit, quota_reset, models, detailed_quota) =
+    let (access_token, refresh_token_opt, email, tier, quota_used, quota_limit, quota_reset, models, detailed_quota, project_id_opt) =
         if let Some(code) = params.get("code") {
             match crate::proxy::antigravity::exchange_code(&state.http_client, code, &redirect_uri).await {
                 Ok(token_resp) => {
@@ -75,7 +75,7 @@ async fn oauth_callback(
                             (None, 0, 100_000, "in 4h 00m".to_string(), det)
                         }
                     };
-                    (acc_token, ref_token, email, tier, used, limit, reset, models, det)
+                    (acc_token, ref_token, email, tier, used, limit, reset, models, det, project_id)
                 }
                 Err(e) => {
                     log::warn!("OAuth exchange error: {}", e);
@@ -90,14 +90,14 @@ async fn oauth_callback(
                         gemini_weekly_percent: 100,
                         gemini_weekly_reset: "in 7d 00h".to_string(),
                     };
-                    (raw_token, None, "antigravity.user@gmail.com".to_string(), "PRO".to_string(), 0, 100_000, "in 4h 00m".to_string(), None, det)
+                    (raw_token, None, "antigravity.user@gmail.com".to_string(), "PRO".to_string(), 0, 100_000, "in 4h 00m".to_string(), None, det, None)
                 }
             }
         } else {
             let raw_token = params.get("token").or_else(|| params.get("access_token")).cloned().unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
             let email = params.get("email").cloned().unwrap_or_else(|| "antigravity.user@gmail.com".to_string());
             let det = crate::proxy::antigravity::fetch_user_quota_summary(&state.http_client, &raw_token).await;
-            (raw_token, None, email, "PRO".to_string(), 0, 100_000, "in 4h 00m".to_string(), None, det)
+            (raw_token, None, email, "PRO".to_string(), 0, 100_000, "in 4h 00m".to_string(), None, det, None)
         };
 
     // Add or update account in config
@@ -107,6 +107,9 @@ async fn oauth_callback(
             existing.api_key = access_token;
             if refresh_token_opt.is_some() {
                 existing.refresh_token = refresh_token_opt;
+            }
+            if project_id_opt.is_some() {
+                existing.project_id = project_id_opt;
             }
             existing.tier = tier.clone();
             existing.quota_used = quota_used;
@@ -133,6 +136,7 @@ async fn oauth_callback(
                 base_url: "https://api.anthropic.com".to_string(),
                 api_key: access_token,
                 refresh_token: refresh_token_opt,
+                project_id: project_id_opt,
                 fingerprint: "Claude Code 2.x".to_string(),
                 tier: tier.clone(),
                 quota_used,
@@ -291,23 +295,40 @@ async fn execute_chat_request(
         let payload_json = crate::proxy::antigravity::build_antigravity_payload(
             payload,
             &target_model,
-            None,
+            account.project_id.as_deref(),
             reasoning_effort,
         );
 
-        let endpoint_url = "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse";
+        let mut res_opt = None;
+        let req_token = account.api_key.clone();
 
-        let mut req_headers = reqwest::header::HeaderMap::new();
-        req_headers.insert("authorization", format!("Bearer {}", account.api_key).parse().unwrap());
-        req_headers.insert("User-Agent", crate::proxy::antigravity::OFFICIAL_USER_AGENT.parse().unwrap());
-        req_headers.insert("Content-Type", "application/json".parse().unwrap());
+        for endpoint_url in crate::proxy::antigravity::STREAM_ENDPOINTS {
+            let mut req_headers = reqwest::header::HeaderMap::new();
+            req_headers.insert("authorization", format!("Bearer {}", req_token).parse().unwrap());
+            req_headers.insert("User-Agent", crate::proxy::antigravity::OFFICIAL_USER_AGENT.parse().unwrap());
+            req_headers.insert("Content-Type", "application/json".parse().unwrap());
 
-        let mut res = match state.http_client.post(endpoint_url).headers(req_headers.clone()).json(&payload_json).send().await {
-            Ok(r) => r,
-            Err(e) => {
+            if let Ok(r) = state.http_client.post(endpoint_url).headers(req_headers).json(&payload_json).send().await {
+                let s = r.status();
+                if s.is_success() {
+                    res_opt = Some(r);
+                    break;
+                } else if s == StatusCode::UNAUTHORIZED || s == StatusCode::FORBIDDEN || s == StatusCode::NOT_FOUND {
+                    res_opt = Some(r);
+                    continue; // Try next endpoint
+                } else {
+                    res_opt = Some(r);
+                    break;
+                }
+            }
+        }
+
+        let mut res = match res_opt {
+            Some(r) => r,
+            None => {
                 let lat = start_time.elapsed().as_millis() as u64;
                 state.stats.record_request("POST", "/v1/chat/completions", requested_model, 502, 0, lat);
-                return ((StatusCode::BAD_GATEWAY, Json(json!({"error": {"message": format!("Antigravity connection error: {}", e)}}))).into_response(), false);
+                return ((StatusCode::BAD_GATEWAY, Json(json!({"error": {"message": "Antigravity upstream connection failure"}}))).into_response(), false);
             }
         };
 
@@ -334,12 +355,20 @@ async fn execute_chat_request(
                 }
                 state.cfg_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-                let mut retry_headers = req_headers.clone();
-                retry_headers.insert("authorization", format!("Bearer {}", fresh_token).parse().unwrap());
-                if let Ok(retry_res) = state.http_client.post(endpoint_url).headers(retry_headers).json(&payload_json).send().await {
-                    status = retry_res.status();
-                    is_auth_error = status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
-                    res = retry_res;
+                for endpoint_url in crate::proxy::antigravity::STREAM_ENDPOINTS {
+                    let mut retry_headers = reqwest::header::HeaderMap::new();
+                    retry_headers.insert("authorization", format!("Bearer {}", fresh_token).parse().unwrap());
+                    retry_headers.insert("User-Agent", crate::proxy::antigravity::OFFICIAL_USER_AGENT.parse().unwrap());
+                    retry_headers.insert("Content-Type", "application/json".parse().unwrap());
+
+                    if let Ok(retry_res) = state.http_client.post(endpoint_url).headers(retry_headers).json(&payload_json).send().await {
+                        status = retry_res.status();
+                        is_auth_error = status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
+                        res = retry_res;
+                        if status.is_success() {
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -366,7 +395,7 @@ async fn execute_chat_request(
                     let mut cfg = state.config.write();
                     if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
                         acc.status = "ERROR".to_string();
-                        acc.is_active = false;
+                        // Never deactivate account permanently so it can retry or auto-recover!
                         acc.error_message = Some(helpful_err);
                     }
                     let _ = cfg.save();
@@ -751,23 +780,40 @@ async fn execute_claude_request(
         let payload_json = crate::proxy::antigravity::build_antigravity_payload_from_claude(
             payload,
             &target_model,
-            None,
+            account.project_id.as_deref(),
             reasoning_effort,
         );
 
-        let endpoint_url = "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse";
+        let mut res_opt = None;
+        let req_token = account.api_key.clone();
 
-        let mut req_headers = reqwest::header::HeaderMap::new();
-        req_headers.insert("authorization", format!("Bearer {}", account.api_key).parse().unwrap());
-        req_headers.insert("User-Agent", crate::proxy::antigravity::OFFICIAL_USER_AGENT.parse().unwrap());
-        req_headers.insert("Content-Type", "application/json".parse().unwrap());
+        for endpoint_url in crate::proxy::antigravity::STREAM_ENDPOINTS {
+            let mut req_headers = reqwest::header::HeaderMap::new();
+            req_headers.insert("authorization", format!("Bearer {}", req_token).parse().unwrap());
+            req_headers.insert("User-Agent", crate::proxy::antigravity::OFFICIAL_USER_AGENT.parse().unwrap());
+            req_headers.insert("Content-Type", "application/json".parse().unwrap());
 
-        let mut res = match state.http_client.post(endpoint_url).headers(req_headers.clone()).json(&payload_json).send().await {
-            Ok(r) => r,
-            Err(e) => {
+            if let Ok(r) = state.http_client.post(endpoint_url).headers(req_headers).json(&payload_json).send().await {
+                let s = r.status();
+                if s.is_success() {
+                    res_opt = Some(r);
+                    break;
+                } else if s == StatusCode::UNAUTHORIZED || s == StatusCode::FORBIDDEN || s == StatusCode::NOT_FOUND {
+                    res_opt = Some(r);
+                    continue;
+                } else {
+                    res_opt = Some(r);
+                    break;
+                }
+            }
+        }
+
+        let mut res = match res_opt {
+            Some(r) => r,
+            None => {
                 let lat = start_time.elapsed().as_millis() as u64;
                 state.stats.record_request("POST", "/v1/messages", requested_model, 502, 0, lat);
-                return ((StatusCode::BAD_GATEWAY, Json(json!({"type": "error", "error": {"type": "api_error", "message": format!("Antigravity connection error: {}", e)}}))).into_response(), false);
+                return ((StatusCode::BAD_GATEWAY, Json(json!({"type": "error", "error": {"type": "api_error", "message": "Antigravity upstream connection failure"}}))).into_response(), false);
             }
         };
 
@@ -793,12 +839,20 @@ async fn execute_claude_request(
                 }
                 state.cfg_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-                let mut retry_headers = req_headers.clone();
-                retry_headers.insert("authorization", format!("Bearer {}", fresh_token).parse().unwrap());
-                if let Ok(retry_res) = state.http_client.post(endpoint_url).headers(retry_headers).json(&payload_json).send().await {
-                    status = retry_res.status();
-                    is_auth_error = status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
-                    res = retry_res;
+                for endpoint_url in crate::proxy::antigravity::STREAM_ENDPOINTS {
+                    let mut retry_headers = reqwest::header::HeaderMap::new();
+                    retry_headers.insert("authorization", format!("Bearer {}", fresh_token).parse().unwrap());
+                    retry_headers.insert("User-Agent", crate::proxy::antigravity::OFFICIAL_USER_AGENT.parse().unwrap());
+                    retry_headers.insert("Content-Type", "application/json".parse().unwrap());
+
+                    if let Ok(retry_res) = state.http_client.post(endpoint_url).headers(retry_headers).json(&payload_json).send().await {
+                        status = retry_res.status();
+                        is_auth_error = status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
+                        res = retry_res;
+                        if status.is_success() {
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -825,7 +879,7 @@ async fn execute_claude_request(
                     let mut cfg = state.config.write();
                     if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
                         acc.status = "ERROR".to_string();
-                        acc.is_active = false;
+                        // Never deactivate account permanently so it can retry or auto-recover!
                         acc.error_message = Some(helpful_err);
                     }
                     let _ = cfg.save();
