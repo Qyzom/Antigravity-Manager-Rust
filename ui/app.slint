@@ -971,7 +971,7 @@ export component MainWindow inherits Window {
 
                                 Text {
                                     text: root.routing_strategy_index == 0
-                                        ? "• Quota-Aware: Dispatches each incoming request to the healthy account with the highest remaining quota tokens."
+                                        ? "• Quota-Aware: Dispatches each incoming request to the healthy account with the highest remaining quota percentage."
                                         : (root.routing_strategy_index == 1
                                             ? "• Round-Robin: Evenly distributes traffic sequentially across all active connected accounts."
                                             : "• Failover: Routes solely to the primary account, automatically falling back to secondary on rate-limit (429).");

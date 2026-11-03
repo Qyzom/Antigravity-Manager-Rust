@@ -431,17 +431,11 @@ impl AppConfig {
     pub fn get_active_account(&self) -> Option<&UpstreamAccount> {
         match self.routing_strategy {
             RoutingStrategy::QuotaAware => {
-                // Find active account with greatest remaining quota ratio
+                // Find active account with greatest remaining quota percentage
                 self.accounts
                     .iter()
                     .filter(|a| a.is_active && a.status == "Active")
-                    .max_by_key(|a| {
-                        if a.quota_limit > 0 {
-                            a.quota_limit.saturating_sub(a.quota_used)
-                        } else {
-                            0
-                        }
-                    })
+                    .max_by_key(|a| a.claude_gpt_percent.max(a.gemini_percent))
                     .or_else(|| self.accounts.iter().find(|a| a.is_active))
             }
             RoutingStrategy::Failover | RoutingStrategy::RoundRobin => {

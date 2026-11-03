@@ -354,7 +354,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(acc) = cfg.accounts.iter().find(|a| a.id == id_str) {
                 h.set_info_account_name(acc.name.clone().into());
                 h.set_info_account_tier(acc.tier.clone().into());
-                h.set_info_account_quota(format!("{} / {} tokens (Resets {})", acc.quota_used, acc.quota_limit, acc.quota_reset).into());
+                h.set_info_account_quota(format!("Claude & GPT: {}% (Resets {}) | Gemini: {}% (Resets {})", acc.claude_gpt_percent, acc.claude_gpt_reset, acc.gemini_percent, acc.gemini_reset).into());
                 h.set_info_account_models(format!("{} upstream models synchronized with Antigravity", cfg.models.len()).into());
                 h.set_show_account_info(true);
             }
