@@ -177,7 +177,7 @@ impl LoadBalancer {
         let active_accounts: Vec<UpstreamAccount> = config
             .accounts
             .iter()
-            .filter(|a| a.is_active && !a.api_key.is_empty())
+            .filter(|a| a.is_active && a.status.to_uppercase() == "ACTIVE" && !a.api_key.is_empty())
             .cloned()
             .collect();
 

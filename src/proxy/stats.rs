@@ -26,6 +26,8 @@ pub struct ProxyStats {
     pub thinking_tokens: AtomicU64,
     pub total_latency_ms: AtomicU64,
     pub max_latency_ms: AtomicU64,
+    pub logging_enabled: std::sync::atomic::AtomicBool,
+    pub max_log_capacity: std::sync::atomic::AtomicUsize,
     pub recent_logs: RwLock<VecDeque<LogItem>>,
 }
 
@@ -41,7 +43,9 @@ impl ProxyStats {
             thinking_tokens: AtomicU64::new(0),
             total_latency_ms: AtomicU64::new(0),
             max_latency_ms: AtomicU64::new(0),
-            recent_logs: RwLock::new(VecDeque::with_capacity(200)),
+            logging_enabled: std::sync::atomic::AtomicBool::new(true),
+            max_log_capacity: std::sync::atomic::AtomicUsize::new(100),
+            recent_logs: RwLock::new(VecDeque::with_capacity(500)),
         }
     }
 
@@ -76,22 +80,25 @@ impl ProxyStats {
             self.max_latency_ms.store(latency_ms, Ordering::Relaxed);
         }
 
-        let item = LogItem {
-            id: uuid::Uuid::new_v4().to_string(),
-            time: Local::now().format("%H:%M:%S").to_string(),
-            method: method.to_string(),
-            path: path.to_string(),
-            model: model.to_string(),
-            status,
-            tokens,
-            latency_ms,
-        };
+        if self.logging_enabled.load(Ordering::Relaxed) {
+            let max_cap = self.max_log_capacity.load(Ordering::Relaxed).max(10);
+            let item = LogItem {
+                id: uuid::Uuid::new_v4().to_string(),
+                time: Local::now().format("%H:%M:%S").to_string(),
+                method: method.to_string(),
+                path: path.to_string(),
+                model: model.to_string(),
+                status,
+                tokens,
+                latency_ms,
+            };
 
-        if let Ok(mut logs) = self.recent_logs.write() {
-            if logs.len() >= 200 {
-                logs.pop_back();
+            if let Ok(mut logs) = self.recent_logs.write() {
+                while logs.len() >= max_cap {
+                    logs.pop_back();
+                }
+                logs.push_front(item);
             }
-            logs.push_front(item);
         }
     }
 

@@ -1,10 +1,13 @@
 slint::include_modules!();
 
+use aroxy::autostart::set_autostart;
 use aroxy::cli::CliArgs;
 use aroxy::config::{AppConfig, RoutingStrategy, UpstreamAccount};
+use aroxy::i18n::{get_translations, Language};
 use aroxy::proxy::antigravity;
 use aroxy::proxy::server::{create_proxy_router, AppState};
 use aroxy::proxy::stats::ProxyStats;
+use aroxy::sys_metrics::get_process_memory_string;
 use aroxy::tray::{SystemTray, TrayAction};
 use clap::Parser;
 use parking_lot::RwLock;
@@ -14,6 +17,99 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::watch;
+
+fn apply_translations(ui: &MainWindow, lang: Language) {
+    let t = get_translations(lang);
+    let i18n_struct = I18nData {
+        tab_dashboard: t.tab_dashboard.into(),
+        tab_accounts: t.tab_accounts.into(),
+        tab_models: t.tab_models.into(),
+        tab_proxy: t.tab_proxy.into(),
+        tab_logs: t.tab_logs.into(),
+        tab_stats: t.tab_stats.into(),
+        tab_settings: t.tab_settings.into(),
+
+        btn_stop_proxy: t.btn_stop_proxy.into(),
+        btn_start_proxy: t.btn_start_proxy.into(),
+
+        dash_title: t.dash_title.into(),
+        dash_subtitle: t.dash_subtitle.into(),
+        stat_requests: t.stat_requests.into(),
+        stat_tokens: t.stat_tokens.into(),
+        stat_latency: t.stat_latency.into(),
+        stat_accounts: t.stat_accounts.into(),
+        stat_app_ram: t.stat_app_ram.into(),
+        stat_proxy_engine: t.stat_proxy_engine.into(),
+        quota_claude_title: t.quota_claude_title.into(),
+        quota_claude_desc: t.quota_claude_desc.into(),
+        quota_gemini_title: t.quota_gemini_title.into(),
+        quota_gemini_desc: t.quota_gemini_desc.into(),
+
+        acc_title: t.acc_title.into(),
+        acc_subtitle: t.acc_subtitle.into(),
+        btn_login_oauth: t.btn_login_oauth.into(),
+        btn_add_token: t.btn_add_token.into(),
+        acc_placeholder: t.acc_placeholder.into(),
+        acc_pool_header: t.acc_pool_header.into(),
+        btn_update: t.btn_update.into(),
+        btn_info: t.btn_info.into(),
+        btn_delete: t.btn_delete.into(),
+        btn_enable: t.btn_enable.into(),
+        btn_disable: t.btn_disable.into(),
+
+        mod_title: t.mod_title.into(),
+        mod_subtitle: t.mod_subtitle.into(),
+        group_reasoning_title: t.group_reasoning_title.into(),
+        group_reasoning_desc: t.group_reasoning_desc.into(),
+        btn_test_dialog: t.btn_test_dialog.into(),
+
+        test_dialog_title: t.test_dialog_title.into(),
+        test_prompt_label: t.test_prompt_label.into(),
+        test_timeout_label: t.test_timeout_label.into(),
+        test_max_tokens_label: t.test_max_tokens_label.into(),
+        test_stream_toggle: t.test_stream_toggle.into(),
+        btn_send_test: t.btn_send_test.into(),
+        btn_cancel_test: t.btn_cancel_test.into(),
+        btn_close: t.btn_close.into(),
+
+        proxy_title: t.proxy_title.into(),
+        proxy_subtitle: t.proxy_subtitle.into(),
+        sec_network: t.sec_network.into(),
+        sec_routing: t.sec_routing.into(),
+        sec_cache: t.sec_cache.into(),
+        sec_timeouts: t.sec_timeouts.into(),
+        lbl_port: t.lbl_port.into(),
+        lbl_host: t.lbl_host.into(),
+        lbl_timeout: t.lbl_timeout.into(),
+        lbl_heartbeat: t.lbl_heartbeat.into(),
+        lbl_failover: t.lbl_failover.into(),
+
+        logs_title: t.logs_title.into(),
+        logs_subtitle: t.logs_subtitle.into(),
+        btn_clear_logs: t.btn_clear_logs.into(),
+        lbl_enable_logging: t.lbl_enable_logging.into(),
+        lbl_max_logs: t.lbl_max_logs.into(),
+
+        stats_title: t.stats_title.into(),
+        stats_subtitle: t.stats_subtitle.into(),
+
+        sett_title: t.sett_title.into(),
+        sett_subtitle: t.sett_subtitle.into(),
+        sec_visual: t.sec_visual.into(),
+        lbl_language: t.lbl_language.into(),
+        lbl_quota_mode: t.lbl_quota_mode.into(),
+        opt_quota_percent: t.opt_quota_percent.into(),
+        opt_quota_fraction: t.opt_quota_fraction.into(),
+        lbl_hide_brand: t.lbl_hide_brand.into(),
+        sec_system: t.sec_system.into(),
+        lbl_tray: t.lbl_tray.into(),
+        lbl_autostart: t.lbl_autostart.into(),
+        lbl_portable: t.lbl_portable.into(),
+        btn_save_settings: t.btn_save_settings.into(),
+    };
+    ui.set_i18n(i18n_struct);
+    ui.set_current_language(lang.to_index());
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -99,15 +195,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let models_model = Rc::new(VecModel::<ModelItemData>::default());
     main_window.set_models(ModelRc::from(models_model.clone()));
 
-    main_window.set_proxy_running(true);
-    let port = config_arc.read().port;
-    main_window.set_proxy_port(port as i32);
-    main_window.set_proxy_host("127.0.0.1".into());
-    main_window.set_expose_reasoning_variants(config_arc.read().expose_reasoning_variants);
+    // Traffic logs model
+    let logs_model = Rc::new(VecModel::<LogEntryData>::default());
+    main_window.set_log_entries(ModelRc::from(logs_model.clone()));
 
-    // Initial state populate
+    // Initial state populate from config
     {
         let cfg = config_arc.read();
+        let lang = Language::from_str_code(&cfg.language);
+        apply_translations(&main_window, lang);
+
+        main_window.set_proxy_running(true);
+        main_window.set_proxy_port(cfg.port as i32);
+        main_window.set_proxy_host(cfg.host.clone().into());
+        main_window.set_expose_reasoning_variants(cfg.expose_reasoning_variants);
+        main_window.set_group_reasoning_clones(cfg.group_reasoning_clones);
+        main_window.set_quota_display_mode(cfg.quota_display_mode.clone().into());
+        main_window.set_hide_sidebar_brand(cfg.hide_sidebar_brand);
+        main_window.set_setting_timeout_secs(cfg.request_timeout_secs as i32);
+        main_window.set_setting_heartbeat_secs(cfg.heartbeat_interval_secs as i32);
+        main_window.set_setting_minimize_tray(cfg.minimize_to_tray);
+        main_window.set_setting_autostart(cfg.autostart);
+        main_window.set_setting_portable_mode(cfg.portable_mode);
+        main_window.set_routing_strategy_index(cfg.routing_strategy.to_index());
+        main_window.set_cache_affinity_mode_index(cfg.cache_affinity_mode.to_index());
+        main_window.set_session_sticky_ttl_secs(cfg.session_sticky_ttl_secs as i32);
+        main_window.set_quota_imbalance_threshold(cfg.quota_imbalance_threshold as i32);
+        main_window.set_failover_on_429(cfg.failover_on_429);
+        main_window.set_logging_enabled(cfg.log_enabled);
+        main_window.set_max_log_capacity(cfg.max_log_entries as i32);
+
         for acc in &cfg.accounts {
             accounts_model.push(AccountData {
                 id: acc.id.clone().into(),
@@ -130,7 +247,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
         }
 
-        for m in &cfg.models {
+        let filtered_models = if cfg.group_reasoning_clones {
+            cfg.models.iter().filter(|m| !m.id.ends_with("-low") && !m.id.ends_with("-medium") && !m.id.ends_with("-high")).collect::<Vec<_>>()
+        } else {
+            cfg.models.iter().collect::<Vec<_>>()
+        };
+
+        for m in filtered_models {
             models_model.push(ModelItemData {
                 id: m.id.clone().into(),
                 display_name: m.display_name.clone().into(),
@@ -141,27 +264,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
         }
 
-        let total_used = cfg.total_quota_used();
-        let total_limit = cfg.total_quota_limit();
-        let pct = if total_limit > 0 {
-            ((total_used as f64 / total_limit as f64) * 100.0) as i32
-        } else {
-            0
-        };
-        main_window.set_global_quota_used(total_used.to_string().into());
-        main_window.set_global_quota_limit(total_limit.to_string().into());
-        main_window.set_global_quota_percent(pct);
         main_window.set_global_claude_percent(cfg.aggregate_claude_gpt_percent());
+        main_window.set_global_claude_label(cfg.format_claude_quota().into());
         main_window.set_global_claude_reset(cfg.nearest_claude_reset().into());
         main_window.set_global_gemini_percent(cfg.aggregate_gemini_percent());
+        main_window.set_global_gemini_label(cfg.format_gemini_quota().into());
         main_window.set_global_gemini_reset(cfg.nearest_gemini_reset().into());
         main_window.set_healthy_accounts_count(cfg.accounts.iter().filter(|a| a.is_active).count() as i32);
-        main_window.set_routing_strategy_index(cfg.routing_strategy.to_index());
-        main_window.set_quota_refresh_interval(cfg.quota_refresh_interval_secs as i32);
-        main_window.set_cache_affinity_mode_index(cfg.cache_affinity_mode.to_index());
-        main_window.set_session_sticky_ttl_secs(cfg.session_sticky_ttl_secs as i32);
-        main_window.set_quota_imbalance_threshold(cfg.quota_imbalance_threshold as i32);
-        main_window.set_failover_on_429(cfg.failover_on_429);
+        main_window.set_app_memory(get_process_memory_string().into());
     }
 
     // Toggle model callback
@@ -179,19 +289,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         v_mod.fetch_add(1, Ordering::SeqCst);
     });
 
-    // Toggle reasoning variants callback
-    let c_var = Arc::clone(&config_arc);
-    let h_var = window_handle.clone();
-    main_window.on_toggle_reasoning_variants(move || {
+    // Toggle reasoning clones grouping callback
+    let c_grp = Arc::clone(&config_arc);
+    let v_grp = Arc::clone(&cfg_version);
+    let h_grp = window_handle.clone();
+    main_window.on_toggle_reasoning_clones_grouping(move || {
         let next_val = {
-            let mut cfg = c_var.write();
-            cfg.expose_reasoning_variants = !cfg.expose_reasoning_variants;
+            let mut cfg = c_grp.write();
+            cfg.group_reasoning_clones = !cfg.group_reasoning_clones;
             let _ = cfg.save();
-            cfg.expose_reasoning_variants
+            cfg.group_reasoning_clones
         };
-        if let Some(h) = h_var.upgrade() {
-            h.set_expose_reasoning_variants(next_val);
+        if let Some(h) = h_grp.upgrade() {
+            h.set_group_reasoning_clones(next_val);
         }
+        v_grp.fetch_add(1, Ordering::SeqCst);
     });
 
     // Toggle proxy server state
@@ -206,12 +318,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let s_stats_clear = Arc::clone(&stats_arc);
+    // Logging controls
+    let s_clear = Arc::clone(&stats_arc);
     main_window.on_clear_logs(move || {
-        s_stats_clear.clear_logs();
+        s_clear.clear_logs();
     });
 
-    // Add account manually callback (Auto-parses email & quota from token!)
+    let s_log_toggle = Arc::clone(&stats_arc);
+    let c_log_toggle = Arc::clone(&config_arc);
+    let h_log_toggle = window_handle.clone();
+    main_window.on_toggle_logging(move || {
+        let cur = s_log_toggle.logging_enabled.load(Ordering::Relaxed);
+        let next = !cur;
+        s_log_toggle.logging_enabled.store(next, Ordering::Relaxed);
+        {
+            let mut cfg = c_log_toggle.write();
+            cfg.log_enabled = next;
+            let _ = cfg.save();
+        }
+        if let Some(h) = h_log_toggle.upgrade() {
+            h.set_logging_enabled(next);
+        }
+    });
+
+    let s_max_logs = Arc::clone(&stats_arc);
+    let c_max_logs = Arc::clone(&config_arc);
+    let h_max_logs = window_handle.clone();
+    main_window.on_set_max_logs(move |count| {
+        let cnt = count as usize;
+        s_max_logs.max_log_capacity.store(cnt, Ordering::Relaxed);
+        {
+            let mut cfg = c_max_logs.write();
+            cfg.max_log_entries = cnt;
+            let _ = cfg.save();
+        }
+        if let Some(h) = h_max_logs.upgrade() {
+            h.set_max_log_capacity(count);
+        }
+    });
+
+    // Add account manually callback
     let c_add = Arc::clone(&config_arc);
     let v_add = Arc::clone(&cfg_version);
     let h_add = window_handle.clone();
@@ -275,7 +421,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     claude_gpt_reset: detailed_quota.claude_gpt_reset,
                     gemini_percent: detailed_quota.gemini_percent,
                     gemini_reset: detailed_quota.gemini_reset,
-                    status: "Active".to_string(),
+                    status: "ACTIVE".to_string(),
                     is_active: true,
                 };
 
@@ -283,7 +429,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let mut cfg = c_clone.write();
                     cfg.accounts.push(new_acc);
                     if let Some(m) = fetched_models {
-                        cfg.models = m;
+                        // Filter out any uncurated internal junk models
+                        let clean_models: Vec<_> = m.into_iter().filter(|x| !x.id.starts_with("chat_") && !x.id.contains("gemini-3.5")).collect();
+                        if !clean_models.is_empty() {
+                            cfg.models = clean_models;
+                        }
                     }
                     let _ = cfg.save();
                 }
@@ -302,6 +452,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = std::process::Command::new("xdg-open").arg(&auth_url).spawn();
         #[cfg(target_os = "windows")]
         let _ = std::process::Command::new("cmd").args(["/C", "start", &auth_url]).spawn();
+    });
+
+    // Toggle account active state callback
+    let c_tog = Arc::clone(&config_arc);
+    let v_tog = Arc::clone(&cfg_version);
+    main_window.on_toggle_account_active(move |id_slint| {
+        let id_str = id_slint.to_string();
+        {
+            let mut cfg = c_tog.write();
+            if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id_str) {
+                acc.is_active = !acc.is_active;
+                acc.status = if acc.is_active { "ACTIVE".to_string() } else { "DISABLED".to_string() };
+            }
+            let _ = cfg.save();
+        }
+        v_tog.fetch_add(1, Ordering::SeqCst);
     });
 
     // Refresh quota callback
@@ -334,9 +500,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         acc.claude_gpt_reset = detailed_quota.claude_gpt_reset;
                         acc.gemini_percent = detailed_quota.gemini_percent;
                         acc.gemini_reset = detailed_quota.gemini_reset;
-                        acc.status = "Active".to_string();
                     }
-                    cfg.models = models;
+                    let clean_models: Vec<_> = models.into_iter().filter(|x| !x.id.starts_with("chat_") && !x.id.contains("gemini-3.5")).collect();
+                    if !clean_models.is_empty() {
+                        cfg.models = clean_models;
+                    }
                     let _ = cfg.save();
                 }
                 v_clone.fetch_add(1, Ordering::SeqCst);
@@ -344,18 +512,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     });
 
-    // Show account info callback
+    // Open account details dialog callback
     let c_info = Arc::clone(&config_arc);
     let h_info = window_handle.clone();
-    main_window.on_show_account_details(move |id_slint| {
+    main_window.on_open_account_info(move |id_slint| {
         let id_str = id_slint.to_string();
         if let Some(h) = h_info.upgrade() {
             let cfg = c_info.read();
             if let Some(acc) = cfg.accounts.iter().find(|a| a.id == id_str) {
                 h.set_info_account_name(acc.name.clone().into());
                 h.set_info_account_tier(acc.tier.clone().into());
-                h.set_info_account_quota(format!("Claude & GPT: {}% (Resets {}) | Gemini: {}% (Resets {})", acc.claude_gpt_percent, acc.claude_gpt_reset, acc.gemini_percent, acc.gemini_reset).into());
-                h.set_info_account_models(format!("{} upstream models synchronized with Antigravity", cfg.models.len()).into());
+                h.set_info_account_status(acc.status.clone().into());
+                h.set_info_account_claude(format!("{}% Available (Resets {})", acc.claude_gpt_percent, acc.claude_gpt_reset).into());
+                h.set_info_account_gemini(format!("{}% Available (Resets {})", acc.gemini_percent, acc.gemini_reset).into());
+                h.set_info_account_models(format!("{} upstream models available", cfg.models.len()).into());
                 h.set_show_account_info(true);
             }
         }
@@ -372,6 +542,184 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = cfg.save();
         }
         v_del.fetch_add(1, Ordering::SeqCst);
+    });
+
+    // Open Test Model Dialog callback
+    let h_test_dlg = window_handle.clone();
+    main_window.on_open_test_dialog(move |model_id_slint| {
+        if let Some(h) = h_test_dlg.upgrade() {
+            h.set_test_model_id(model_id_slint);
+            h.set_test_status("Ready".into());
+            h.set_test_latency("0 ms".into());
+            h.set_test_tokens("0".into());
+            h.set_test_response("".into());
+            h.set_show_test_dialog(true);
+        }
+    });
+
+    // Test execution cancellation flag
+    let test_cancelled = Arc::new(AtomicBool::new(false));
+
+    // Cancel test callback
+    let cancel_flag = Arc::clone(&test_cancelled);
+    let h_cancel = window_handle.clone();
+    main_window.on_cancel_test_request(move || {
+        cancel_flag.store(true, Ordering::SeqCst);
+        if let Some(h) = h_cancel.upgrade() {
+            h.set_test_status("Cancelled".into());
+            h.set_test_running(false);
+        }
+    });
+
+    // Execute test request callback
+    let h_test_exec = window_handle.clone();
+    let port_test = config_arc.read().port;
+    let cancel_exec = Arc::clone(&test_cancelled);
+    main_window.on_execute_test_request(move || {
+        if let Some(h) = h_test_exec.upgrade() {
+            cancel_exec.store(false, Ordering::SeqCst);
+            h.set_test_running(true);
+            h.set_test_status("Dispatching...".into());
+            h.set_test_response("Waiting for first token...".into());
+
+            let prompt = h.get_test_prompt().to_string();
+            let model = h.get_test_model_id().to_string();
+            let timeout_val: u64 = h.get_test_timeout_secs().to_string().parse().unwrap_or(60);
+            let max_tok: u64 = h.get_test_max_tokens().to_string().parse().unwrap_or(2048);
+            let temp: f64 = h.get_test_temperature().to_string().parse().unwrap_or(0.7);
+            let is_stream = h.get_test_stream();
+
+            let h_async = h_test_exec.clone();
+            let cancel_ref = Arc::clone(&cancel_exec);
+
+            tokio::spawn(async move {
+                let start = std::time::Instant::now();
+                let client = reqwest::Client::builder()
+                    .timeout(Duration::from_secs(timeout_val))
+                    .build()
+                    .unwrap_or_default();
+
+                let test_url = format!("http://127.0.0.1:{}/v1/chat/completions", port_test);
+                let req_payload = serde_json::json!({
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": temp,
+                    "max_tokens": max_tok,
+                    "stream": is_stream
+                });
+
+                if cancel_ref.load(Ordering::SeqCst) {
+                    return;
+                }
+
+                match client.post(&test_url).json(&req_payload).send().await {
+                    Ok(resp) => {
+                        let status_code = resp.status();
+                        let lat = start.elapsed().as_millis();
+                        let body_text = resp.text().await.unwrap_or_default();
+
+                        if cancel_ref.load(Ordering::SeqCst) {
+                            return;
+                        }
+
+                        let (content_text, tokens) = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&body_text) {
+                            let text = parsed["choices"][0]["message"]["content"].as_str().unwrap_or(&body_text).to_string();
+                            let tok = parsed["usage"]["total_tokens"].as_u64().unwrap_or(45);
+                            (text, tok)
+                        } else {
+                            (body_text, 0)
+                        };
+
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(ui) = h_async.upgrade() {
+                                ui.set_test_status(format!("{} OK", status_code.as_u16()).into());
+                                ui.set_test_latency(format!("{} ms", lat).into());
+                                ui.set_test_tokens(tokens.to_string().into());
+                                ui.set_test_response(content_text.into());
+                                ui.set_test_running(false);
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(ui) = h_async.upgrade() {
+                                ui.set_test_status("Error".into());
+                                ui.set_test_response(format!("Request error: {}", e).into());
+                                ui.set_test_running(false);
+                            }
+                        });
+                    }
+                }
+            });
+        }
+    });
+
+    // Open Log Details Modal callback
+    let s_log_modal = Arc::clone(&stats_arc);
+    let h_log_modal = window_handle.clone();
+    main_window.on_open_log_details(move |id_slint| {
+        let id_str = id_slint.to_string();
+        if let Some(h) = h_log_modal.upgrade() {
+            if let Ok(logs) = s_log_modal.recent_logs.read() {
+                if let Some(item) = logs.iter().find(|l| l.id == id_str) {
+                    h.set_modal_log_time(item.time.clone().into());
+                    h.set_modal_log_method(item.method.clone().into());
+                    h.set_modal_log_path(item.path.clone().into());
+                    h.set_modal_log_model(item.model.clone().into());
+                    h.set_modal_log_status(if item.status == 200 { "200 OK".into() } else { format!("{} Error", item.status).into() });
+                    h.set_modal_log_tokens(item.tokens.to_string().into());
+                    h.set_modal_log_latency(format!("{} ms", item.latency_ms).into());
+                    h.set_show_log_modal(true);
+                }
+            }
+        }
+    });
+
+    // Language switcher callback
+    let c_lang = Arc::clone(&config_arc);
+    let h_lang = window_handle.clone();
+    main_window.on_set_language(move |idx| {
+        let lang = Language::from_index(idx);
+        {
+            let mut cfg = c_lang.write();
+            cfg.language = lang.to_code().to_string();
+            let _ = cfg.save();
+        }
+        if let Some(h) = h_lang.upgrade() {
+            apply_translations(&h, lang);
+        }
+    });
+
+    // Quota display mode callback
+    let c_qdm = Arc::clone(&config_arc);
+    let h_qdm = window_handle.clone();
+    let v_qdm = Arc::clone(&cfg_version);
+    main_window.on_set_quota_display_mode(move |mode_slint| {
+        let mode_str = mode_slint.to_string();
+        {
+            let mut cfg = c_qdm.write();
+            cfg.quota_display_mode = mode_str.clone();
+            let _ = cfg.save();
+        }
+        if let Some(h) = h_qdm.upgrade() {
+            h.set_quota_display_mode(mode_str.into());
+        }
+        v_qdm.fetch_add(1, Ordering::SeqCst);
+    });
+
+    // Toggle hide brand callback
+    let c_hb = Arc::clone(&config_arc);
+    let h_hb = window_handle.clone();
+    main_window.on_toggle_hide_brand(move || {
+        let next_val = {
+            let mut cfg = c_hb.write();
+            cfg.hide_sidebar_brand = !cfg.hide_sidebar_brand;
+            let _ = cfg.save();
+            cfg.hide_sidebar_brand
+        };
+        if let Some(h) = h_hb.upgrade() {
+            h.set_hide_sidebar_brand(next_val);
+        }
     });
 
     // Set routing strategy callback
@@ -447,76 +795,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // Run Playground Test Callback
-    let h_play = window_handle.clone();
-    let port_play = config_arc.read().port;
-    main_window.on_run_playground_test(move || {
-        if let Some(h) = h_play.upgrade() {
-            h.set_playground_running(true);
-            h.set_playground_status("Dispatching...".into());
-            let prompt = h.get_playground_prompt().to_string();
-            let model = h.get_playground_model().to_string();
-            let h_async = h_play.clone();
-
-            tokio::spawn(async move {
-                let start = std::time::Instant::now();
-                let client = reqwest::Client::new();
-                let test_url = format!("http://127.0.0.1:{}/v1/chat/completions", port_play);
-
-                let req_payload = serde_json::json!({
-                    "model": model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "stream": false
-                });
-
-                match client.post(&test_url).json(&req_payload).send().await {
-                    Ok(resp) => {
-                        let status_code = resp.status();
-                        let lat = start.elapsed().as_millis();
-                        let body_text = resp.text().await.unwrap_or_default();
-
-                        // Parse response or show body
-                        let (content_text, tokens) = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&body_text) {
-                            let text = parsed["choices"][0]["message"]["content"].as_str().unwrap_or(&body_text).to_string();
-                            let tok = parsed["usage"]["total_tokens"].as_u64().unwrap_or(45);
-                            (text, tok)
-                        } else {
-                            (body_text, 0)
-                        };
-
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(ui) = h_async.upgrade() {
-                                ui.set_playground_status(format!("{} OK", status_code.as_u16()).into());
-                                ui.set_playground_latency(format!("{} ms", lat).into());
-                                ui.set_playground_tokens(tokens.to_string().into());
-                                ui.set_playground_response(content_text.into());
-                                ui.set_playground_running(false);
-                            }
-                        });
-                    }
-                    Err(e) => {
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(ui) = h_async.upgrade() {
-                                ui.set_playground_status("Error".into());
-                                ui.set_playground_response(format!("Connection error: {}", e).into());
-                                ui.set_playground_running(false);
-                            }
-                        });
-                    }
-                }
-            });
-        }
-    });
-
     // Save Settings Callback
     let c_set = Arc::clone(&config_arc);
     let h_set = window_handle.clone();
     main_window.on_save_settings(move || {
         if let Some(h) = h_set.upgrade() {
+            let autostart_enabled = h.get_setting_autostart();
+            let _ = set_autostart(autostart_enabled);
+
             let mut cfg = c_set.write();
             cfg.minimize_to_tray = h.get_setting_minimize_tray();
             cfg.portable_mode = h.get_setting_portable_mode();
-            cfg.autostart = h.get_setting_autostart();
+            cfg.autostart = autostart_enabled;
             cfg.request_timeout_secs = h.get_setting_timeout_secs() as u64;
             cfg.heartbeat_interval_secs = h.get_setting_heartbeat_secs() as u64;
             let _ = cfg.save();
@@ -545,12 +835,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let timer = slint::Timer::default();
     let s_timer = Arc::clone(&stats_arc);
     let c_timer = Arc::clone(&config_arc);
-    let b_timer = Arc::clone(&balancer_arc);
     let v_timer = Arc::clone(&cfg_version);
     let mut last_seen_version: u64 = 0;
     let w_timer = window_handle.clone();
-    let logs_model = Rc::new(VecModel::<LogEntryData>::default());
-    main_window.set_log_entries(ModelRc::from(logs_model.clone()));
 
     timer.start(slint::TimerMode::Repeated, Duration::from_millis(500), move || {
         if let Some(w) = w_timer.upgrade() {
@@ -558,12 +845,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             w.set_total_requests(reqs.to_string().into());
             w.set_total_tokens(tokens.to_string().into());
             w.set_avg_latency(format!("{} ms", avg_lat).into());
-
-            // Balancer & Cache Affinity metrics
-            let (_routed, _hits, failovers, hit_rate, active_pins) = b_timer.get_metrics();
-            w.set_balancer_hit_rate(format!("{:.1}%", hit_rate).into());
-            w.set_balancer_active_sessions(active_pins as i32);
-            w.set_balancer_failover_count(failovers as i32);
+            w.set_app_memory(get_process_memory_string().into());
 
             // Detailed stats
             let (_, succ, errs, prompt_tok, comp_tok, think_tok, _, max_lat) = s_timer.get_detailed_stats();
@@ -613,9 +895,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .collect::<Vec<_>>(),
                 );
 
+                let filtered_models = if cfg.group_reasoning_clones {
+                    cfg.models.iter().filter(|m| !m.id.ends_with("-low") && !m.id.ends_with("-medium") && !m.id.ends_with("-high")).collect::<Vec<_>>()
+                } else {
+                    cfg.models.iter().collect::<Vec<_>>()
+                };
+
                 models_model.set_vec(
-                    cfg.models
-                        .iter()
+                    filtered_models
+                        .into_iter()
                         .map(|m| ModelItemData {
                             id: m.id.clone().into(),
                             display_name: m.display_name.clone().into(),
@@ -627,19 +915,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .collect::<Vec<_>>(),
                 );
 
-                let total_used = cfg.total_quota_used();
-                let total_limit = cfg.total_quota_limit();
-                let pct = if total_limit > 0 {
-                    ((total_used as f64 / total_limit as f64) * 100.0) as i32
-                } else {
-                    0
-                };
-                w.set_global_quota_used(total_used.to_string().into());
-                w.set_global_quota_limit(total_limit.to_string().into());
-                w.set_global_quota_percent(pct);
                 w.set_global_claude_percent(cfg.aggregate_claude_gpt_percent());
+                w.set_global_claude_label(cfg.format_claude_quota().into());
                 w.set_global_claude_reset(cfg.nearest_claude_reset().into());
                 w.set_global_gemini_percent(cfg.aggregate_gemini_percent());
+                w.set_global_gemini_label(cfg.format_gemini_quota().into());
                 w.set_global_gemini_reset(cfg.nearest_gemini_reset().into());
                 w.set_healthy_accounts_count(cfg.accounts.iter().filter(|a| a.is_active).count() as i32);
             }

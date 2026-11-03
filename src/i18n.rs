@@ -1,0 +1,402 @@
+// Aroxy i18n Localization Engine (English, Russian, Chinese)
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum Language {
+    #[default]
+    En,
+    Ru,
+    Zh,
+}
+
+impl Language {
+    pub fn from_str_code(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "ru" | "russian" => Self::Ru,
+            "zh" | "chinese" => Self::Zh,
+            _ => Self::En,
+        }
+    }
+
+    pub fn to_code(&self) -> &'static str {
+        match self {
+            Self::En => "en",
+            Self::Ru => "ru",
+            Self::Zh => "zh",
+        }
+    }
+
+    pub fn from_index(idx: i32) -> Self {
+        match idx {
+            1 => Self::Ru,
+            2 => Self::Zh,
+            _ => Self::En,
+        }
+    }
+
+    pub fn to_index(&self) -> i32 {
+        match self {
+            Self::En => 0,
+            Self::Ru => 1,
+            Self::Zh => 2,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TranslationBundle {
+    pub tab_dashboard: &'static str,
+    pub tab_accounts: &'static str,
+    pub tab_models: &'static str,
+    pub tab_proxy: &'static str,
+    pub tab_logs: &'static str,
+    pub tab_stats: &'static str,
+    pub tab_settings: &'static str,
+
+    pub btn_stop_proxy: &'static str,
+    pub btn_start_proxy: &'static str,
+
+    pub dash_title: &'static str,
+    pub dash_subtitle: &'static str,
+    pub stat_requests: &'static str,
+    pub stat_tokens: &'static str,
+    pub stat_latency: &'static str,
+    pub stat_accounts: &'static str,
+    pub stat_app_ram: &'static str,
+    pub stat_proxy_engine: &'static str,
+    pub quota_claude_title: &'static str,
+    pub quota_claude_desc: &'static str,
+    pub quota_gemini_title: &'static str,
+    pub quota_gemini_desc: &'static str,
+
+    pub acc_title: &'static str,
+    pub acc_subtitle: &'static str,
+    pub btn_login_oauth: &'static str,
+    pub btn_add_token: &'static str,
+    pub acc_placeholder: &'static str,
+    pub acc_pool_header: &'static str,
+    pub btn_update: &'static str,
+    pub btn_info: &'static str,
+    pub btn_delete: &'static str,
+    pub btn_enable: &'static str,
+    pub btn_disable: &'static str,
+
+    pub mod_title: &'static str,
+    pub mod_subtitle: &'static str,
+    pub group_reasoning_title: &'static str,
+    pub group_reasoning_desc: &'static str,
+    pub btn_test_dialog: &'static str,
+
+    pub test_dialog_title: &'static str,
+    pub test_prompt_label: &'static str,
+    pub test_timeout_label: &'static str,
+    pub test_max_tokens_label: &'static str,
+    pub test_stream_toggle: &'static str,
+    pub btn_send_test: &'static str,
+    pub btn_cancel_test: &'static str,
+    pub btn_close: &'static str,
+
+    pub proxy_title: &'static str,
+    pub proxy_subtitle: &'static str,
+    pub sec_network: &'static str,
+    pub sec_routing: &'static str,
+    pub sec_cache: &'static str,
+    pub sec_timeouts: &'static str,
+    pub lbl_port: &'static str,
+    pub lbl_host: &'static str,
+    pub lbl_timeout: &'static str,
+    pub lbl_heartbeat: &'static str,
+    pub lbl_failover: &'static str,
+
+    pub logs_title: &'static str,
+    pub logs_subtitle: &'static str,
+    pub btn_clear_logs: &'static str,
+    pub lbl_enable_logging: &'static str,
+    pub lbl_max_logs: &'static str,
+
+    pub stats_title: &'static str,
+    pub stats_subtitle: &'static str,
+
+    pub sett_title: &'static str,
+    pub sett_subtitle: &'static str,
+    pub sec_visual: &'static str,
+    pub lbl_language: &'static str,
+    pub lbl_quota_mode: &'static str,
+    pub opt_quota_percent: &'static str,
+    pub opt_quota_fraction: &'static str,
+    pub lbl_hide_brand: &'static str,
+    pub sec_system: &'static str,
+    pub lbl_tray: &'static str,
+    pub lbl_autostart: &'static str,
+    pub lbl_portable: &'static str,
+    pub btn_save_settings: &'static str,
+}
+
+pub fn get_translations(lang: Language) -> TranslationBundle {
+    match lang {
+        Language::Ru => TranslationBundle {
+            tab_dashboard: "Дашборд",
+            tab_accounts: "Аккаунты",
+            tab_models: "Модели и Тест",
+            tab_proxy: "Прослойка",
+            tab_logs: "Логи трафика",
+            tab_stats: "Статистика",
+            tab_settings: "Настройки",
+
+            btn_stop_proxy: "ОСТАНОВИТЬ",
+            btn_start_proxy: "ЗАПУСТИТЬ",
+
+            dash_title: "Дашборд и состояние",
+            dash_subtitle: "Общее состояние квот, статус сервиса и нагрузка",
+            stat_requests: "ВСЕГО ЗАПРОСОВ",
+            stat_tokens: "ОБРАБОТАНО ТОКЕНОВ",
+            stat_latency: "СРЕДНЯЯ ЗАДЕРЖКА",
+            stat_accounts: "ПУЛ АККАУНТОВ",
+            stat_app_ram: "ПАМЯТЬ AROXY",
+            stat_proxy_engine: "ДВИЖОК СЕТИ",
+            quota_claude_title: "Пул квот Claude & GPT",
+            quota_claude_desc: "Общая скользящая емкость для Claude 3.7 / 3.5 Sonnet, Opus 4.6, GPT-OSS",
+            quota_gemini_title: "Пул квот Gemini",
+            quota_gemini_desc: "Выделенная емкость для Gemini 2.5 Flash, 2.5 Pro, Gemini 3.x и 4 Argon",
+
+            acc_title: "Управление аккаунтами и квотами",
+            acc_subtitle: "Пул аккаунтов Antigravity с автоматическим парсингом почты и лимитов",
+            btn_login_oauth: "Вход через браузер (OAuth)",
+            btn_add_token: "Добавить токен",
+            acc_placeholder: "Вставьте Refresh Token / OAuth ключ (ya29... или 1//...)",
+            acc_pool_header: "ПОДКЛЮЧЕННЫЕ АККАУНТЫ (ПУЛ)",
+            btn_update: "Обновить",
+            btn_info: "Инфо",
+            btn_delete: "Удалить",
+            btn_enable: "ВКЛЮЧИТЬ",
+            btn_disable: "ОТКЛЮЧИТЬ",
+
+            mod_title: "Каталог моделей и тестирование",
+            mod_subtitle: "Трансляция моделей в клиенты, группировка reasoning и тестовые запросы",
+            group_reasoning_title: "Объединять reasoning-клоны в базовые модели",
+            group_reasoning_desc: "Схлопывает (low), (medium), (high) в одну модель с меткой Thinking",
+            btn_test_dialog: "Тест",
+
+            test_dialog_title: "Тестирование модели и отладка API",
+            test_prompt_label: "Тестовый промпт",
+            test_timeout_label: "Таймаут (сек)",
+            test_max_tokens_label: "Макс. токенов",
+            test_stream_toggle: "Стриминг ответа (SSE)",
+            btn_send_test: "Отправить запрос",
+            btn_cancel_test: "Отозвать запрос",
+            btn_close: "Закрыть",
+
+            proxy_title: "Маршрутизация и параметры прокси",
+            proxy_subtitle: "Балансировка квот, кэш промптов, сетевые порты и таймауты",
+            sec_network: "Сетевые порты и привязка адреса",
+            sec_routing: "Стратегия распределения нагрузки",
+            sec_cache: "Привязка кэша промптов (Cache Affinity)",
+            sec_timeouts: "Таймауты протокола и Keepalive",
+            lbl_port: "Порт прокси",
+            lbl_host: "Хост привязки",
+            lbl_timeout: "Таймаут запроса к апстриму (сек)",
+            lbl_heartbeat: "Интервал SSE Keepalive / Ping (сек)",
+            lbl_failover: "Бесшовный переход при 429 (Zero-Downtime)",
+
+            logs_title: "Логи трафика и инспектор запросов",
+            logs_subtitle: "Просмотр HTTP запросов, заголовков, времени ответа и ошибок",
+            btn_clear_logs: "Очистить логи",
+            lbl_enable_logging: "Запись логов включена",
+            lbl_max_logs: "Лимит отображаемых логов",
+
+            stats_title: "Аналитика телеметрии и токены",
+            stats_subtitle: "Детальный анализ потребления контекста, ответов и рассуждений",
+
+            sett_title: "Настройки приложения и системы",
+            sett_subtitle: "Визуальные параметры, язык, автозагрузка и системный трей",
+            sec_visual: "Визуальные параметры",
+            lbl_language: "Язык интерфейса",
+            lbl_quota_mode: "Формат отображения квоты",
+            opt_quota_percent: "В процентах (напр. 85%)",
+            opt_quota_fraction: "Оригинальное (доля, напр. 0.85)",
+            lbl_hide_brand: "Скрыть логотип Aroxy в боковой панели",
+            sec_system: "Системные параметры",
+            lbl_tray: "Сворачивать в системный трей при закрытии",
+            lbl_autostart: "Запуск при старте системы (Автозагрузка)",
+            lbl_portable: "Портативный режим конфигурации (aroxy.json)",
+            btn_save_settings: "Сохранить и применить настройки",
+        },
+
+        Language::Zh => TranslationBundle {
+            tab_dashboard: "仪表盘",
+            tab_accounts: "账号池",
+            tab_models: "模型与测试",
+            tab_proxy: "代理路由",
+            tab_logs: "流量日志",
+            tab_stats: "统计分析",
+            tab_settings: "系统设置",
+
+            btn_stop_proxy: "停止代理",
+            btn_start_proxy: "启动代理",
+
+            dash_title: "仪表盘与系统概览",
+            dash_subtitle: "聚合配额健康度、服务状态与实时负载",
+            stat_requests: "总请求数",
+            stat_tokens: "处理 TOKEN",
+            stat_latency: "平均延迟",
+            stat_accounts: "已连接账号",
+            stat_app_ram: "内存占用",
+            stat_proxy_engine: "代理引擎",
+            quota_claude_title: "Claude 与 GPT 配额池",
+            quota_claude_desc: "Claude 3.7 / 3.5 Sonnet、Opus 4.6 与 GPT-OSS 共享 5 小时滚动配额",
+            quota_gemini_title: "Gemini 配额池",
+            quota_gemini_desc: "Gemini 2.5 Flash / Pro、3.x 与 4 Argon 独立配额",
+
+            acc_title: "上游账号与配额管理",
+            acc_subtitle: "Antigravity 账号池，支持自动邮箱解析与配额跟踪",
+            btn_login_oauth: "浏览器一键授权 (OAuth)",
+            btn_add_token: "添加 Token",
+            acc_placeholder: "粘贴 Refresh Token 或密钥 (ya29... 或 1//...)",
+            acc_pool_header: "已连接账号池",
+            btn_update: "刷新配额",
+            btn_info: "详情",
+            btn_delete: "删除",
+            btn_enable: "启用",
+            btn_disable: "禁用",
+
+            mod_title: "模型目录与调试测试",
+            mod_subtitle: "配置模型广播开关、思考级别合并及测试请求",
+            group_reasoning_title: "将思考变体合并为基础模型",
+            group_reasoning_desc: "将 (low)、(medium)、(high) 变体合并为带 Thinking 标签的单一模型",
+            btn_test_dialog: "测试",
+
+            test_dialog_title: "模型接口调试与响应测试",
+            test_prompt_label: "测试提示词",
+            test_timeout_label: "超时时间 (秒)",
+            test_max_tokens_label: "最大 Token",
+            test_stream_toggle: "流式输出 (SSE)",
+            btn_send_test: "发送请求",
+            btn_cancel_test: "取消请求",
+            btn_close: "关闭",
+
+            proxy_title: "代理路由与协议网关",
+            proxy_subtitle: "配置智能配额路由、Prompt 缓存亲和性及网络参数",
+            sec_network: "网络与服务绑定",
+            sec_routing: "多账号路由策略",
+            sec_cache: "Prompt 缓存亲和性 (Cache Affinity)",
+            sec_timeouts: "协议超时与保活机制",
+            lbl_port: "代理端口",
+            lbl_host: "监听地址",
+            lbl_timeout: "上游请求超时 (秒)",
+            lbl_heartbeat: "SSE 保活心跳 (秒)",
+            lbl_failover: "遭遇 429 自动无缝重试",
+
+            logs_title: "实时流量与日志检查",
+            logs_subtitle: "检查实时 HTTP 流、请求头、延迟百分位及错误",
+            btn_clear_logs: "清空日志",
+            lbl_enable_logging: "启用请求日志记录",
+            lbl_max_logs: "最大显示记录数",
+
+            stats_title: "遥测分析与 Token 分布",
+            stats_subtitle: "深度洞察 Prompt、输出及思考 Token 消耗",
+
+            sett_title: "应用与系统首选项",
+            sett_subtitle: "外观视觉设置、多语言、开机自启与系统托盘",
+            sec_visual: "外观与视觉偏好",
+            lbl_language: "界面语言",
+            lbl_quota_mode: "配额显示模式",
+            opt_quota_percent: "百分比 (如 85%)",
+            opt_quota_fraction: "原始份额 (如 0.85)",
+            lbl_hide_brand: "隐藏侧边栏 Aroxy 标头",
+            sec_system: "系统设置",
+            lbl_tray: "关闭窗口时最小化到系统托盘",
+            lbl_autostart: "开机自启动",
+            lbl_portable: "便携式配置模式 (aroxy.json)",
+            btn_save_settings: "保存并应用设置",
+        },
+
+        Language::En => TranslationBundle {
+            tab_dashboard: "Dashboard",
+            tab_accounts: "Accounts",
+            tab_models: "Models & Test",
+            tab_proxy: "Proxy Layer",
+            tab_logs: "Traffic Logs",
+            tab_stats: "Statistics",
+            tab_settings: "Settings",
+
+            btn_stop_proxy: "STOP PROXY",
+            btn_start_proxy: "START PROXY",
+
+            dash_title: "Dashboard & Overview",
+            dash_subtitle: "Aggregate quota health, active proxy state, and live metrics",
+            stat_requests: "TOTAL REQUESTS",
+            stat_tokens: "TOTAL TOKENS",
+            stat_latency: "AVG LATENCY",
+            stat_accounts: "POOLED ACCOUNTS",
+            stat_app_ram: "APP MEMORY",
+            stat_proxy_engine: "PROXY ENGINE",
+            quota_claude_title: "Claude & GPT Quota Pool",
+            quota_claude_desc: "Shared 5-hour rolling & weekly capacity (Claude 3.7 / 3.5 Sonnet, Opus 4.6, GPT-OSS)",
+            quota_gemini_title: "Gemini Quota Pool",
+            quota_gemini_desc: "Dedicated capacity for Gemini 2.5 Flash, 2.5 Pro, and Gemini 3.x / 4 models",
+
+            acc_title: "Upstream Accounts & Quota Balances",
+            acc_subtitle: "Pooled Antigravity accounts with automatic email parsing and quota tracking",
+            btn_login_oauth: "Login via Browser (OAuth)",
+            btn_add_token: "Add Token",
+            acc_placeholder: "Paste Refresh Token / OAuth Session Key (ya29... or 1//...)",
+            acc_pool_header: "CONNECTED ACCOUNTS (POOL)",
+            btn_update: "Update",
+            btn_info: "Info",
+            btn_delete: "Delete",
+            btn_enable: "ENABLE",
+            btn_disable: "DISABLE",
+
+            mod_title: "Model Catalog & Test Playground",
+            mod_subtitle: "Configure model broadcast toggles, reasoning aliases, and test prompts",
+            group_reasoning_title: "Group Reasoning Clones into Base Models",
+            group_reasoning_desc: "Combines (low), (medium), (high) reasoning variants into a single entry",
+            btn_test_dialog: "Test",
+
+            test_dialog_title: "Test Model Request & Debug Inspector",
+            test_prompt_label: "Test Prompt",
+            test_timeout_label: "Timeout (s)",
+            test_max_tokens_label: "Max Tokens",
+            test_stream_toggle: "Stream Response (SSE)",
+            btn_send_test: "Send Request",
+            btn_cancel_test: "Cancel Request",
+            btn_close: "Close",
+
+            proxy_title: "Proxy Routing & Protocol Gateways",
+            proxy_subtitle: "Configure smart quota routing, prompt cache affinity, and listening ports",
+            sec_network: "Network & Service Binding",
+            sec_routing: "Multi-Account Routing Strategy",
+            sec_cache: "Prompt Cache Affinity",
+            sec_timeouts: "Protocol Timeouts & Heartbeat",
+            lbl_port: "Proxy Port",
+            lbl_host: "Listening Host",
+            lbl_timeout: "Upstream Timeout (s)",
+            lbl_heartbeat: "SSE Keepalive / Ping Interval (s)",
+            lbl_failover: "Seamless Zero-Downtime 429 Failover",
+
+            logs_title: "Real-time Traffic & Stream Inspector",
+            logs_subtitle: "Inspect live HTTP streams, headers, latency percentiles, and errors",
+            btn_clear_logs: "Clear Logs",
+            lbl_enable_logging: "Enable Request Logging",
+            lbl_max_logs: "Max Display Entries",
+
+            stats_title: "Telemetry Analytics & Token Distribution",
+            stats_subtitle: "Deep insight into prompt, completion, and reasoning token consumption",
+
+            sett_title: "Application & System Preferences",
+            sett_subtitle: "Visual options, localization, autostart, and system tray behaviors",
+            sec_visual: "Visual Preferences",
+            lbl_language: "Interface Language",
+            lbl_quota_mode: "Quota Display Mode",
+            opt_quota_percent: "Percentages (e.g. 85%)",
+            opt_quota_fraction: "Original Fraction (e.g. 0.85)",
+            lbl_hide_brand: "Hide Aroxy Brand in Sidebar",
+            sec_system: "System Preferences",
+            lbl_tray: "Minimize to System Tray on Close",
+            lbl_autostart: "Start Minimized with Operating System",
+            lbl_portable: "Portable Configuration Mode (aroxy.json)",
+            btn_save_settings: "Save & Apply Settings",
+        },
+    }
+}

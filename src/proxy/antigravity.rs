@@ -401,7 +401,11 @@ pub async fn fetch_models_and_quota(
                     let mut nearest_reset = "in 4h 00m".to_string();
 
                     for (id, entry) in data.models {
-                        if entry.disabled == Some(true) {
+                        if entry.disabled == Some(true)
+                            || id.starts_with("chat_")
+                            || id.contains("gemini-3.5")
+                            || id.contains("gemini-3-flash")
+                        {
                             continue;
                         }
 

@@ -141,7 +141,19 @@ fn default_quota_reset() -> String {
 }
 
 fn default_status() -> String {
-    "Active".to_string()
+    "ACTIVE".to_string()
+}
+
+fn default_quota_display_mode() -> String {
+    "percent".to_string()
+}
+
+fn default_language() -> String {
+    "en".to_string()
+}
+
+fn default_max_log_entries() -> usize {
+    100
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,6 +165,18 @@ pub struct AppConfig {
     pub autostart: bool,
     pub portable_mode: bool,
     pub expose_reasoning_variants: bool, // Exposes (low), (medium), (high) model clones
+    #[serde(default = "default_quota_display_mode")]
+    pub quota_display_mode: String,     // "percent" or "fraction"
+    #[serde(default)]
+    pub hide_sidebar_brand: bool,       // Collapses top brand in sidebar
+    #[serde(default = "default_language")]
+    pub language: String,               // "en", "ru", "zh"
+    #[serde(default = "default_true")]
+    pub log_enabled: bool,
+    #[serde(default = "default_max_log_entries")]
+    pub max_log_entries: usize,
+    #[serde(default = "default_true")]
+    pub group_reasoning_clones: bool,
     #[serde(default)]
     pub routing_strategy: RoutingStrategy,
     #[serde(default)]
@@ -213,6 +237,12 @@ impl Default for AppConfig {
             autostart: false,
             portable_mode: false,
             expose_reasoning_variants: true,
+            quota_display_mode: "percent".to_string(),
+            hide_sidebar_brand: false,
+            language: "en".to_string(),
+            log_enabled: true,
+            max_log_entries: 100,
+            group_reasoning_clones: true,
             routing_strategy: RoutingStrategy::QuotaAware,
             cache_affinity_mode: CacheAffinityMode::Balanced,
             session_sticky_ttl_secs: 900,
@@ -306,14 +336,6 @@ impl Default for AppConfig {
                     supports_thinking: true,
                 },
                 ModelCatalogItem {
-                    id: "gemini-3.5-flash-low".to_string(),
-                    display_name: "Gemini 3.5 Flash (Medium)".to_string(),
-                    provider: "gemini".to_string(),
-                    tier: "Free".to_string(),
-                    is_enabled: true,
-                    supports_thinking: true,
-                },
-                ModelCatalogItem {
                     id: "gemini-3.1-pro-high".to_string(),
                     display_name: "Gemini 3.1 Pro (High)".to_string(),
                     provider: "gemini".to_string(),
@@ -371,12 +393,28 @@ impl AppConfig {
         if path.exists() {
             if let Ok(content) = fs::read_to_string(&path) {
                 if let Ok(mut cfg) = serde_json::from_str::<AppConfig>(&content) {
-                    // Automatically upgrade model catalog if it contains obsolete legacy models
-                    if cfg.models.iter().any(|m| m.id == "o1" || m.id == "gpt-4o" || m.id == "gpt-4o-mini" || m.id == "o3-mini") {
+                    // Purge any fake models or obsolete internal models (chat_*, gemini-3.5, gemini-3-flash, o1, etc.)
+                    let has_obsolete = cfg.models.iter().any(|m| {
+                        m.id.starts_with("chat_")
+                            || m.id.contains("gemini-3.5")
+                            || m.id.contains("gemini-3-flash")
+                            || m.id == "o1"
+                            || m.id == "gpt-4o"
+                            || m.id == "gpt-4o-mini"
+                            || m.id == "o3-mini"
+                    });
+
+                    if has_obsolete || cfg.models.is_empty() {
                         let defaults = Self::default();
                         cfg.models = defaults.models;
                         let _ = cfg.save();
                     }
+
+                    // Normalize accounts status to uppercase
+                    for acc in &mut cfg.accounts {
+                        acc.status = if acc.is_active { "ACTIVE".to_string() } else { "DISABLED".to_string() };
+                    }
+
                     return cfg;
                 }
             }
@@ -384,6 +422,24 @@ impl AppConfig {
         let default_cfg = Self::default();
         let _ = default_cfg.save();
         default_cfg
+    }
+
+    pub fn format_claude_quota(&self) -> String {
+        let pct = self.aggregate_claude_gpt_percent();
+        if self.quota_display_mode == "fraction" {
+            format!("{:.2} Remaining", (pct as f64) / 100.0)
+        } else {
+            format!("{}% Available", pct)
+        }
+    }
+
+    pub fn format_gemini_quota(&self) -> String {
+        let pct = self.aggregate_gemini_percent();
+        if self.quota_display_mode == "fraction" {
+            format!("{:.2} Remaining", (pct as f64) / 100.0)
+        } else {
+            format!("{}% Available", pct)
+        }
     }
 
     pub fn aggregate_claude_gpt_percent(&self) -> i32 {
