@@ -381,12 +381,14 @@ export component MainWindow inherits Window {
                         padding-left: 10px;
                         padding-right: 10px;
 
-                        Rectangle {
-                            width: 6px;
-                            height: 6px;
-                            border-radius: 3px;
-                            background: root.proxy_running ? #4ade80 : #f87171;
-                            y: (parent.height - self.height) / 2;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 6px;
+                                height: 6px;
+                                border-radius: 3px;
+                                background: root.proxy_running ? #4ade80 : #f87171;
+                            }
                         }
                         Text {
                             text: root.proxy_running ? ("ONLINE :" + root.proxy_port) : "OFFLINE";
