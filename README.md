@@ -59,8 +59,8 @@ Existing tools for transforming Antigravity into standard API endpoints are almo
 ### Release Binaries
 
 Each release provides exactly two portable, standalone artifacts:
-- **Linux:** `Aroxy-0.0.1-x86_64.AppImage`
-- **Windows:** `Aroxy-0.0.1-x86_64.exe`
+- **Linux:** `Aroxy-0.0.2-x86_64.AppImage`
+- **Windows:** `Aroxy-0.0.2-x86_64.exe`
 
 ---
 

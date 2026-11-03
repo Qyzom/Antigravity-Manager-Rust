@@ -4,8 +4,6 @@ on:
   push:
     tags:
       - 'v*'
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
@@ -30,17 +28,21 @@ jobs:
         run: cargo build --release --bin aroxy
 
       - name: Package AppImage
+        shell: bash
         run: |
+          RAW_VER="${GITHUB_REF_NAME#v}"
+          VERSION="${RAW_VER:-0.0.2}"
+          echo "Packaging Linux AppImage for version $VERSION"
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
           chmod +x appimagetool
-          ./packaging/linux/build_appimage.sh
-          ./appimagetool target/AppDir Aroxy-0.0.1-x86_64.AppImage || cp target/release/aroxy Aroxy-0.0.1-x86_64.AppImage
+          ./packaging/linux/build_appimage.sh "$VERSION"
+          ./appimagetool target/AppDir "Aroxy-${VERSION}-x86_64.AppImage" || cp target/release/aroxy "Aroxy-${VERSION}-x86_64.AppImage"
 
       - name: Upload Linux AppImage
         uses: actions/upload-artifact@v4
         with:
-          name: Aroxy-0.0.1-x86_64.AppImage
-          path: Aroxy-0.0.1-x86_64.AppImage
+          name: linux-artifact
+          path: Aroxy-*-x86_64.AppImage
 
   build-windows:
     name: Build Windows Portable EXE
@@ -56,13 +58,17 @@ jobs:
 
       - name: Rename to standard release format
         shell: bash
-        run: cp target/release/aroxy.exe Aroxy-0.0.1-x86_64.exe
+        run: |
+          RAW_VER="${GITHUB_REF_NAME#v}"
+          VERSION="${RAW_VER:-0.0.2}"
+          echo "Packaging Windows EXE for version $VERSION"
+          cp target/release/aroxy.exe "Aroxy-${VERSION}-x86_64.exe"
 
       - name: Upload Windows Portable EXE
         uses: actions/upload-artifact@v4
         with:
-          name: Aroxy-0.0.1-x86_64.exe
-          path: Aroxy-0.0.1-x86_64.exe
+          name: windows-artifact
+          path: Aroxy-*-x86_64.exe
 
   create-release:
     name: Publish GitHub Release (AppImage + EXE)
@@ -84,18 +90,28 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          name: Aroxy v0.0.1
+          name: Aroxy ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
-          files: |
-            dist/Aroxy-0.0.1-x86_64.AppImage
-            dist/Aroxy-0.0.1-x86_64.exe
+          files: dist/*
           draft: false
           prerelease: false
           body: |
-            ## Aroxy v0.0.1
+            ## Aroxy ${{ github.ref_name }}
 
-            Ultra-lightweight high-performance AI protocol proxy & emulator in Rust + Slint.
+            Ultra-lightweight high-performance AI API proxy & emulator for Antigravity supporting OpenAI, Claude & Gemini protocols. Pure Rust + Slint.
+
+            ### What's New in v0.0.2:
+            - **Complete UI Redesign:** Dark minimalist workstation design system with smooth vertical `ScrollView` on all tabs.
+            - **7-Tab Architecture:**
+              - **Dashboard:** Aggregate quota gauge, live status, and 1-click client snippets.
+              - **Accounts:** Browser OAuth loopback callback (`/oauth/callback`) & manual token ingestion with real-time quota telemetry and reset countdowns.
+              - **Models & Playground:** Full Antigravity catalog with `[Free]`, `[Pro]`, `[Thinking]` tiers, broadcast toggles, reasoning clone switches, and live interactive prompt tester with debug telemetry.
+              - **Proxy Layer ("Прослойка"):** Smart Quota-Aware, Round-Robin, and Failover routing strategies with active endpoint monitors.
+              - **Traffic Logs:** Real-time stream and batch inspector with token and latency tracking.
+              - **Statistics:** Granular breakdown of prompt, completion, and reasoning tokens, plus latency percentiles.
+              - **Settings:** Tray daemon toggles, autostart, portable mode (`aroxy.json`), and network timeouts.
+            - **License:** Official permissive MIT License.
 
             ### Release Binaries:
-            - **Linux:** `Aroxy-0.0.1-x86_64.AppImage` (Portable AppImage)
-            - **Windows:** `Aroxy-0.0.1-x86_64.exe` (Standalone Portable Executable)
+            - **Linux:** `Aroxy-0.0.2-x86_64.AppImage` (Standalone Portable AppImage)
+            - **Windows:** `Aroxy-0.0.2-x86_64.exe` (Standalone Portable Executable)

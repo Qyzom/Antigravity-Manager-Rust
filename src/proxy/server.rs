@@ -96,7 +96,7 @@ async fn oauth_callback(
 }
 
 async fn health_check() -> impl IntoResponse {
-    (StatusCode::OK, Json(json!({"status": "ok", "service": "Aroxy", "version": "0.0.1"})))
+    (StatusCode::OK, Json(json!({"status": "ok", "service": "Aroxy", "version": "0.0.2"})))
 }
 
 async fn list_models(State(state): State<AppState>) -> impl IntoResponse {
