@@ -8,8 +8,8 @@ Aroxy is an ultra-lightweight, high-performance cross-platform AI protocol proxy
    - No analytics, tracking, ads, or phone-home requests are allowed under any circumstances.
    - Do NOT introduce WebViews, Chromium, Electron, or Node.js dependencies.
 2. **License Compliance:**
-   - The project is licensed under **CC BY-NC-SA 4.0** due to upstream conceptual derivation from `lbjlaq/Antigravity-Manager`.
-   - All adaptations and extensions must preserve CC BY-NC-SA 4.0 and retain upstream attribution.
+   - The project is licensed under **MIT License**.
+   - Preserves standard permissive open-source usage with attribution retained.
 3. **Lock-Free Concurrency:**
    - Never hold standard blocking locks across async `.await` boundaries.
    - Use `tokio::sync`, atomic counters (`AtomicU64`, `AtomicBool`), or `parking_lot::RwLock` for synchronous operations only.

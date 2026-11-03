@@ -5,7 +5,7 @@
 **Ultra-lightweight API emulator for Antigravity supporting OpenAI, Claude & Gemini protocols.**  
 *Native Linux & Windows • Pure Rust • Slint GUI • Zero Telemetry*
 
-[![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC_BY--NC--SA_4.0-lightgrey.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-2021_Edition-orange.svg)](https://www.rust-lang.org/)
 [![Slint](https://img.shields.io/badge/UI-Slint_1.9-blueviolet.svg)](https://slint.dev/)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-brightgreen.svg)]()
@@ -15,42 +15,41 @@
 
 ---
 
-### Motivation & Background
+### Motivation & Origins
 
-Existing tooling in the Antigravity ecosystem for transforming AI agents into standard OpenAI/Claude API endpoints is unfortunately dominated by heavy Chinese Electron wrappers bundled with third-party analytics, ads, unvetted telemetry, and excessive multi-account overhead.
+Existing tools for transforming Antigravity into standard API endpoints are almost exclusively bloated Chinese Electron wrappers packed with background analytics, ads, unvetted telemetry, and excessive multi-account overhead.
 
-**Aroxy** was built out of frustration with that status quo. The goal was simple: create an ultra-fast, clean, and transparent native application that does one job reliably without tracking, background ads, or massive Chromium memory bloat.
+**Aroxy** was built from scratch to fix this. It is a clean-room, native Rust application designed to turn Antigravity into a rock-solid local API proxy without tracking, promotional junk, or Chromium memory consumption:
 
-Protocol mapping concepts and core ideas are derived from [Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager) by lbjlaq. Aroxy is a complete architectural reimagining and codebase purge:
-- **Telemetry Stripped:** 100% of remote analytics, update checkers, Chinese API callbacks, and promotional services have been eliminated.
-- **Webview Discarded:** Zero Electron, zero Tauri v2, zero React, and zero Node.js. The interface has been completely rewritten from scratch in native **Rust + Slint**.
-- **Bloat Removed:** Complex multi-account swappers, auto-patchers, and embedded cloudflared binaries were discarded in favor of a lean, focused local proxy.
-- **Engine Hardened:** Implemented lock-free streaming via Tokio/Axum, fixing upstream concurrency deadlocks and eliminating timeout dropouts on deep-thinking models (#3816/#3817).
+- **100% Original Codebase:** Written completely from scratch on pure **Tokio**, **Axum**, and **Slint**. Zero upstream code was used or adapted.
+- **Zero Webview & Zero Telemetry:** No Electron, no Tauri, no React, no Node.js. No analytics or phone-home requests under any circumstances.
+- **Engineered for Reliability:** Features lock-free concurrency and automatic SSE heartbeat frames (`: ping\n\n`) to prevent connection timeouts when querying deep-thinking models (Claude 3.7 Sonnet, o1, Gemini 2.5).
 
 ---
 
 ### Comparison
 
-| Feature | Upstream / Typical Electron Wrappers | Aroxy |
+| Feature | Typical Electron Wrappers | Aroxy |
 | :--- | :---: | :---: |
-| **Tech Stack** | Electron / Tauri v2 + React + Node.js | **Pure Rust (Tokio + Axum + Slint)** |
+| **Tech Stack** | Electron / Tauri + React + Node.js | **Pure Rust (Tokio + Axum + Slint)** |
 | **Memory Footprint** | ~250 – 500 MB RAM | **~18 MB RAM** |
 | **Startup Time** | 3 – 8 seconds | **< 80 ms** |
-| **Third-Party Telemetry & Ads** | Present / Phone-home trackers | **Zero (Completely offline & local)** |
-| **Single Portable Binary** | ❌ Multi-file package / Webview runtime | **✔ Portable AppImage & single .exe** |
-| **Headless Daemon Mode** | ❌ No native CLI daemon | **✔ Yes (`--headless`)** |
-| **Thinking Model Stability** | ❌ Timeouts on 10s+ reasoning phases | **✔ Automatic keepalive SSE heartbeats** |
-| **Reasoning Effort Support** | Rigid model definitions | **✔ Dual-mode (Virtual clones + native parameters)** |
+| **Telemetry & Ads** | Trackers / Phone-home / Ads | **Zero (Completely offline & local)** |
+| **Binary Format** | Multi-file package / Webview runtime | **Portable AppImage & single .exe** |
+| **Headless Mode** | ❌ No native CLI daemon | **✔ Yes (`--headless`)** |
+| **Thinking Stability** | ❌ Timeouts on long reasoning phases | **✔ Automatic keepalive SSE heartbeats** |
+| **Reasoning Effort** | Fixed model names | **✔ Dual-mode (Virtual clones + native parameters)** |
+| **License** | Restrictive / Copyleft | **✔ Permissive MIT License** |
 
 ---
 
 ### Features
 
-- **Multi-Protocol Emulation:** Emulates `/v1/chat/completions`, `/v1/models`, and Anthropic `/v1/messages` with streaming SSE translation.
+- **Multi-Protocol Emulation:** Native `/v1/chat/completions`, `/v1/models`, and Anthropic `/v1/messages` compatibility with real-time SSE stream translation.
 - **Dual-Mode Reasoning Effort:**
-  - **Virtual Clones:** Automatically broadcasts `(low)`, `(medium)`, `(high)`, and `(no-thinking)` model variants for clients without native reasoning controls (e.g., `claude-3-7-sonnet (medium)`).
-  - **Native Protocol Control:** Transparently honors OpenAI `reasoning_effort` and Anthropic `thinking.budget_tokens`.
-- **Model Catalog Filtering:** Enable or disable specific models from being broadcasted via `/v1/models` directly from the UI.
+  - **Virtual Clones:** Automatically exposes `(low)`, `(medium)`, `(high)`, and `(no-thinking)` model variants for clients without reasoning sliders (e.g., `claude-3-7-sonnet (medium)`).
+  - **Native Protocol Control:** Transparently honors native OpenAI `reasoning_effort` and Anthropic `thinking.budget_tokens`.
+- **Model Catalog Filtering:** Enable or disable specific models broadcasted via `/v1/models` directly in the UI.
 - **Anti-Detection Fingerprinting:** Selectable client profiles (`Claude Code 2.x`, `Cursor Pro`, `Antigravity CLI`, `OpenCode`) with authentic User-Agent and protocol headers.
 - **Modern Dark UI:** Minimalist monochrome design inspired by modern desktop interfaces.
 - **Background Tray Daemon:** Minimize to system tray on close with zero resource waste.
@@ -97,16 +96,15 @@ export OPENAI_API_KEY="dummy"
 
 ### Maintenance & Update Policy
 
-Aroxy is maintained with stability as its first priority. It may be updated less frequently than upstream projects, but **it will not be abandoned**. 
+Aroxy is maintained with stability as its first priority. It may be updated less frequently than rapidly churning upstream tools, but **it will not be abandoned**. 
 
 Updates will be published when:
-1. Upstream AI providers make significant changes to their authentication or wire protocols.
+1. AI providers make significant changes to their wire protocols.
 2. A meaningful accumulation of bug fixes, model additions, or performance improvements is ready for release.
 
 ---
 
-### License & Attribution
+### License
 
-This project is licensed under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License (CC BY-NC-SA 4.0)**, preserving the upstream licensing terms of [Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager) by lbjlaq.
-
-Non-commercial use, modification, and redistribution are permitted under the terms of CC BY-NC-SA 4.0 with attribution retained.
+Distributed under the **MIT License**. See [LICENSE](LICENSE) for details.  
+Copyright © 2026 Qyzom.

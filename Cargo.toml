@@ -4,7 +4,7 @@ version = "0.0.1"
 edition = "2021"
 authors = ["Qyzom <qyzom@users.noreply.github.com>", "qwezzxxx <351012934+qwezzxxx@users.noreply.github.com>"]
 description = "Ultra-lightweight high-performance AI API proxy & protocol emulator with Slint UI"
-license = "CC-BY-NC-SA-4.0"
+license = "MIT"
 repository = "https://github.com/Qyzom/Aroxy"
 
 [dependencies]
