@@ -1,3 +1,5 @@
+import { ScrollView, LineEdit } from "std-widgets.slint";
+
 export struct LogEntryData {
     id: string,
     time: string,
@@ -16,6 +18,12 @@ export struct AccountData {
     base_url: string,
     api_key_masked: string,
     fingerprint: string,
+    tier: string,
+    quota_used: int,
+    quota_limit: int,
+    quota_percent: int,
+    quota_reset: string,
+    status: string,
     is_active: bool,
 }
 
@@ -23,6 +31,7 @@ export struct ModelItemData {
     id: string,
     display_name: string,
     provider: string,
+    tier: string,
     is_enabled: bool,
     supports_thinking: bool,
 }
@@ -33,22 +42,22 @@ component NavItem inherits Rectangle {
     in property <bool> is_active: false;
     callback clicked;
 
-    height: 40px;
-    border-radius: 9px;
-    background: root.is_active ? #353742 : (touch.has-hover ? #24252d : transparent);
+    height: 38px;
+    border-radius: 8px;
+    background: root.is_active ? #252836 : (touch.has-hover ? #1a1d28 : transparent);
     animate background { duration: 120ms; }
 
     HorizontalLayout {
-        padding-left: 14px;
-        padding-right: 14px;
-        spacing: 12px;
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 10px;
         alignment: start;
 
         Text {
             text: root.icon_symbol;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 700;
-            color: root.is_active ? #ffffff : (touch.has-hover ? #d2d5e2 : #868b9c);
+            color: root.is_active ? #38d39f : (touch.has-hover ? #d2d5e2 : #6c7287);
             vertical-alignment: center;
         }
 
@@ -71,28 +80,34 @@ component ActionButton inherits Rectangle {
     in property <string> text;
     in property <bool> is_primary: true;
     in property <bool> is_danger: false;
+    in property <bool> is_accent: false;
     callback clicked;
 
-    height: 34px;
-    border-radius: 8px;
+    height: 32px;
+    border-radius: 7px;
     background: root.is_danger 
-        ? (touch.pressed ? #a82e2e : (touch.has-hover ? #d93838 : #8a2424))
-        : (root.is_primary 
-            ? (touch.pressed ? #e0e0e0 : (touch.has-hover ? #ffffff : #f2f2f2))
-            : (touch.pressed ? #191b22 : (touch.has-hover ? #31333d : #23252e)));
-    border-width: root.is_primary ? 0px : 1px;
-    border-color: #383b48;
+        ? (touch.pressed ? #992424 : (touch.has-hover ? #b82c2c : #7a1d1d))
+        : (root.is_accent
+            ? (touch.pressed ? #2bb586 : (touch.has-hover ? #38d39f : #22996f))
+            : (root.is_primary 
+                ? (touch.pressed ? #323647 : (touch.has-hover ? #3c4155 : #2a2d3c))
+                : (touch.pressed ? #14161f : (touch.has-hover ? #222533 : #1a1c26))));
+    border-width: 1px;
+    border-color: root.is_danger ? #d13d3d : (root.is_accent ? #4fe3af : #383d50);
     animate background { duration: 100ms; }
 
-    Text {
-        width: 100%;
-        height: 100%;
-        text: root.text;
-        font-size: 12px;
-        font-weight: 700;
-        color: root.is_danger ? #ffffff : (root.is_primary ? #121318 : #e0e3ed);
-        horizontal-alignment: center;
-        vertical-alignment: center;
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        alignment: center;
+        Text {
+            text: root.text;
+            font-size: 12px;
+            font-weight: 700;
+            color: root.is_danger ? #ffffff : (root.is_accent ? #0c2b1e : #ffffff);
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
     }
 
     touch := TouchArea {
@@ -102,14 +117,14 @@ component ActionButton inherits Rectangle {
 }
 
 component ToggleSwitch inherits Rectangle {
-    in property <bool> checked: false;
+    in-out property <bool> checked: false;
     callback toggled;
 
     width: 44px;
     height: 24px;
     border-radius: 12px;
-    background: root.checked ? #38d39f : #292b34;
-    animate background { duration: 120ms; }
+    background: root.checked ? #38d39f : #282b39;
+    animate background { duration: 150ms; }
 
     Rectangle {
         x: root.checked ? 22px : 3px;
@@ -118,12 +133,15 @@ component ToggleSwitch inherits Rectangle {
         height: 18px;
         border-radius: 9px;
         background: #ffffff;
-        animate x { duration: 120ms; }
+        animate x { duration: 150ms; easing: ease-out; }
     }
 
     TouchArea {
         mouse-cursor: pointer;
-        clicked => { root.toggled(); }
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled();
+        }
     }
 }
 
@@ -131,146 +149,234 @@ component StatCard inherits Rectangle {
     in property <string> title;
     in property <string> value;
     in property <string> subtext;
+    in property <string> accent_color: "#ffffff";
 
+    background: #161821;
     border-radius: 10px;
-    background: #1a1b22;
     border-width: 1px;
-    border-color: #272934;
+    border-color: #242838;
 
     VerticalLayout {
         padding: 14px;
         spacing: 4px;
+        alignment: space-between;
+
         Text {
             text: root.title;
             font-size: 10px;
             font-weight: 700;
-            color: #797f94;
+            color: #6c738a;
             letter-spacing: 0.5px;
         }
         Text {
             text: root.value;
-            font-size: 20px;
+            font-size: 22px;
             font-weight: 800;
             color: #ffffff;
         }
         Text {
             text: root.subtext;
+            font-size: 11px;
+            color: #8f95ab;
+        }
+    }
+}
+
+component Badge inherits Rectangle {
+    in property <string> text;
+    in property <bool> is_green: false;
+    in property <bool> is_purple: false;
+    in property <bool> is_amber: false;
+
+    height: 20px;
+    border-radius: 4px;
+    background: root.is_green ? #153225 : (root.is_purple ? #261f38 : (root.is_amber ? #332617 : #1f222e));
+    border-width: 1px;
+    border-color: root.is_green ? #276949 : (root.is_purple ? #523b82 : (root.is_amber ? #6e4e26 : #32374b));
+
+    HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 6px;
+        alignment: center;
+        Text {
+            text: root.text;
             font-size: 10px;
-            color: #9ea4b8;
+            font-weight: 700;
+            color: root.is_green ? #38d39f : (root.is_purple ? #a78bfa : (root.is_amber ? #fbbf24 : #9ba1b6));
+            vertical-alignment: center;
         }
     }
 }
 
 export component MainWindow inherits Window {
-    title: "Aroxy — Minimalist AI Protocol Proxy";
-    min-width: 860px;
-    min-height: 580px;
-    preferred-width: 940px;
-    preferred-height: 640px;
-    background: #111217;
+    title: "Aroxy — AI Protocol Proxy & Management Console";
+    min-width: 960px;
+    min-height: 620px;
+    preferred-width: 1060px;
+    preferred-height: 720px;
+    background: #0e1015;
 
+    // Navigation & Status
     in-out property <int> active_tab: 0;
     in-out property <bool> proxy_running: false;
     in-out property <int> proxy_port: 8045;
+    in-out property <string> proxy_host: "127.0.0.1";
     in-out property <string> active_model: "claude-3-7-sonnet";
+    in-out property <bool> expose_reasoning_variants: true;
+
+    // Dashboard Overview Metrics
     in-out property <string> total_requests: "0";
     in-out property <string> total_tokens: "0";
     in-out property <string> avg_latency: "0 ms";
-    in-out property <bool> expose_reasoning_variants: true;
+    in-out property <string> active_account_name: "Antigravity Pro";
+    in-out property <string> global_quota_used: "12,450";
+    in-out property <string> global_quota_limit: "100,000";
+    in-out property <int> global_quota_percent: 12;
+    in-out property <string> global_quota_reset: "in 3h 15m";
+    in-out property <int> healthy_accounts_count: 2;
 
+    // Lists
     in-out property <[LogEntryData]> log_entries: [];
     in-out property <[AccountData]> accounts: [];
     in-out property <[ModelItemData]> models: [];
 
+    // Account Form
     in-out property <string> new_acc_name: "";
     in-out property <string> new_acc_key: "";
-    in-out property <string> new_acc_url: "https://api.anthropic.com";
+    in-out property <string> new_acc_provider: "antigravity";
+    in-out property <string> new_acc_tier: "Pro";
     in-out property <string> new_acc_fp: "Claude Code 2.x";
 
+    // Playground
+    in-out property <string> playground_prompt: "Write a high-performance Rust function to calculate SHA-256.";
+    in-out property <string> playground_model: "claude-3-7-sonnet";
+    in-out property <string> playground_status: "Idle";
+    in-out property <string> playground_latency: "0 ms";
+    in-out property <string> playground_tokens: "0";
+    in-out property <string> playground_response: "";
+    in-out property <bool> playground_running: false;
+
+    // Proxy Layer
+    in-out property <int> routing_strategy_index: 0;
+    in-out property <int> quota_refresh_interval: 300;
+
+    // Statistics Detailed
+    in-out property <string> stat_prompt_tokens: "0";
+    in-out property <string> stat_completion_tokens: "0";
+    in-out property <string> stat_thinking_tokens: "0";
+    in-out property <string> stat_success_rate: "100%";
+    in-out property <string> stat_error_count: "0";
+    in-out property <string> stat_max_latency: "0 ms";
+
+    // Settings
+    in-out property <bool> setting_minimize_tray: true;
+    in-out property <bool> setting_autostart: false;
+    in-out property <bool> setting_portable_mode: false;
+    in-out property <int> setting_timeout_secs: 120;
+    in-out property <int> setting_heartbeat_secs: 12;
+    in-out property <string> setting_fingerprint: "Claude Code 2.x";
+
+    // Callbacks
     callback toggle_proxy();
     callback clear_logs();
     callback add_account();
+    callback add_account_browser_oauth();
     callback delete_account(string);
     callback activate_account(string);
+    callback refresh_account_quota(string);
     callback toggle_model(string);
     callback toggle_reasoning_variants();
+    callback set_routing_strategy(int);
+    callback run_playground_test();
+    callback save_settings();
 
     HorizontalLayout {
-        // Modern Dark Sidebar (QPatcher Style)
+        // Left Navigation Sidebar
         Rectangle {
-            width: 200px;
-            background: #17181e;
+            width: 210px;
+            background: #13151c;
+            border-width: 0px;
+            border-color: #212532;
 
             VerticalLayout {
-                padding: 16px;
-                spacing: 8px;
+                padding: 14px;
+                spacing: 6px;
 
-                // Application Title
+                // App Brand
                 HorizontalLayout {
-                    padding-bottom: 8px;
+                    padding-bottom: 10px;
                     padding-left: 6px;
                     spacing: 8px;
                     alignment: start;
                     Text {
                         text: "Aroxy";
-                        font-size: 16px;
+                        font-size: 17px;
                         font-weight: 800;
                         color: #ffffff;
                         vertical-alignment: center;
                     }
-                    Text {
+                    Badge {
                         text: "v0.0.1";
-                        font-size: 11px;
-                        font-weight: 600;
-                        color: #6a6f80;
-                        vertical-alignment: center;
+                        is_green: true;
                     }
                 }
 
-                Rectangle { height: 6px; }
+                Rectangle { height: 4px; }
 
-                // Navigation Items
+                // 7 Navigation Tabs
                 NavItem {
-                    text: "Overview";
+                    text: "Dashboard";
                     icon_symbol: "▤";
                     is_active: root.active_tab == 0;
                     clicked => { root.active_tab = 0; }
                 }
                 NavItem {
-                    text: "Model Catalog";
-                    icon_symbol: "⊞";
+                    text: "Accounts";
+                    icon_symbol: "👤";
                     is_active: root.active_tab == 1;
                     clicked => { root.active_tab = 1; }
                 }
                 NavItem {
-                    text: "Accounts & FP";
-                    icon_symbol: "⚙";
+                    text: "Models & Test";
+                    icon_symbol: "⊞";
                     is_active: root.active_tab == 2;
                     clicked => { root.active_tab = 2; }
                 }
                 NavItem {
-                    text: "Traffic Logs";
-                    icon_symbol: "☰";
+                    text: "Proxy Layer";
+                    icon_symbol: "⇄";
                     is_active: root.active_tab == 3;
                     clicked => { root.active_tab = 3; }
                 }
                 NavItem {
-                    text: "Settings";
-                    icon_symbol: "❖";
+                    text: "Traffic Logs";
+                    icon_symbol: "☰";
                     is_active: root.active_tab == 4;
                     clicked => { root.active_tab = 4; }
                 }
+                NavItem {
+                    text: "Statistics";
+                    icon_symbol: "📊";
+                    is_active: root.active_tab == 5;
+                    clicked => { root.active_tab = 5; }
+                }
+                NavItem {
+                    text: "Settings";
+                    icon_symbol: "⚙";
+                    is_active: root.active_tab == 6;
+                    clicked => { root.active_tab = 6; }
+                }
 
-                // Spacer
+                // Flexible Spacer
                 Rectangle { }
 
-                // Status Badge in Sidebar
+                // Daemon Status Badge in Sidebar
                 Rectangle {
                     height: 38px;
                     border-radius: 8px;
-                    background: root.proxy_running ? #162a21 : #261919;
+                    background: root.proxy_running ? #142a20 : #291818;
                     border-width: 1px;
-                    border-color: root.proxy_running ? #24563d : #592525;
+                    border-color: root.proxy_running ? #24573f : #592929;
 
                     HorizontalLayout {
                         padding-left: 10px;
@@ -285,7 +391,7 @@ export component MainWindow inherits Window {
                             background: root.proxy_running ? #38d39f : #f05454;
                         }
                         Text {
-                            text: root.proxy_running ? "RUNNING :8045" : "OFFLINE";
+                            text: root.proxy_running ? ("ONLINE :" + root.proxy_port) : "OFFLINE";
                             font-size: 11px;
                             font-weight: 700;
                             color: root.proxy_running ? #38d39f : #f05454;
@@ -298,8 +404,8 @@ export component MainWindow inherits Window {
 
         // Main Content Area
         VerticalLayout {
-            padding: 24px;
-            spacing: 20px;
+            padding: 20px;
+            spacing: 16px;
 
             // Top Header Bar
             HorizontalLayout {
@@ -307,462 +413,808 @@ export component MainWindow inherits Window {
                 VerticalLayout {
                     spacing: 2px;
                     Text {
-                        text: root.active_tab == 0 ? "Dashboard & Status"
-                            : root.active_tab == 1 ? "Broadcasted Models & Reasoning"
-                            : root.active_tab == 2 ? "Upstream Providers & Signatures"
-                            : root.active_tab == 3 ? "Real-time Traffic & Stream Inspector"
-                            : "Preferences & System";
-                        font-size: 20px;
+                        text: root.active_tab == 0 ? "Dashboard & Overview"
+                            : root.active_tab == 1 ? "Upstream Accounts & Quota Balances"
+                            : root.active_tab == 2 ? "Model Catalog & Test Playground"
+                            : root.active_tab == 3 ? "Proxy Routing & Protocol Gateways"
+                            : root.active_tab == 4 ? "Real-time Traffic & Stream Inspector"
+                            : root.active_tab == 5 ? "Telemetry Analytics & Token Distribution"
+                            : "Application & System Preferences";
+                        font-size: 19px;
                         font-weight: 800;
                         color: #ffffff;
                     }
                     Text {
-                        text: root.active_tab == 0 ? "Local OpenAI v1 / Claude / Gemini endpoint emulator"
-                            : root.active_tab == 1 ? "Configure which models to broadcast and toggle reasoning effort clones"
-                            : root.active_tab == 2 ? "Manage provider credentials and client anti-detection fingerprints"
-                            : root.active_tab == 3 ? "Lock-free streaming metrics, tokens, and response latencies"
-                            : "Tray daemon, autostart, and local network ports";
-                        font-size: 12px;
+                        text: root.active_tab == 0 ? "Aggregate quota health, active proxy state, and client bindings"
+                            : root.active_tab == 1 ? "Connect Antigravity accounts via 1-click browser OAuth or manual session keys"
+                            : root.active_tab == 2 ? "Configure model broadcast toggles, reasoning aliases, and test prompts"
+                            : root.active_tab == 3 ? "Configure smart quota routing, account rotation, and listening ports"
+                            : root.active_tab == 4 ? "Inspect live HTTP streams, headers, latency percentiles, and errors"
+                            : root.active_tab == 5 ? "Deep insight into prompt, completion, and reasoning token consumption"
+                            : "System tray behaviors, portable config, and network timeouts";
+                        font-size: 11px;
                         color: #797f94;
                     }
                 }
 
                 HorizontalLayout {
                     spacing: 10px;
+                    alignment: end;
                     ActionButton {
                         text: root.proxy_running ? "STOP PROXY" : "START PROXY";
                         is_primary: !root.proxy_running;
                         is_danger: root.proxy_running;
+                        is_accent: !root.proxy_running;
                         clicked => { root.toggle_proxy(); }
                     }
                 }
             }
 
-            // Tab 0: Overview
-            if root.active_tab == 0: VerticalLayout {
-                spacing: 16px;
-
-                HorizontalLayout {
+            // Scrollable Content Container (Ensures NO clipping on long pages)
+            ScrollView {
+                VerticalLayout {
+                    padding-right: 8px;
                     spacing: 14px;
-                    StatCard {
-                        title: "TOTAL REQUESTS";
-                        value: root.total_requests;
-                        subtext: "All incoming API calls";
-                    }
-                    StatCard {
-                        title: "PROCESSED TOKENS";
-                        value: root.total_tokens;
-                        subtext: "Prompt + Output + Thinking";
-                    }
-                    StatCard {
-                        title: "AVG LATENCY";
-                        value: root.avg_latency;
-                        subtext: "Time to first token (TTFT)";
-                    }
-                    StatCard {
-                        title: "LOCAL ENDPOINT";
-                        value: "127.0.0.1:" + root.proxy_port;
-                        subtext: "/v1/chat/completions";
-                    }
-                }
 
-                Rectangle {
-                    background: #181920;
-                    border-radius: 12px;
-                    border-width: 1px;
-                    border-color: #272834;
-
-                    VerticalLayout {
-                        padding: 20px;
+                    // ==========================================
+                    // TAB 0: DASHBOARD
+                    // ==========================================
+                    if root.active_tab == 0: VerticalLayout {
                         spacing: 14px;
-                        Text {
-                            text: "Active Route & Compatible Clients";
-                            font-size: 14px;
-                            font-weight: 700;
-                            color: #ffffff;
-                        }
-                        Text {
-                            text: "Point your AI client (Claude Code, Cursor, OpenCode, Aider, LibreChat) to:";
-                            font-size: 12px;
-                            color: #9ea4b8;
-                        }
-                        Rectangle {
-                            height: 38px;
-                            border-radius: 8px;
-                            background: #0f1015;
-                            border-width: 1px;
-                            border-color: #2b2f3f;
-                            HorizontalLayout {
-                                padding-left: 12px;
-                                padding-right: 12px;
-                                alignment: space-between;
-                                Text {
-                                    text: "http://127.0.0.1:8045/v1";
-                                    font-size: 13px;
-                                    font-weight: 600;
-                                    color: #ffffff;
-                                    vertical-alignment: center;
-                                }
-                                Text {
-                                    text: "OpenAI v1 / Claude / Gemini compliant";
-                                    font-size: 11px;
-                                    color: #5c6277;
-                                    vertical-alignment: center;
-                                }
-                            }
-                        }
 
+                        // Quick Stat Cards
                         HorizontalLayout {
                             spacing: 12px;
-                            Rectangle {
-                                border-radius: 8px;
-                                background: #20222b;
-                                VerticalLayout {
-                                    padding: 12px;
-                                    spacing: 4px;
-                                    Text { text: "Claude Code CLI"; font-size: 12px; font-weight: 700; color: #ffffff; }
-                                    Text { text: "ANTHROPIC_BASE_URL=http://localhost:8045"; font-size: 11px; color: #8a90a4; }
-                                }
+                            StatCard {
+                                title: "TOTAL REQUESTS";
+                                value: root.total_requests;
+                                subtext: "Processed API calls";
                             }
-                            Rectangle {
-                                border-radius: 8px;
-                                background: #20222b;
-                                VerticalLayout {
-                                    padding: 12px;
-                                    spacing: 4px;
-                                    Text { text: "OpenAI / Cursor / Aider"; font-size: 12px; font-weight: 700; color: #ffffff; }
-                                    Text { text: "OPENAI_BASE_URL=http://localhost:8045/v1"; font-size: 11px; color: #8a90a4; }
-                                }
+                            StatCard {
+                                title: "TOTAL TOKENS";
+                                value: root.total_tokens;
+                                subtext: "Prompt + Output + Thinking";
                             }
-                        }
-                    }
-                }
-            }
-
-            // Tab 1: Model Catalog (New!)
-            if root.active_tab == 1: VerticalLayout {
-                spacing: 14px;
-
-                // Master Toggle for Reasoning Effort Clones
-                Rectangle {
-                    background: #181920;
-                    border-radius: 10px;
-                    border-width: 1px;
-                    border-color: #272834;
-
-                    VerticalLayout {
-                        padding: 16px;
-                        spacing: 8px;
-                        HorizontalLayout {
-                            alignment: space-between;
-                            VerticalLayout {
-                                spacing: 2px;
-                                Text {
-                                    text: "Expose Reasoning Effort Clones in /v1/models";
-                                    font-size: 14px;
-                                    font-weight: 700;
-                                    color: #ffffff;
-                                }
-                                Text {
-                                    text: "Dynamically creates (low), (medium), (high) model aliases so clients without reasoning sliders can select effort levels.";
-                                    font-size: 11px;
-                                    color: #8b90a4;
-                                }
+                            StatCard {
+                                title: "AVG LATENCY";
+                                value: root.avg_latency;
+                                subtext: "Time to first token (TTFT)";
                             }
-                            ToggleSwitch {
-                                checked: root.expose_reasoning_variants;
-                                toggled => { root.toggle_reasoning_variants(); }
+                            StatCard {
+                                title: "ACTIVE ACCOUNTS";
+                                value: root.healthy_accounts_count + "";
+                                subtext: root.active_account_name;
                             }
                         }
-                    }
-                }
 
-                // Models List
-                Rectangle {
-                    background: #181920;
-                    border-radius: 10px;
-                    border-width: 1px;
-                    border-color: #272834;
-
-                    VerticalLayout {
-                        padding: 16px;
-                        spacing: 8px;
-                        Text {
-                            text: "Available Models";
-                            font-size: 13px;
-                            font-weight: 700;
-                            color: #797f94;
-                        }
-
-                        for m in root.models: Rectangle {
-                            height: 44px;
-                            border-radius: 8px;
-                            background: m.is_enabled ? #20232d : #14151a;
+                        // Aggregate Quota Health Card
+                        Rectangle {
+                            background: #161821;
+                            border-radius: 10px;
                             border-width: 1px;
-                            border-color: m.is_enabled ? #353b4c : #20222a;
+                            border-color: #242838;
 
-                            HorizontalLayout {
-                                padding-left: 14px;
-                                padding-right: 14px;
-                                alignment: space-between;
+                            VerticalLayout {
+                                padding: 16px;
+                                spacing: 10px;
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Text { text: "Aggregate Antigravity Quota Available"; font-size: 13px; font-weight: 700; color: #ffffff; }
+                                        Text { text: "Total remaining tokens across all active accounts pool"; font-size: 11px; color: #7f869e; }
+                                    }
+                                    Badge {
+                                        text: "Resets " + root.global_quota_reset;
+                                        is_green: true;
+                                    }
+                                }
+
+                                // Progress Bar Container
+                                Rectangle {
+                                    height: 10px;
+                                    border-radius: 5px;
+                                    background: #242735;
+
+                                    Rectangle {
+                                        x: 0px;
+                                        y: 0px;
+                                        height: 10px;
+                                        border-radius: 5px;
+                                        width: parent.width * (root.global_quota_percent / 100.0);
+                                        background: root.global_quota_percent > 85 ? #e05252 : (root.global_quota_percent > 60 ? #fbbf24 : #38d39f);
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    Text {
+                                        text: root.global_quota_used + " / " + root.global_quota_limit + " tokens used (" + root.global_quota_percent + "%)";
+                                        font-size: 11px;
+                                        font-weight: 600;
+                                        color: #9ea4b8;
+                                    }
+                                    Text {
+                                        text: "Quota strategy: Quota-Aware (Smart)";
+                                        font-size: 11px;
+                                        color: #686f85;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Client Connection Cards
+                        Rectangle {
+                            background: #161821;
+                            border-radius: 10px;
+                            border-width: 1px;
+                            border-color: #242838;
+
+                            VerticalLayout {
+                                padding: 16px;
+                                spacing: 12px;
+
+                                Text { text: "Compatible AI Client Connection Snippets"; font-size: 13px; font-weight: 700; color: #ffffff; }
 
                                 HorizontalLayout {
                                     spacing: 12px;
-                                    alignment: center;
-                                    Text {
-                                        text: m.display_name;
-                                        font-size: 13px;
-                                        font-weight: 700;
-                                        color: m.is_enabled ? #ffffff : #6f7485;
-                                        vertical-alignment: center;
+                                    Rectangle {
+                                        border-radius: 8px;
+                                        background: #1c1f2b;
+                                        border-width: 1px;
+                                        border-color: #2a2f42;
+                                        VerticalLayout {
+                                            padding: 12px;
+                                            spacing: 4px;
+                                            Text { text: "Claude Code CLI"; font-size: 12px; font-weight: 700; color: #ffffff; }
+                                            Text { text: "export ANTHROPIC_BASE_URL=\"http://127.0.0.1:" + root.proxy_port + "\""; font-size: 11px; color: #38d39f; }
+                                        }
                                     }
-                                    Text {
-                                        text: m.id;
-                                        font-size: 11px;
-                                        color: #72788e;
-                                        vertical-alignment: center;
+                                    Rectangle {
+                                        border-radius: 8px;
+                                        background: #1c1f2b;
+                                        border-width: 1px;
+                                        border-color: #2a2f42;
+                                        VerticalLayout {
+                                            padding: 12px;
+                                            spacing: 4px;
+                                            Text { text: "OpenAI / Cursor / Aider / LibreChat"; font-size: 12px; font-weight: 700; color: #ffffff; }
+                                            Text { text: "export OPENAI_BASE_URL=\"http://127.0.0.1:" + root.proxy_port + "/v1\""; font-size: 11px; color: #a78bfa; }
+                                        }
                                     }
-                                    if m.supports_thinking: Rectangle {
-                                        height: 20px;
-                                        border-radius: 4px;
-                                        background: #2a382e;
-                                        HorizontalLayout {
-                                            padding-left: 6px;
-                                            padding-right: 6px;
-                                            Text {
-                                                text: "REASONING";
-                                                font-size: 9px;
-                                                font-weight: 800;
-                                                color: #38d39f;
-                                                vertical-alignment: center;
-                                            }
+                                }
+                            }
+                        }
+                    }
+
+                    // ==========================================
+                    // TAB 1: ACCOUNTS & QUOTAS
+                    // ==========================================
+                    if root.active_tab == 1: VerticalLayout {
+                        spacing: 14px;
+
+                        // Top Connect Actions Box
+                        Rectangle {
+                            background: #161821;
+                            border-radius: 10px;
+                            border-width: 1px;
+                            border-color: #242838;
+
+                            VerticalLayout {
+                                padding: 16px;
+                                spacing: 12px;
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Text { text: "Add Antigravity Account"; font-size: 13px; font-weight: 700; color: #ffffff; }
+                                        Text { text: "Authorize via browser OAuth loopback or paste account session token manually"; font-size: 11px; color: #7f869e; }
+                                    }
+                                    ActionButton {
+                                        text: "Login via Browser (OAuth)";
+                                        is_accent: true;
+                                        clicked => { root.add_account_browser_oauth(); }
+                                    }
+                                }
+
+                                // Manual Token Entry Form
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    LineEdit {
+                                        placeholder-text: "Account Name (e.g. Work Pro)";
+                                        text <=> root.new_acc_name;
+                                        width: 180px;
+                                    }
+                                    LineEdit {
+                                        placeholder-text: "Session Token / API Key";
+                                        text <=> root.new_acc_key;
+                                        horizontal-stretch: 1;
+                                    }
+                                    ActionButton {
+                                        text: "Add Token";
+                                        is_primary: true;
+                                        clicked => { root.add_account(); }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Accounts List
+                        Text { text: "CONNECTED ACCOUNTS & HEALTH"; font-size: 11px; font-weight: 700; color: #6c738a; }
+
+                        for acc in root.accounts: Rectangle {
+                            background: #161821;
+                            border-radius: 10px;
+                            border-width: 1px;
+                            border-color: acc.is_active ? #2e4c3d : #242838;
+
+                            VerticalLayout {
+                                padding: 14px;
+                                spacing: 8px;
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    HorizontalLayout {
+                                        spacing: 10px;
+                                        Text { text: acc.name; font-size: 13px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
+                                        Badge {
+                                            text: acc.tier;
+                                            is_purple: acc.tier == "Pro";
+                                            is_green: acc.tier != "Pro";
+                                        }
+                                        Badge {
+                                            text: acc.status;
+                                            is_green: acc.status == "Active";
+                                            is_amber: acc.status != "Active";
+                                        }
+                                        if acc.is_active: Badge {
+                                            text: "ACTIVE ROUTE";
+                                            is_green: true;
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        ActionButton {
+                                            text: "Check Quota";
+                                            is_primary: false;
+                                            clicked => { root.refresh_account_quota(acc.id); }
+                                        }
+                                        if !acc.is_active: ActionButton {
+                                            text: "Set Active";
+                                            is_primary: true;
+                                            clicked => { root.activate_account(acc.id); }
+                                        }
+                                        ActionButton {
+                                            text: "Delete";
+                                            is_danger: true;
+                                            clicked => { root.delete_account(acc.id); }
                                         }
                                     }
                                 }
 
+                                // Quota Progress Bar for each account
+                                Rectangle {
+                                    height: 6px;
+                                    border-radius: 3px;
+                                    background: #242735;
+
+                                    Rectangle {
+                                        x: 0px;
+                                        y: 0px;
+                                        height: 6px;
+                                        border-radius: 3px;
+                                        width: parent.width * (acc.quota_percent / 100.0);
+                                        background: acc.quota_percent > 85 ? #e05252 : (acc.quota_percent > 60 ? #fbbf24 : #38d39f);
+                                    }
+                                }
+
                                 HorizontalLayout {
-                                    alignment: center;
-                                    ToggleSwitch {
-                                        checked: m.is_enabled;
-                                        toggled => { root.toggle_model(m.id); }
+                                    alignment: space-between;
+                                    Text {
+                                        text: acc.quota_used + " / " + acc.quota_limit + " tokens (" + acc.quota_percent + "%) • Resets " + acc.quota_reset;
+                                        font-size: 11px;
+                                        color: #8b92a8;
+                                    }
+                                    Text {
+                                        text: "Fingerprint: " + acc.fingerprint;
+                                        font-size: 10px;
+                                        color: #61677c;
                                     }
                                 }
                             }
                         }
                     }
-                }
-            }
 
-            // Tab 2: Accounts & Fingerprints
-            if root.active_tab == 2: VerticalLayout {
-                spacing: 14px;
+                    // ==========================================
+                    // TAB 2: MODELS & TEST PLAYGROUND
+                    // ==========================================
+                    if root.active_tab == 2: VerticalLayout {
+                        spacing: 14px;
 
-                Rectangle {
-                    background: #181920;
-                    border-radius: 10px;
-                    border-width: 1px;
-                    border-color: #272834;
-
-                    VerticalLayout {
-                        padding: 16px;
-                        spacing: 10px;
-                        Text {
-                            text: "Add Upstream Provider";
-                            font-size: 14px;
-                            font-weight: 700;
-                            color: #ffffff;
-                        }
-
-                        HorizontalLayout {
-                            spacing: 10px;
-                            TextInput {
-                                text <=> root.new_acc_name;
-                                font-size: 12px;
-                                color: #ffffff;
-                                width: 140px;
-                            }
-                            TextInput {
-                                text <=> root.new_acc_url;
-                                font-size: 12px;
-                                color: #ffffff;
-                                width: 220px;
-                            }
-                            TextInput {
-                                text <=> root.new_acc_key;
-                                font-size: 12px;
-                                color: #ffffff;
-                                width: 180px;
-                            }
-                            ActionButton {
-                                text: "+ Add";
-                                is_primary: true;
-                                clicked => { root.add_account(); }
-                            }
-                        }
-                    }
-                }
-
-                // Accounts List
-                Rectangle {
-                    background: #181920;
-                    border-radius: 10px;
-                    border-width: 1px;
-                    border-color: #272834;
-
-                    VerticalLayout {
-                        padding: 16px;
-                        spacing: 8px;
-                        Text {
-                            text: "Configured Accounts";
-                            font-size: 13px;
-                            font-weight: 700;
-                            color: #797f94;
-                        }
-
-                        for acc in root.accounts: Rectangle {
-                            height: 48px;
-                            border-radius: 8px;
-                            background: acc.is_active ? #212635 : #14151a;
+                        // Master Toggle for Reasoning Effort Clones
+                        Rectangle {
+                            background: #161821;
+                            border-radius: 10px;
                             border-width: 1px;
-                            border-color: acc.is_active ? #3c4a6b : #20222a;
+                            border-color: #242838;
+
+                            VerticalLayout {
+                                padding: 14px;
+                                spacing: 8px;
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Text { text: "Expose Reasoning Effort Clones in /v1/models"; font-size: 13px; font-weight: 700; color: #ffffff; }
+                                        Text { text: "Generates virtual aliases (low), (medium), (high) for clients without native reasoning controls"; font-size: 11px; color: #7f869e; }
+                                    }
+                                    ToggleSwitch {
+                                        checked: root.expose_reasoning_variants;
+                                        toggled => { root.toggle_reasoning_variants(); }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Test Request / Model Playground
+                        Rectangle {
+                            background: #161821;
+                            border-radius: 10px;
+                            border-width: 1px;
+                            border-color: #2f3448;
+
+                            VerticalLayout {
+                                padding: 16px;
+                                spacing: 10px;
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        Text { text: "Model Playground & Debug Inspector"; font-size: 13px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
+                                        Badge { text: root.playground_model; is_purple: true; }
+                                    }
+                                    HorizontalLayout {
+                                        spacing: 10px;
+                                        Text { text: "Status: " + root.playground_status + " | " + root.playground_latency + " | " + root.playground_tokens + " tok"; font-size: 11px; color: #9ba1b6; vertical-alignment: center; }
+                                        ActionButton {
+                                            text: root.playground_running ? "Sending..." : "Send Test Request";
+                                            is_accent: true;
+                                            clicked => { root.run_playground_test(); }
+                                        }
+                                    }
+                                }
+
+                                LineEdit {
+                                    text <=> root.playground_prompt;
+                                    placeholder-text: "Enter a test prompt to send through the active Aroxy proxy...";
+                                }
+
+                                Rectangle {
+                                    height: 110px;
+                                    border-radius: 8px;
+                                    background: #0f1117;
+                                    border-width: 1px;
+                                    border-color: #222634;
+
+                                    VerticalLayout {
+                                        padding: 10px;
+                                        Text {
+                                            text: root.playground_response == "" ? "Response output, streaming debug telemetry, and headers will appear here..." : root.playground_response;
+                                            font-size: 12px;
+                                            color: root.playground_response == "" ? #585e72 : #e0e4f0;
+                                            wrap: word-wrap;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Text { text: "CATALOG MODELS & BROADCAST PERMISSIONS"; font-size: 11px; font-weight: 700; color: #6c738a; }
+
+                        // Models Table
+                        for model in root.models: Rectangle {
+                            height: 48px;
+                            background: #161821;
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: #242838;
 
                             HorizontalLayout {
                                 padding-left: 14px;
                                 padding-right: 14px;
                                 alignment: space-between;
+
                                 HorizontalLayout {
-                                    spacing: 12px;
-                                    alignment: center;
-                                    Text {
-                                        text: acc.name;
-                                        font-size: 13px;
-                                        font-weight: 700;
-                                        color: #ffffff;
-                                        vertical-alignment: center;
-                                    }
-                                    Text {
-                                        text: acc.base_url;
-                                        font-size: 11px;
-                                        color: #72788e;
-                                        vertical-alignment: center;
-                                    }
-                                    Text {
-                                        text: "FP: " + acc.fingerprint;
-                                        font-size: 10px;
-                                        color: #636b85;
-                                        vertical-alignment: center;
-                                    }
+                                    spacing: 10px;
+                                    alignment: start;
+                                    Text { text: model.display_name; font-size: 13px; font-weight: 600; color: #ffffff; vertical-alignment: center; }
+                                    Badge { text: model.id; is_green: false; }
+                                    Badge { text: model.tier; is_purple: model.tier == "Pro"; is_green: model.tier != "Pro"; }
+                                    if model.supports_thinking: Badge { text: "Thinking"; is_amber: true; }
                                 }
 
                                 HorizontalLayout {
-                                    spacing: 8px;
-                                    alignment: center;
-                                    if !acc.is_active: ActionButton {
-                                        text: "Set Active";
+                                    spacing: 12px;
+                                    alignment: end;
+                                    ActionButton {
+                                        text: "Test in Playground";
                                         is_primary: false;
-                                        clicked => { root.activate_account(acc.id); }
+                                        clicked => {
+                                            root.playground_model = model.id;
+                                            root.active_model = model.id;
+                                        }
+                                    }
+                                    ToggleSwitch {
+                                        checked: model.is_enabled;
+                                        toggled => { root.toggle_model(model.id); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ==========================================
+                    // TAB 3: PROXY LAYER ("Прослойка")
+                    // ==========================================
+                    if root.active_tab == 3: VerticalLayout {
+                        spacing: 14px;
+
+                        // Routing Strategy Box
+                        Rectangle {
+                            background: #161821;
+                            border-radius: 10px;
+                            border-width: 1px;
+                            border-color: #242838;
+
+                            VerticalLayout {
+                                padding: 16px;
+                                spacing: 12px;
+
+                                Text { text: "Multi-Account Routing Strategy"; font-size: 13px; font-weight: 700; color: #ffffff; }
+
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    ActionButton {
+                                        text: "Quota-Aware (Smart)";
+                                        is_primary: root.routing_strategy_index == 0;
+                                        is_accent: root.routing_strategy_index == 0;
+                                        clicked => { root.set_routing_strategy(0); }
                                     }
                                     ActionButton {
-                                        text: "Delete";
-                                        is_primary: false;
-                                        is_danger: true;
-                                        clicked => { root.delete_account(acc.id); }
+                                        text: "Round-Robin";
+                                        is_primary: root.routing_strategy_index == 1;
+                                        is_accent: root.routing_strategy_index == 1;
+                                        clicked => { root.set_routing_strategy(1); }
+                                    }
+                                    ActionButton {
+                                        text: "Failover / Priority";
+                                        is_primary: root.routing_strategy_index == 2;
+                                        is_accent: root.routing_strategy_index == 2;
+                                        clicked => { root.set_routing_strategy(2); }
+                                    }
+                                }
+
+                                Text {
+                                    text: root.routing_strategy_index == 0
+                                        ? "• Quota-Aware: Dispatches each incoming request to the healthy account with the highest remaining quota tokens."
+                                        : (root.routing_strategy_index == 1
+                                            ? "• Round-Robin: Evenly distributes traffic sequentially across all active connected accounts."
+                                            : "• Failover: Routes solely to the primary account, automatically falling back to secondary on rate-limit (429).");
+                                    font-size: 11px;
+                                    color: #8b92a8;
+                                }
+                            }
+                        }
+
+                        // Network Binding & Protocol Endpoints
+                        Rectangle {
+                            background: #161821;
+                            border-radius: 10px;
+                            border-width: 1px;
+                            border-color: #242838;
+
+                            VerticalLayout {
+                                padding: 16px;
+                                spacing: 12px;
+
+                                Text { text: "Active Protocol Endpoints & Service State"; font-size: 13px; font-weight: 700; color: #ffffff; }
+
+                                HorizontalLayout {
+                                    padding-left: 6px;
+                                    padding-right: 6px;
+                                    Text { text: "PROTOCOL"; width: 120px; font-size: 10px; font-weight: 700; color: #52576b; }
+                                    Text { text: "ENDPOINT PATH"; horizontal-stretch: 1; font-size: 10px; font-weight: 700; color: #52576b; }
+                                    Text { text: "STATUS"; width: 90px; font-size: 10px; font-weight: 700; color: #52576b; }
+                                }
+
+                                Rectangle {
+                                    height: 34px;
+                                    border-radius: 6px;
+                                    background: #1c1f2b;
+                                    HorizontalLayout {
+                                        padding-left: 10px;
+                                        padding-right: 10px;
+                                        Text { text: "OpenAI v1"; width: 120px; font-size: 12px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
+                                        Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/chat/completions"; horizontal-stretch: 1; font-size: 12px; color: #38d39f; vertical-alignment: center; }
+                                        Badge { text: root.proxy_running ? "ONLINE" : "OFFLINE"; is_green: root.proxy_running; }
+                                    }
+                                }
+
+                                Rectangle {
+                                    height: 34px;
+                                    border-radius: 6px;
+                                    background: #1c1f2b;
+                                    HorizontalLayout {
+                                        padding-left: 10px;
+                                        padding-right: 10px;
+                                        Text { text: "Claude Messages"; width: 120px; font-size: 12px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
+                                        Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/messages"; horizontal-stretch: 1; font-size: 12px; color: #a78bfa; vertical-alignment: center; }
+                                        Badge { text: root.proxy_running ? "ONLINE" : "OFFLINE"; is_green: root.proxy_running; }
+                                    }
+                                }
+
+                                Rectangle {
+                                    height: 34px;
+                                    border-radius: 6px;
+                                    background: #1c1f2b;
+                                    HorizontalLayout {
+                                        padding-left: 10px;
+                                        padding-right: 10px;
+                                        Text { text: "Model Catalog"; width: 120px; font-size: 12px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
+                                        Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/models"; horizontal-stretch: 1; font-size: 12px; color: #8b92a8; vertical-alignment: center; }
+                                        Badge { text: root.proxy_running ? "ONLINE" : "OFFLINE"; is_green: root.proxy_running; }
+                                    }
+                                }
+
+                                Rectangle {
+                                    height: 34px;
+                                    border-radius: 6px;
+                                    background: #1c1f2b;
+                                    HorizontalLayout {
+                                        padding-left: 10px;
+                                        padding-right: 10px;
+                                        Text { text: "Browser OAuth"; width: 120px; font-size: 12px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
+                                        Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/oauth/callback"; horizontal-stretch: 1; font-size: 12px; color: #fbbf24; vertical-alignment: center; }
+                                        Badge { text: root.proxy_running ? "ONLINE" : "OFFLINE"; is_green: root.proxy_running; }
                                     }
                                 }
                             }
                         }
                     }
-                }
-            }
 
-            // Tab 3: Logs
-            if root.active_tab == 3: VerticalLayout {
-                spacing: 12px;
+                    // ==========================================
+                    // TAB 4: TRAFFIC LOGS
+                    // ==========================================
+                    if root.active_tab == 4: VerticalLayout {
+                        spacing: 12px;
 
-                HorizontalLayout {
-                    alignment: space-between;
-                    Text {
-                        text: "Recent Traffic (Last 100 requests)";
-                        font-size: 13px;
-                        font-weight: 700;
-                        color: #797f94;
-                        vertical-alignment: center;
-                    }
-                    ActionButton {
-                        text: "Clear Logs";
-                        is_primary: false;
-                        clicked => { root.clear_logs(); }
-                    }
-                }
-
-                Rectangle {
-                    background: #181920;
-                    border-radius: 10px;
-                    border-width: 1px;
-                    border-color: #272834;
-
-                    VerticalLayout {
-                        padding: 12px;
-                        spacing: 6px;
-
-                        // Table Header
                         HorizontalLayout {
-                            padding-left: 8px;
-                            padding-right: 8px;
-                            Text { text: "TIME"; width: 80px; font-size: 10px; font-weight: 700; color: #52576b; }
-                            Text { text: "METHOD"; width: 70px; font-size: 10px; font-weight: 700; color: #52576b; }
-                            Text { text: "ENDPOINT"; width: 180px; font-size: 10px; font-weight: 700; color: #52576b; }
-                            Text { text: "MODEL"; width: 160px; font-size: 10px; font-weight: 700; color: #52576b; }
-                            Text { text: "STATUS"; width: 70px; font-size: 10px; font-weight: 700; color: #52576b; }
-                            Text { text: "TOKENS"; width: 70px; font-size: 10px; font-weight: 700; color: #52576b; }
-                            Text { text: "LATENCY"; width: 70px; font-size: 10px; font-weight: 700; color: #52576b; }
+                            alignment: space-between;
+                            Text { text: "RECENT TRAFFIC LOGS (STREAM & BATCH)"; font-size: 11px; font-weight: 700; color: #6c738a; vertical-alignment: center; }
+                            ActionButton {
+                                text: "Clear Logs";
+                                is_primary: false;
+                                clicked => { root.clear_logs(); }
+                            }
                         }
 
-                        // Table Rows
-                        for log in root.log_entries: Rectangle {
-                            height: 32px;
-                            border-radius: 6px;
-                            background: #121318;
+                        Rectangle {
+                            background: #161821;
+                            border-radius: 10px;
+                            border-width: 1px;
+                            border-color: #242838;
 
-                            HorizontalLayout {
-                                padding-left: 8px;
-                                padding-right: 8px;
-                                Text { text: log.time; width: 80px; font-size: 11px; color: #72788e; vertical-alignment: center; }
-                                Text { text: log.method; width: 70px; font-size: 11px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
-                                Text { text: log.path; width: 180px; font-size: 11px; color: #c4c7d5; vertical-alignment: center; }
-                                Text { text: log.model; width: 160px; font-size: 11px; color: #8e95ad; vertical-alignment: center; }
-                                Text {
-                                    text: log.status == 200 ? "200 OK" : (log.status + "");
-                                    width: 70px;
-                                    font-size: 11px;
-                                    font-weight: 700;
-                                    color: log.status == 200 ? #38d39f : #f05454;
-                                    vertical-alignment: center;
+                            VerticalLayout {
+                                padding: 12px;
+                                spacing: 6px;
+
+                                // Responsive Table Header
+                                HorizontalLayout {
+                                    padding-left: 8px;
+                                    padding-right: 8px;
+                                    Text { text: "TIME"; width: 70px; font-size: 10px; font-weight: 700; color: #52576b; }
+                                    Text { text: "METHOD"; width: 60px; font-size: 10px; font-weight: 700; color: #52576b; }
+                                    Text { text: "ENDPOINT"; horizontal-stretch: 1; font-size: 10px; font-weight: 700; color: #52576b; }
+                                    Text { text: "MODEL"; width: 150px; font-size: 10px; font-weight: 700; color: #52576b; }
+                                    Text { text: "STATUS"; width: 65px; font-size: 10px; font-weight: 700; color: #52576b; }
+                                    Text { text: "TOKENS"; width: 60px; font-size: 10px; font-weight: 700; color: #52576b; }
+                                    Text { text: "LATENCY"; width: 65px; font-size: 10px; font-weight: 700; color: #52576b; }
                                 }
-                                Text { text: log.tokens + ""; width: 70px; font-size: 11px; color: #9ea4b8; vertical-alignment: center; }
-                                Text { text: log.latency_ms + "ms"; width: 70px; font-size: 11px; color: #72788e; vertical-alignment: center; }
+
+                                // Table Rows
+                                for log in root.log_entries: Rectangle {
+                                    height: 32px;
+                                    border-radius: 6px;
+                                    background: #12141c;
+
+                                    HorizontalLayout {
+                                        padding-left: 8px;
+                                        padding-right: 8px;
+                                        Text { text: log.time; width: 70px; font-size: 11px; color: #72788e; vertical-alignment: center; }
+                                        Text { text: log.method; width: 60px; font-size: 11px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
+                                        Text { text: log.path; horizontal-stretch: 1; font-size: 11px; color: #c4c7d5; vertical-alignment: center; }
+                                        Text { text: log.model; width: 150px; font-size: 11px; color: #8e95ad; vertical-alignment: center; }
+                                        Text {
+                                            text: log.status == 200 ? "200 OK" : (log.status + "");
+                                            width: 65px;
+                                            font-size: 11px;
+                                            font-weight: 700;
+                                            color: log.status == 200 ? #38d39f : #f05454;
+                                            vertical-alignment: center;
+                                        }
+                                        Text { text: log.tokens + ""; width: 60px; font-size: 11px; color: #9ea4b8; vertical-alignment: center; }
+                                        Text { text: log.latency_ms + "ms"; width: 65px; font-size: 11px; color: #72788e; vertical-alignment: center; }
+                                    }
+                                }
                             }
                         }
                     }
-                }
-            }
 
-            // Tab 4: Settings
-            if root.active_tab == 4: VerticalLayout {
-                spacing: 14px;
-                Rectangle {
-                    background: #181920;
-                    border-radius: 10px;
-                    border-width: 1px;
-                    border-color: #272834;
+                    // ==========================================
+                    // TAB 5: STATISTICS
+                    // ==========================================
+                    if root.active_tab == 5: VerticalLayout {
+                        spacing: 14px;
 
-                    VerticalLayout {
-                        padding: 16px;
-                        spacing: 12px;
-                        Text { text: "System & Network Preferences (Aroxy v0.0.1)"; font-size: 14px; font-weight: 700; color: #ffffff; }
-                        Text { text: "• System Tray Daemon: Run silently in background without closing server."; font-size: 12px; color: #9ea4b8; }
-                        Text { text: "• Portable Config: Saves config next to binary in aroxy.json."; font-size: 12px; color: #9ea4b8; }
-                        Text { text: "• Zero Telemetry: Completely offline, no phone-home, no trackers, no ads."; font-size: 12px; color: #9ea4b8; }
+                        // Token Distribution Cards
+                        Text { text: "TOKEN VOLUME BREAKDOWN"; font-size: 11px; font-weight: 700; color: #6c738a; }
+
+                        HorizontalLayout {
+                            spacing: 12px;
+                            StatCard {
+                                title: "PROMPT TOKENS";
+                                value: root.stat_prompt_tokens;
+                                subtext: "Context & instructions sent";
+                            }
+                            StatCard {
+                                title: "OUTPUT TOKENS";
+                                value: root.stat_completion_tokens;
+                                subtext: "Standard completion tokens";
+                            }
+                            StatCard {
+                                title: "THINKING TOKENS";
+                                value: root.stat_thinking_tokens;
+                                subtext: "Reasoning budget processed";
+                            }
+                        }
+
+                        // Quality of Service & Latency Percentiles
+                        Text { text: "QUALITY OF SERVICE & PERFORMANCE"; font-size: 11px; font-weight: 700; color: #6c738a; }
+
+                        HorizontalLayout {
+                            spacing: 12px;
+                            StatCard {
+                                title: "SUCCESS RATE";
+                                value: root.stat_success_rate;
+                                subtext: "HTTP 2xx completion ratio";
+                            }
+                            StatCard {
+                                title: "TOTAL ERRORS / 429";
+                                value: root.stat_error_count;
+                                subtext: "Rate limit / upstream retries";
+                            }
+                            StatCard {
+                                title: "MAX RECORDED LATENCY";
+                                value: root.stat_max_latency;
+                                subtext: "Peak stream wait time";
+                            }
+                        }
+                    }
+
+                    // ==========================================
+                    // TAB 6: SETTINGS
+                    // ==========================================
+                    if root.active_tab == 6: VerticalLayout {
+                        spacing: 14px;
+
+                        Rectangle {
+                            background: #161821;
+                            border-radius: 10px;
+                            border-width: 1px;
+                            border-color: #242838;
+
+                            VerticalLayout {
+                                padding: 16px;
+                                spacing: 14px;
+
+                                Text { text: "System & Window Preferences"; font-size: 13px; font-weight: 700; color: #ffffff; }
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Text { text: "Minimize to System Tray on Close"; font-size: 12px; color: #e0e4f0; }
+                                        Text { text: "Keeps the proxy daemon serving API requests silently in the background"; font-size: 11px; color: #7f869e; }
+                                    }
+                                    ToggleSwitch {
+                                        checked: root.setting_minimize_tray;
+                                        toggled => { root.setting_minimize_tray = !root.setting_minimize_tray; }
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Text { text: "Portable Configuration Mode"; font-size: 12px; color: #e0e4f0; }
+                                        Text { text: "Store configuration in aroxy.json next to binary instead of OS AppData"; font-size: 11px; color: #7f869e; }
+                                    }
+                                    ToggleSwitch {
+                                        checked: root.setting_portable_mode;
+                                        toggled => { root.setting_portable_mode = !root.setting_portable_mode; }
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Text { text: "Start Minimized with Operating System"; font-size: 12px; color: #e0e4f0; }
+                                        Text { text: "Launches Aroxy daemon on user login"; font-size: 11px; color: #7f869e; }
+                                    }
+                                    ToggleSwitch {
+                                        checked: root.setting_autostart;
+                                        toggled => { root.setting_autostart = !root.setting_autostart; }
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            background: #161821;
+                            border-radius: 10px;
+                            border-width: 1px;
+                            border-color: #242838;
+
+                            VerticalLayout {
+                                padding: 16px;
+                                spacing: 14px;
+
+                                Text { text: "Protocol & Timeout Tuning"; font-size: 13px; font-weight: 700; color: #ffffff; }
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Text { text: "SSE Keepalive / Heartbeat Interval: " + root.setting_heartbeat_secs + "s"; font-size: 12px; color: #e0e4f0; }
+                                        Text { text: "Sends ': ping' frames during long thinking steps to avoid client disconnection"; font-size: 11px; color: #7f869e; }
+                                    }
+                                    ActionButton {
+                                        text: "12s (Default)";
+                                        is_primary: true;
+                                        clicked => { root.setting_heartbeat_secs = 12; }
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Text { text: "Upstream Request Timeout: " + root.setting_timeout_secs + "s"; font-size: 12px; color: #e0e4f0; }
+                                        Text { text: "Maximum wait duration before returning 504 Gateway Timeout"; font-size: 11px; color: #7f869e; }
+                                    }
+                                    ActionButton {
+                                        text: "120s (Default)";
+                                        is_primary: true;
+                                        clicked => { root.setting_timeout_secs = 120; }
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    alignment: end;
+                                    spacing: 10px;
+                                    ActionButton {
+                                        text: "Save & Apply Settings";
+                                        is_accent: true;
+                                        clicked => { root.save_settings(); }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

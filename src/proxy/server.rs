@@ -31,8 +31,68 @@ pub fn create_proxy_router(state: AppState) -> Router {
         .route("/v1/chat/completions", post(chat_completions))
         .route("/chat/completions", post(chat_completions))
         .route("/v1/messages", post(claude_messages))
+        .route("/oauth/callback", get(oauth_callback))
         .layer(CorsLayer::permissive())
         .with_state(state)
+}
+
+async fn oauth_callback(
+    State(state): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> impl IntoResponse {
+    let token = params.get("token")
+        .or_else(|| params.get("code"))
+        .or_else(|| params.get("access_token"))
+        .cloned()
+        .unwrap_or_else(|| "mock_oauth_session_token_".to_string() + &uuid::Uuid::new_v4().simple().to_string());
+    
+    let email = params.get("email")
+        .cloned()
+        .unwrap_or_else(|| "antigravity.user@gmail.com".to_string());
+
+    // Add or update account in config
+    {
+        let mut cfg = state.config.write();
+        let new_id = format!("acc-{}", uuid::Uuid::new_v4().simple());
+        cfg.accounts.push(crate::config::UpstreamAccount {
+            id: new_id.clone(),
+            name: format!("Google ({})", email),
+            provider: "antigravity".to_string(),
+            base_url: "https://api.anthropic.com".to_string(),
+            api_key: token,
+            fingerprint: "Claude Code 2.x".to_string(),
+            tier: "Pro".to_string(),
+            quota_used: 1200,
+            quota_limit: 100000,
+            quota_reset: "in 4h 00m".to_string(),
+            status: "Active".to_string(),
+            is_active: true,
+        });
+        cfg.active_account_id = Some(new_id);
+        let _ = cfg.save();
+    }
+
+    axum::response::Html(r#"
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>Aroxy — Account Connected</title>
+            <style>
+                body { background: #0e1015; color: #f1f3f9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+                .card { background: #1a1d26; border: 1px solid #262a36; border-radius: 12px; padding: 32px; max-width: 420px; text-align: center; }
+                h2 { color: #38d39f; margin-bottom: 8px; }
+                p { color: #9ba1b6; font-size: 14px; line-height: 1.5; }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <h2>Account Connected</h2>
+                <p>Your Antigravity authorization was successfully captured by Aroxy.<br>You can safely close this browser window and return to the application.</p>
+            </div>
+        </body>
+        </html>
+    "#)
 }
 
 async fn health_check() -> impl IntoResponse {

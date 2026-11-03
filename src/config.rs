@@ -2,24 +2,95 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RoutingStrategy {
+    QuotaAware,
+    RoundRobin,
+    Failover,
+}
+
+impl Default for RoutingStrategy {
+    fn default() -> Self {
+        Self::QuotaAware
+    }
+}
+
+impl RoutingStrategy {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::QuotaAware => "Quota-Aware (Smart)",
+            Self::RoundRobin => "Round-Robin",
+            Self::Failover => "Failover / Priority",
+        }
+    }
+
+    pub fn from_index(index: i32) -> Self {
+        match index {
+            0 => Self::QuotaAware,
+            1 => Self::RoundRobin,
+            _ => Self::Failover,
+        }
+    }
+
+    pub fn to_index(&self) -> i32 {
+        match self {
+            Self::QuotaAware => 0,
+            Self::RoundRobin => 1,
+            Self::Failover => 2,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelCatalogItem {
     pub id: String,
     pub display_name: String,
     pub provider: String,
+    #[serde(default = "default_tier")]
+    pub tier: String, // "Free", "Pro"
     pub is_enabled: bool,
     pub supports_thinking: bool,
+}
+
+fn default_tier() -> String {
+    "Pro".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpstreamAccount {
     pub id: String,
     pub name: String,
-    pub provider: String, // "openai", "anthropic", "gemini", "custom"
+    pub provider: String, // "antigravity", "openai", "anthropic", "gemini"
     pub base_url: String,
     pub api_key: String,
     pub fingerprint: String, // "Claude Code 2.x", "Cursor Pro", "Antigravity CLI", "Default"
+    #[serde(default = "default_account_tier")]
+    pub tier: String,        // "Free", "Pro", "Team"
+    #[serde(default)]
+    pub quota_used: u64,
+    #[serde(default = "default_quota_limit")]
+    pub quota_limit: u64,
+    #[serde(default = "default_quota_reset")]
+    pub quota_reset: String, // e.g. "in 3h 12m"
+    #[serde(default = "default_status")]
+    pub status: String,      // "Active", "Cooling Down", "Expired"
     pub is_active: bool,
+}
+
+fn default_account_tier() -> String {
+    "Pro".to_string()
+}
+
+fn default_quota_limit() -> u64 {
+    100_000
+}
+
+fn default_quota_reset() -> String {
+    "in 4h 00m".to_string()
+}
+
+fn default_status() -> String {
+    "Active".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,11 +98,39 @@ pub struct AppConfig {
     pub port: u16,
     pub host: String,
     pub minimize_to_tray: bool,
+    #[serde(default)]
+    pub autostart: bool,
     pub portable_mode: bool,
     pub expose_reasoning_variants: bool, // Exposes (low), (medium), (high) model clones
+    #[serde(default)]
+    pub routing_strategy: RoutingStrategy,
+    #[serde(default = "default_refresh_interval")]
+    pub quota_refresh_interval_secs: u64,
+    #[serde(default = "default_timeout")]
+    pub request_timeout_secs: u64,
+    #[serde(default = "default_heartbeat")]
+    pub heartbeat_interval_secs: u64,
+    #[serde(default = "default_fingerprint")]
+    pub default_fingerprint: String,
     pub accounts: Vec<UpstreamAccount>,
     pub active_account_id: Option<String>,
     pub models: Vec<ModelCatalogItem>,
+}
+
+fn default_refresh_interval() -> u64 {
+    300
+}
+
+fn default_timeout() -> u64 {
+    120
+}
+
+fn default_heartbeat() -> u64 {
+    12
+}
+
+fn default_fingerprint() -> String {
+    "Claude Code 2.x".to_string()
 }
 
 impl Default for AppConfig {
@@ -40,34 +139,51 @@ impl Default for AppConfig {
             port: 8045,
             host: "127.0.0.1".to_string(),
             minimize_to_tray: true,
+            autostart: false,
             portable_mode: false,
             expose_reasoning_variants: true,
+            routing_strategy: RoutingStrategy::QuotaAware,
+            quota_refresh_interval_secs: 300,
+            request_timeout_secs: 120,
+            heartbeat_interval_secs: 12,
+            default_fingerprint: "Claude Code 2.x".to_string(),
             accounts: vec![
                 UpstreamAccount {
-                    id: "default-anthropic".to_string(),
-                    name: "Anthropic Direct".to_string(),
-                    provider: "anthropic".to_string(),
+                    id: "primary-antigravity".to_string(),
+                    name: "Antigravity Pro (Default)".to_string(),
+                    provider: "antigravity".to_string(),
                     base_url: "https://api.anthropic.com".to_string(),
                     api_key: "".to_string(),
                     fingerprint: "Claude Code 2.x".to_string(),
+                    tier: "Pro".to_string(),
+                    quota_used: 12450,
+                    quota_limit: 100000,
+                    quota_reset: "in 3h 15m".to_string(),
+                    status: "Active".to_string(),
                     is_active: true,
                 },
                 UpstreamAccount {
-                    id: "default-openai".to_string(),
-                    name: "OpenAI Direct".to_string(),
-                    provider: "openai".to_string(),
-                    base_url: "https://api.openai.com".to_string(),
+                    id: "backup-antigravity".to_string(),
+                    name: "Antigravity Free (Backup)".to_string(),
+                    provider: "antigravity".to_string(),
+                    base_url: "https://api.anthropic.com".to_string(),
                     api_key: "".to_string(),
-                    fingerprint: "Cursor Pro".to_string(),
+                    fingerprint: "Antigravity CLI".to_string(),
+                    tier: "Free".to_string(),
+                    quota_used: 8200,
+                    quota_limit: 25000,
+                    quota_reset: "in 1h 45m".to_string(),
+                    status: "Active".to_string(),
                     is_active: false,
                 },
             ],
-            active_account_id: Some("default-anthropic".to_string()),
+            active_account_id: Some("primary-antigravity".to_string()),
             models: vec![
                 ModelCatalogItem {
                     id: "claude-3-7-sonnet".to_string(),
-                    display_name: "Claude 3.7 Sonnet (Hybrid)".to_string(),
+                    display_name: "Claude 3.7 Sonnet".to_string(),
                     provider: "anthropic".to_string(),
+                    tier: "Pro".to_string(),
                     is_enabled: true,
                     supports_thinking: true,
                 },
@@ -75,6 +191,7 @@ impl Default for AppConfig {
                     id: "claude-3-5-sonnet".to_string(),
                     display_name: "Claude 3.5 Sonnet".to_string(),
                     provider: "anthropic".to_string(),
+                    tier: "Pro".to_string(),
                     is_enabled: true,
                     supports_thinking: false,
                 },
@@ -82,13 +199,31 @@ impl Default for AppConfig {
                     id: "claude-3-5-haiku".to_string(),
                     display_name: "Claude 3.5 Haiku".to_string(),
                     provider: "anthropic".to_string(),
+                    tier: "Free".to_string(),
                     is_enabled: true,
                     supports_thinking: false,
+                },
+                ModelCatalogItem {
+                    id: "gemini-2.5-pro".to_string(),
+                    display_name: "Gemini 2.5 Pro".to_string(),
+                    provider: "gemini".to_string(),
+                    tier: "Pro".to_string(),
+                    is_enabled: true,
+                    supports_thinking: true,
+                },
+                ModelCatalogItem {
+                    id: "gemini-2.5-flash".to_string(),
+                    display_name: "Gemini 2.5 Flash".to_string(),
+                    provider: "gemini".to_string(),
+                    tier: "Free".to_string(),
+                    is_enabled: true,
+                    supports_thinking: true,
                 },
                 ModelCatalogItem {
                     id: "gpt-4o".to_string(),
                     display_name: "GPT-4o (Omni)".to_string(),
                     provider: "openai".to_string(),
+                    tier: "Pro".to_string(),
                     is_enabled: true,
                     supports_thinking: false,
                 },
@@ -96,6 +231,7 @@ impl Default for AppConfig {
                     id: "gpt-4o-mini".to_string(),
                     display_name: "GPT-4o Mini".to_string(),
                     provider: "openai".to_string(),
+                    tier: "Free".to_string(),
                     is_enabled: true,
                     supports_thinking: false,
                 },
@@ -103,6 +239,7 @@ impl Default for AppConfig {
                     id: "o3-mini".to_string(),
                     display_name: "o3-mini (Reasoning)".to_string(),
                     provider: "openai".to_string(),
+                    tier: "Pro".to_string(),
                     is_enabled: true,
                     supports_thinking: true,
                 },
@@ -110,20 +247,7 @@ impl Default for AppConfig {
                     id: "o1".to_string(),
                     display_name: "o1 Preview".to_string(),
                     provider: "openai".to_string(),
-                    is_enabled: true,
-                    supports_thinking: true,
-                },
-                ModelCatalogItem {
-                    id: "gemini-2.5-flash".to_string(),
-                    display_name: "Gemini 2.5 Flash (Thinking)".to_string(),
-                    provider: "gemini".to_string(),
-                    is_enabled: true,
-                    supports_thinking: true,
-                },
-                ModelCatalogItem {
-                    id: "gemini-2.5-pro".to_string(),
-                    display_name: "Gemini 2.5 Pro".to_string(),
-                    provider: "gemini".to_string(),
+                    tier: "Pro".to_string(),
                     is_enabled: true,
                     supports_thinking: true,
                 },
@@ -169,11 +293,38 @@ impl AppConfig {
     }
 
     pub fn get_active_account(&self) -> Option<&UpstreamAccount> {
-        if let Some(id) = &self.active_account_id {
-            self.accounts.iter().find(|a| &a.id == id)
-        } else {
-            self.accounts.iter().find(|a| a.is_active)
+        match self.routing_strategy {
+            RoutingStrategy::QuotaAware => {
+                // Find active account with greatest remaining quota ratio
+                self.accounts
+                    .iter()
+                    .filter(|a| a.is_active && a.status == "Active")
+                    .max_by_key(|a| {
+                        if a.quota_limit > 0 {
+                            a.quota_limit.saturating_sub(a.quota_used)
+                        } else {
+                            0
+                        }
+                    })
+                    .or_else(|| self.accounts.iter().find(|a| a.is_active))
+            }
+            RoutingStrategy::Failover | RoutingStrategy::RoundRobin => {
+                if let Some(id) = &self.active_account_id {
+                    self.accounts.iter().find(|a| &a.id == id && a.is_active)
+                        .or_else(|| self.accounts.iter().find(|a| a.is_active))
+                } else {
+                    self.accounts.iter().find(|a| a.is_active)
+                }
+            }
         }
+    }
+
+    pub fn total_quota_used(&self) -> u64 {
+        self.accounts.iter().filter(|a| a.is_active).map(|a| a.quota_used).sum()
+    }
+
+    pub fn total_quota_limit(&self) -> u64 {
+        self.accounts.iter().filter(|a| a.is_active).map(|a| a.quota_limit).sum()
     }
 
     pub fn get_broadcast_models(&self) -> Vec<serde_json::Value> {
@@ -187,7 +338,8 @@ impl AppConfig {
                 "id": m.id,
                 "object": "model",
                 "owned_by": m.provider,
-                "display_name": m.display_name
+                "display_name": m.display_name,
+                "tier": m.tier
             }));
 
             // If thinking variants are enabled, expose clones
@@ -202,7 +354,8 @@ impl AppConfig {
                         "id": format!("{}{}", m.id, suffix),
                         "object": "model",
                         "owned_by": m.provider,
-                        "display_name": format!("{} [{}]", m.display_name, label)
+                        "display_name": format!("{} [{}]", m.display_name, label),
+                        "tier": m.tier
                     }));
                 }
             }

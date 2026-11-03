@@ -2,7 +2,7 @@
 name = "aroxy"
 version = "0.0.1"
 edition = "2021"
-authors = ["Qyzom <qyzom@users.noreply.github.com>", "qwezzxxx <351012934+qwezzxxx@users.noreply.github.com>"]
+authors = ["Qyzom <t0lotsmail@gmail.com>"]
 description = "Ultra-lightweight high-performance AI API proxy & protocol emulator with Slint UI"
 license = "MIT"
 repository = "https://github.com/Qyzom/Aroxy"
@@ -14,7 +14,7 @@ i-slint-backend-winit = { version = "1.9", default-features = false }
 
 # Async runtime & HTTP Server
 tokio = { version = "1", features = ["full"] }
-axum = { version = "0.8", default-features = false, features = ["tokio", "http1", "http2", "json"] }
+axum = { version = "0.8", default-features = false, features = ["tokio", "http1", "http2", "json", "query"] }
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
