@@ -67,6 +67,41 @@ pub fn resolve_model(requested_model: &str, account: &UpstreamAccount) -> String
     let lower = base.to_lowercase();
 
     match account.provider.as_str() {
+        "antigravity" => {
+            if lower.contains("claude") {
+                if lower.contains("opus") {
+                    "claude-opus-4-6-thinking".to_string()
+                } else {
+                    "claude-sonnet-4-6".to_string()
+                }
+            } else if lower.contains("gpt") || lower.contains("o1") || lower.contains("o3") {
+                "gpt-oss-120b-medium".to_string()
+            } else if lower.contains("gemini") {
+                if lower.contains("argon") {
+                    "gemini-4-argon".to_string()
+                } else if lower.contains("3.8") || lower.contains("3-8") {
+                    "gemini-3.8-flash-high".to_string()
+                } else if lower.contains("3.7") || lower.contains("3-7") {
+                    "gemini-3.7-flash-high".to_string()
+                } else if lower.contains("3.6") || lower.contains("3-6") {
+                    "gemini-3.6-flash-high".to_string()
+                } else if lower.contains("3.1") || lower.contains("3-1") {
+                    "gemini-3.1-pro-high".to_string()
+                } else if lower.contains("flash-lite") || lower.contains("lite") {
+                    "gemini-2.5-flash-lite".to_string()
+                } else if lower.contains("2.5") || lower.contains("2-5") {
+                    if lower.contains("pro") {
+                        "gemini-2.5-pro".to_string()
+                    } else {
+                        "gemini-2.5-flash-lite".to_string()
+                    }
+                } else {
+                    "gemini-3.8-flash-high".to_string()
+                }
+            } else {
+                base
+            }
+        }
         "anthropic" => {
             if lower.contains("claude-3-7") || lower.contains("sonnet-3.7") {
                 "claude-3-7-sonnet-20250219".to_string()

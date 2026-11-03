@@ -303,12 +303,12 @@ mod tests {
 
         cfg.accounts = vec![acc_a.clone(), acc_b.clone()];
 
-        // Request 1 in conversation session "chat-1": should pick acc_a (80k remaining > 50k remaining)
-        let chosen1 = balancer.select_account(&cfg, Some("chat-1")).expect("must pick account");
+        // Request 1 in conversation session "chat-1": should pick acc_a (80% remaining > 50% remaining)
+        let chosen1 = balancer.select_account(&cfg, "claude-sonnet-4-6", Some("chat-1")).expect("must pick account");
         assert_eq!(chosen1.id, "acc-a");
 
         // Request 2 in same session: should stick to acc_a for prompt caching (Cache hit!)
-        let chosen2 = balancer.select_account(&cfg, Some("chat-1")).expect("must pick account");
+        let chosen2 = balancer.select_account(&cfg, "claude-sonnet-4-6", Some("chat-1")).expect("must pick account");
         assert_eq!(chosen2.id, "acc-a");
 
         let (_, hits, _, _, active_pins) = balancer.get_metrics();
@@ -317,8 +317,80 @@ mod tests {
 
         // Test Cooldown Failover: mark acc-a as rate-limited (429)
         balancer.mark_cooldown("acc-a", 30);
-        let chosen3 = balancer.select_account(&cfg, Some("chat-1")).expect("must failover");
+        let chosen3 = balancer.select_account(&cfg, "claude-sonnet-4-6", Some("chat-1")).expect("must failover");
         assert_eq!(chosen3.id, "acc-b"); // Automatically routed to acc-b!
+    }
+
+    #[test]
+    fn test_quota_aware_model_family_filtering() {
+        use aroxy::config::{AppConfig, CacheAffinityMode, RoutingStrategy, UpstreamAccount};
+        use aroxy::proxy::balancer::LoadBalancer;
+
+        let balancer = LoadBalancer::new();
+        let mut cfg = AppConfig::default();
+        cfg.routing_strategy = RoutingStrategy::QuotaAware;
+        cfg.cache_affinity_mode = CacheAffinityMode::Balanced;
+
+        // Account 1: Free tier, Claude quota 0%, Gemini 100%
+        let acc_free = UpstreamAccount {
+            id: "acc-free".into(),
+            name: "free.user@gmail.com".into(),
+            provider: "antigravity".into(),
+            base_url: "https://api.anthropic.com".into(),
+            api_key: "token-free".into(),
+            fingerprint: "Claude Code 2.x".into(),
+            tier: "FREE".into(),
+            quota_used: 0,
+            quota_limit: 100000,
+            quota_reset: "in 4h".into(),
+            claude_gpt_percent: 0,
+            claude_gpt_reset: "in 4h".into(),
+            gemini_percent: 100,
+            gemini_reset: "in 4h".into(),
+            status: "Active".into(),
+            is_active: true,
+        };
+
+        // Account 2: Pro tier, Claude quota 60%, Gemini 90%
+        let acc_pro = UpstreamAccount {
+            id: "acc-pro".into(),
+            name: "pro.user@gmail.com".into(),
+            provider: "antigravity".into(),
+            base_url: "https://api.anthropic.com".into(),
+            api_key: "token-pro".into(),
+            fingerprint: "Claude Code 2.x".into(),
+            tier: "PRO".into(),
+            quota_used: 40000,
+            quota_limit: 100000,
+            quota_reset: "in 2h".into(),
+            claude_gpt_percent: 60,
+            claude_gpt_reset: "in 2h".into(),
+            gemini_percent: 90,
+            gemini_reset: "in 2h".into(),
+            status: "Active".into(),
+            is_active: true,
+        };
+
+        cfg.accounts = vec![acc_free.clone(), acc_pro.clone()];
+
+        // 1. Claude request: Free account MUST NOT be selected; must route to acc-pro!
+        let claude_chosen = balancer.select_account(&cfg, "claude-3-7-sonnet", None).expect("must route to pro");
+        assert_eq!(claude_chosen.id, "acc-pro");
+
+        // 2. Gemini request: Both accounts are eligible, Free account has higher Gemini quota (100% > 90%), so selects acc-free!
+        let gemini_chosen = balancer.select_account(&cfg, "gemini-3.8-flash", None).expect("must route to free");
+        assert_eq!(gemini_chosen.id, "acc-free");
+
+        // 3. If acc-pro is disabled or exhausted, Claude requests return clean quota exhausted error!
+        let mut cfg_only_free = cfg.clone();
+        cfg_only_free.accounts = vec![acc_free.clone()];
+        let err = balancer.select_account(&cfg_only_free, "claude-opus-4-6", None).unwrap_err();
+        match err {
+            aroxy::proxy::balancer::RoutingError::ClaudeQuotaExhausted { reset } => {
+                assert!(reset.contains("4h"));
+            }
+            other => panic!("expected ClaudeQuotaExhausted, got {:?}", other),
+        }
     }
 
     #[test]

@@ -185,16 +185,38 @@ async fn chat_completions(
 
     let selected_account = {
         let cfg = state.config.read();
-        state.balancer.select_account(&cfg, Some(&session_id))
+        state.balancer.select_account(&cfg, &requested_model, Some(&session_id))
     };
 
     let initial_account = match selected_account {
-        Some(acc) if !acc.api_key.is_empty() => acc,
-        _ => {
+        Ok(acc) if !acc.api_key.is_empty() => acc,
+        Ok(_) => {
             state.stats.record_request("POST", "/v1/chat/completions", &requested_model, 401, 0, start_time.elapsed().as_millis() as u64);
             return (
                 StatusCode::UNAUTHORIZED,
-                Json(json!({"error": {"message": "No active upstream account or API key configured in Aroxy"}})),
+                Json(json!({"error": {"message": "Active upstream account has empty API token in Aroxy", "type": "authentication_error", "code": "empty_api_key"}})),
+            ).into_response();
+        }
+        Err(e) => {
+            let lat = start_time.elapsed().as_millis() as u64;
+            let status = match e {
+                crate::proxy::balancer::RoutingError::NoAccounts => StatusCode::UNAUTHORIZED,
+                _ => StatusCode::TOO_MANY_REQUESTS,
+            };
+            state.stats.record_request("POST", "/v1/chat/completions", &requested_model, status.as_u16(), 0, lat);
+            return (
+                status,
+                Json(json!({
+                    "error": {
+                        "message": format!("{}", e),
+                        "type": "routing_error",
+                        "code": match e {
+                            crate::proxy::balancer::RoutingError::ClaudeQuotaExhausted { .. } => "claude_quota_exhausted",
+                            crate::proxy::balancer::RoutingError::GeminiQuotaExhausted { .. } => "gemini_quota_exhausted",
+                            _ => "no_route_available"
+                        }
+                    }
+                })),
             ).into_response();
         }
     };
@@ -206,7 +228,7 @@ async fn chat_completions(
         let next_acc_opt = {
             let cfg = state.config.read();
             if cfg.failover_on_429 {
-                state.balancer.select_account(&cfg, Some(&session_id))
+                state.balancer.select_account(&cfg, &requested_model, Some(&session_id)).ok()
             } else {
                 None
             }
@@ -246,16 +268,12 @@ async fn execute_chat_request(
             reasoning_effort,
         );
 
-        let endpoint_url = if is_streaming {
-            "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse"
-        } else {
-            "https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent"
-        };
+        let endpoint_url = "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse";
 
         let mut req_headers = reqwest::header::HeaderMap::new();
         req_headers.insert("authorization", format!("Bearer {}", account.api_key).parse().unwrap());
         req_headers.insert("User-Agent", crate::proxy::antigravity::OFFICIAL_USER_AGENT.parse().unwrap());
-        apply_fingerprint(&mut req_headers, &account.fingerprint);
+        req_headers.insert("Content-Type", "application/json".parse().unwrap());
 
         let res = match state.http_client.post(endpoint_url).headers(req_headers).json(&payload_json).send().await {
             Ok(r) => r,
@@ -273,6 +291,16 @@ async fn execute_chat_request(
             let err_text = res.text().await.unwrap_or_default();
             let lat = start_time.elapsed().as_millis() as u64;
             state.stats.record_request("POST", "/v1/chat/completions", requested_model, status.as_u16(), 0, lat);
+            if let Ok(parsed) = serde_json::from_str::<Value>(&err_text) {
+                let msg = parsed.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).unwrap_or(&err_text);
+                return ((status, Json(json!({
+                    "error": {
+                        "message": format!("Google Antigravity Upstream: {}", msg),
+                        "type": "upstream_error",
+                        "code": status.as_u16().to_string()
+                    }
+                }))).into_response(), is_429);
+            }
             return ((status, err_text).into_response(), is_429);
         }
 
@@ -295,16 +323,86 @@ async fn execute_chat_request(
                 .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
             (r, false)
         } else {
-            let val = match res.json::<serde_json::Value>().await {
-                Ok(v) => v,
-                Err(e) => {
-                    return ((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": {"message": e.to_string()}}))).into_response(), false);
+            let body_text = res.text().await.unwrap_or_default();
+            let mut full_text = String::new();
+            let mut thinking_text = None;
+            let mut in_tok = 50;
+            let mut out_tok = 150;
+
+            for line in body_text.lines() {
+                if let Some(data) = line.strip_prefix("data: ") {
+                    let trimmed = data.trim();
+                    if trimmed == "[DONE]" {
+                        break;
+                    }
+                    if let Ok(val) = serde_json::from_str::<Value>(trimmed) {
+                        let actual = val.get("response").unwrap_or(&val);
+                        if let Some(usage) = actual.get("usageMetadata") {
+                            if let Some(pt) = usage.get("promptTokenCount").and_then(|v| v.as_u64()) {
+                                in_tok = pt;
+                            }
+                            if let Some(ct) = usage.get("candidatesTokenCount").and_then(|v| v.as_u64()) {
+                                out_tok = ct;
+                            }
+                        }
+                        if let Some(candidates) = actual.get("candidates").and_then(|c| c.as_array()) {
+                            for cand in candidates {
+                                if let Some(parts) = cand.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array()) {
+                                    for part in parts {
+                                        let is_thought = part.get("thought").and_then(|v| v.as_bool()).unwrap_or(false);
+                                        if let Some(txt) = part.get("text").and_then(|t| t.as_str()) {
+                                            if is_thought {
+                                                let entry = thinking_text.get_or_insert_with(String::new);
+                                                entry.push_str(txt);
+                                            } else {
+                                                full_text.push_str(txt);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
+            }
+
+            let oai_resp = OpenAIChatResponse {
+                id: format!("chatcmpl-{}", uuid::Uuid::new_v4().simple()),
+                object: "chat.completion".to_string(),
+                created: chrono::Utc::now().timestamp() as u64,
+                model: target_model,
+                system_fingerprint: "fp_antigravity_hub".to_string(),
+                choices: vec![OpenAIChoice {
+                    index: 0,
+                    message: OpenAIMessage {
+                        role: "assistant".to_string(),
+                        content: Value::String(full_text),
+                        reasoning_content: thinking_text,
+                        refusal: None,
+                        name: None,
+                    },
+                    logprobs: None,
+                    finish_reason: Some("stop".to_string()),
+                }],
+                usage: Some(OpenAIUsage {
+                    prompt_tokens: in_tok,
+                    completion_tokens: out_tok,
+                    total_tokens: in_tok + out_tok,
+                    prompt_tokens_details: Some(PromptTokensDetails {
+                        cached_tokens: 0,
+                        audio_tokens: 0,
+                    }),
+                    completion_tokens_details: Some(CompletionTokensDetails {
+                        reasoning_tokens: 0,
+                        audio_tokens: 0,
+                        accepted_prediction_tokens: 0,
+                        rejected_prediction_tokens: 0,
+                    }),
+                }),
             };
-            let oai_resp = crate::proxy::antigravity::convert_antigravity_response_to_openai(&val, &target_model);
-            let tokens = oai_resp.usage.as_ref().map(|u| u.total_tokens).unwrap_or(0);
+
             let lat = start_time.elapsed().as_millis() as u64;
-            state.stats.record_request("POST", "/v1/chat/completions", requested_model, 200, tokens, lat);
+            state.stats.record_request("POST", "/v1/chat/completions", requested_model, 200, in_tok + out_tok, lat);
 
             let req_id = format!("req_{}", uuid::Uuid::new_v4().simple());
             let mut response = Json(oai_resp).into_response();
@@ -337,6 +435,16 @@ async fn execute_chat_request(
             let err_text = res.text().await.unwrap_or_default();
             let lat = start_time.elapsed().as_millis() as u64;
             state.stats.record_request("POST", "/v1/chat/completions", requested_model, status.as_u16(), 0, lat);
+            if let Ok(parsed) = serde_json::from_str::<Value>(&err_text) {
+                let msg = parsed.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).unwrap_or(&err_text);
+                return ((status, Json(json!({
+                    "error": {
+                        "message": format!("Google Antigravity Upstream: {}", msg),
+                        "type": "upstream_error",
+                        "code": status.as_u16().to_string()
+                    }
+                }))).into_response(), is_429);
+            }
             return ((status, err_text).into_response(), is_429);
         }
 
@@ -466,38 +574,43 @@ async fn claude_messages(
 
     let selected_account = {
         let cfg = state.config.read();
-        state.balancer.select_account(&cfg, Some(&session_id))
+        state.balancer.select_account(&cfg, &model, Some(&session_id))
     };
 
     let initial_account = match selected_account {
-        Some(acc) if !acc.api_key.is_empty() => acc,
-        _ => {
+        Ok(acc) if !acc.api_key.is_empty() => acc,
+        Ok(_) => {
             return (
                 StatusCode::UNAUTHORIZED,
-                Json(json!({"error": {"message": "No active upstream account configured in Aroxy"}})),
+                Json(json!({"type": "error", "error": {"type": "authentication_error", "message": "Account has empty API token"}})),
+            ).into_response();
+        }
+        Err(e) => {
+            let status = match e {
+                crate::proxy::balancer::RoutingError::NoAccounts => StatusCode::UNAUTHORIZED,
+                _ => StatusCode::TOO_MANY_REQUESTS,
+            };
+            return (
+                status,
+                Json(json!({
+                    "type": "error",
+                    "error": {
+                        "type": "rate_limit_error",
+                        "message": format!("{}", e)
+                    }
+                })),
             ).into_response();
         }
     };
 
-    let mut req_headers = reqwest::header::HeaderMap::new();
-    req_headers.insert("x-api-key", initial_account.api_key.parse().unwrap());
-    apply_fingerprint(&mut req_headers, &initial_account.fingerprint);
+    let (resp, is_429) = execute_claude_request(&state, &payload, &initial_account, &model, start_time).await;
 
-    let upstream_url = format!("{}/v1/messages", initial_account.base_url.trim_end_matches('/'));
-    let res = match state.http_client.post(&upstream_url).headers(req_headers).json(&payload).send().await {
-        Ok(r) => r,
-        Err(e) => {
-            return (StatusCode::BAD_GATEWAY, Json(json!({"error": {"message": e.to_string()}}))).into_response();
-        }
-    };
-
-    let status = res.status();
-    if status == StatusCode::TOO_MANY_REQUESTS {
+    if is_429 {
         state.balancer.mark_cooldown(&initial_account.id, 60);
         let next_acc_opt = {
             let cfg = state.config.read();
             if cfg.failover_on_429 {
-                state.balancer.select_account(&cfg, Some(&session_id))
+                state.balancer.select_account(&cfg, &model, Some(&session_id)).ok()
             } else {
                 None
             }
@@ -506,51 +619,205 @@ async fn claude_messages(
         if let Some(next_acc) = next_acc_opt {
             if next_acc.id != initial_account.id {
                 log::info!("Claude Messages 429 failover from {} to {}", initial_account.name, next_acc.name);
-                let mut retry_headers = reqwest::header::HeaderMap::new();
-                retry_headers.insert("x-api-key", next_acc.api_key.parse().unwrap());
-                apply_fingerprint(&mut retry_headers, &next_acc.fingerprint);
-                let retry_url = format!("{}/v1/messages", next_acc.base_url.trim_end_matches('/'));
-                if let Ok(retry_res) = state.http_client.post(&retry_url).headers(retry_headers).json(&payload).send().await {
-                        let is_streaming = payload.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
-                        let ret_status = retry_res.status();
-                        if is_streaming && ret_status.is_success() {
-                            let stream = pass_through_stream(Box::pin(retry_res.bytes_stream()));
-                            let lat = start_time.elapsed().as_millis() as u64;
-                            state.stats.record_request("POST", "/v1/messages (stream)", &model, 200, 150, lat);
-                            return Response::builder()
-                                .header(header::CONTENT_TYPE, "text/event-stream; charset=utf-8")
-                                .header(header::CACHE_CONTROL, "no-cache")
-                                .header(header::CONNECTION, "keep-alive")
-                                .body(Body::from_stream(stream))
-                                .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
-                        } else {
-                            let text = retry_res.text().await.unwrap_or_default();
-                            let lat = start_time.elapsed().as_millis() as u64;
-                            state.stats.record_request("POST", "/v1/messages", &model, ret_status.as_u16(), 50, lat);
-                            return (ret_status, text).into_response();
+                let (retry_resp, _) = execute_claude_request(&state, &payload, &next_acc, &model, start_time).await;
+                return retry_resp;
+            }
+        }
+    }
+
+    resp
+}
+
+async fn execute_claude_request(
+    state: &AppState,
+    payload: &Value,
+    account: &crate::config::UpstreamAccount,
+    requested_model: &str,
+    start_time: Instant,
+) -> (Response, bool) {
+    let is_streaming = payload.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
+
+    let (base_clean, reasoning_effort) = parse_model_and_reasoning(
+        requested_model,
+        payload.get("thinking").and_then(|t| t.get("type")).and_then(|v| v.as_str()),
+    );
+    let target_model = resolve_model(&base_clean, account);
+
+    if account.provider == "antigravity" {
+        let payload_json = crate::proxy::antigravity::build_antigravity_payload_from_claude(
+            payload,
+            &target_model,
+            None,
+            reasoning_effort,
+        );
+
+        let endpoint_url = "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse";
+
+        let mut req_headers = reqwest::header::HeaderMap::new();
+        req_headers.insert("authorization", format!("Bearer {}", account.api_key).parse().unwrap());
+        req_headers.insert("User-Agent", crate::proxy::antigravity::OFFICIAL_USER_AGENT.parse().unwrap());
+        req_headers.insert("Content-Type", "application/json".parse().unwrap());
+
+        let res = match state.http_client.post(endpoint_url).headers(req_headers).json(&payload_json).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                let lat = start_time.elapsed().as_millis() as u64;
+                state.stats.record_request("POST", "/v1/messages", requested_model, 502, 0, lat);
+                return ((StatusCode::BAD_GATEWAY, Json(json!({"type": "error", "error": {"type": "api_error", "message": format!("Antigravity connection error: {}", e)}}))).into_response(), false);
+            }
+        };
+
+        let status = res.status();
+        let is_429 = status == StatusCode::TOO_MANY_REQUESTS;
+
+        if !status.is_success() {
+            let err_text = res.text().await.unwrap_or_default();
+            let lat = start_time.elapsed().as_millis() as u64;
+            state.stats.record_request("POST", "/v1/messages", requested_model, status.as_u16(), 0, lat);
+            if let Ok(parsed) = serde_json::from_str::<Value>(&err_text) {
+                let msg = parsed.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).unwrap_or(&err_text);
+                return ((status, Json(json!({
+                    "type": "error",
+                    "error": {
+                        "type": "api_error",
+                        "message": format!("Google Antigravity: {}", msg)
+                    }
+                }))).into_response(), is_429);
+            }
+            return ((status, err_text).into_response(), is_429);
+        }
+
+        if is_streaming {
+            let stream_id = format!("msg_{}", uuid::Uuid::new_v4().simple());
+            let mapped_stream = crate::proxy::stream::process_antigravity_to_claude_stream(
+                Box::pin(res.bytes_stream()),
+                stream_id,
+                target_model,
+            );
+            let lat = start_time.elapsed().as_millis() as u64;
+            state.stats.record_request("POST", "/v1/messages (stream)", requested_model, 200, 150, lat);
+
+            let r = Response::builder()
+                .header(header::CONTENT_TYPE, "text/event-stream; charset=utf-8")
+                .header(header::CACHE_CONTROL, "no-cache")
+                .header(header::CONNECTION, "keep-alive")
+                .header("anthropic-version", "2023-06-01")
+                .body(Body::from_stream(mapped_stream))
+                .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+            (r, false)
+        } else {
+            let body_text = res.text().await.unwrap_or_default();
+            let mut full_text = String::new();
+            let mut thinking_text = None;
+            let mut in_tok = 50;
+            let mut out_tok = 150;
+
+            for line in body_text.lines() {
+                if let Some(data) = line.strip_prefix("data: ") {
+                    let trimmed = data.trim();
+                    if trimmed == "[DONE]" {
+                        break;
+                    }
+                    if let Ok(val) = serde_json::from_str::<Value>(trimmed) {
+                        let actual = val.get("response").unwrap_or(&val);
+                        if let Some(usage) = actual.get("usageMetadata") {
+                            if let Some(pt) = usage.get("promptTokenCount").and_then(|v| v.as_u64()) {
+                                in_tok = pt;
+                            }
+                            if let Some(ct) = usage.get("candidatesTokenCount").and_then(|v| v.as_u64()) {
+                                out_tok = ct;
+                            }
+                        }
+                        if let Some(candidates) = actual.get("candidates").and_then(|c| c.as_array()) {
+                            for cand in candidates {
+                                if let Some(parts) = cand.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array()) {
+                                    for part in parts {
+                                        let is_thought = part.get("thought").and_then(|v| v.as_bool()).unwrap_or(false);
+                                        if let Some(txt) = part.get("text").and_then(|t| t.as_str()) {
+                                            if is_thought {
+                                                let entry = thinking_text.get_or_insert_with(String::new);
+                                                entry.push_str(txt);
+                                            } else {
+                                                full_text.push_str(txt);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
+
+            let mut content_blocks = Vec::new();
+            if let Some(th) = thinking_text {
+                content_blocks.push(serde_json::json!({
+                    "type": "thinking",
+                    "thinking": th
+                }));
+            }
+            content_blocks.push(serde_json::json!({
+                "type": "text",
+                "text": full_text
+            }));
+
+            let claude_resp = serde_json::json!({
+                "id": format!("msg_{}", uuid::Uuid::new_v4().simple()),
+                "type": "message",
+                "role": "assistant",
+                "content": content_blocks,
+                "model": target_model,
+                "stop_reason": "end_turn",
+                "stop_sequence": null,
+                "usage": {
+                    "input_tokens": in_tok,
+                    "output_tokens": out_tok
+                }
+            });
+
+            let lat = start_time.elapsed().as_millis() as u64;
+            state.stats.record_request("POST", "/v1/messages", requested_model, 200, out_tok, lat);
+
+            let mut response = Json(claude_resp).into_response();
+            response.headers_mut().insert("anthropic-version", "2023-06-01".parse().unwrap());
+            (response, false)
         }
-
-    let is_streaming = payload.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
-
-    if is_streaming && status.is_success() {
-        let stream = pass_through_stream(Box::pin(res.bytes_stream()));
-        let lat = start_time.elapsed().as_millis() as u64;
-        state.stats.record_request("POST", "/v1/messages (stream)", &model, 200, 150, lat);
-
-        Response::builder()
-            .header(header::CONTENT_TYPE, "text/event-stream; charset=utf-8")
-            .header(header::CACHE_CONTROL, "no-cache")
-            .header(header::CONNECTION, "keep-alive")
-            .body(Body::from_stream(stream))
-            .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
     } else {
-        let text = res.text().await.unwrap_or_default();
-        let lat = start_time.elapsed().as_millis() as u64;
-        state.stats.record_request("POST", "/v1/messages", &model, status.as_u16(), 50, lat);
-        (status, text).into_response()
+        // Direct Anthropic API pass-through
+        let mut req_headers = reqwest::header::HeaderMap::new();
+        req_headers.insert("x-api-key", account.api_key.parse().unwrap());
+        apply_fingerprint(&mut req_headers, &account.fingerprint);
+
+        let upstream_url = format!("{}/v1/messages", account.base_url.trim_end_matches('/'));
+        let res = match state.http_client.post(&upstream_url).headers(req_headers).json(payload).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                let lat = start_time.elapsed().as_millis() as u64;
+                state.stats.record_request("POST", "/v1/messages", requested_model, 502, 0, lat);
+                return ((StatusCode::BAD_GATEWAY, Json(json!({"type": "error", "error": {"type": "api_error", "message": e.to_string()}}))).into_response(), false);
+            }
+        };
+
+        let status = res.status();
+        let is_429 = status == StatusCode::TOO_MANY_REQUESTS;
+
+        if is_streaming && status.is_success() {
+            let stream = pass_through_stream(Box::pin(res.bytes_stream()));
+            let lat = start_time.elapsed().as_millis() as u64;
+            state.stats.record_request("POST", "/v1/messages (stream)", requested_model, 200, 150, lat);
+
+            let r = Response::builder()
+                .header(header::CONTENT_TYPE, "text/event-stream; charset=utf-8")
+                .header(header::CACHE_CONTROL, "no-cache")
+                .header(header::CONNECTION, "keep-alive")
+                .body(Body::from_stream(stream))
+                .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+            (r, false)
+        } else {
+            let text = res.text().await.unwrap_or_default();
+            let lat = start_time.elapsed().as_millis() as u64;
+            state.stats.record_request("POST", "/v1/messages", requested_model, status.as_u16(), 50, lat);
+            ((status, text).into_response(), is_429)
+        }
     }
 }

@@ -8,6 +8,50 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelFamily {
+    ClaudeOrGpt,
+    Gemini,
+}
+
+impl ModelFamily {
+    pub fn from_model(model: &str) -> Self {
+        let m = model.to_lowercase();
+        if m.contains("claude") || m.contains("gpt") || m.contains("o1") || m.contains("o3") {
+            ModelFamily::ClaudeOrGpt
+        } else {
+            ModelFamily::Gemini
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum RoutingError {
+    NoAccounts,
+    ClaudeQuotaExhausted { reset: String },
+    GeminiQuotaExhausted { reset: String },
+    AllCoolingDown,
+}
+
+impl std::fmt::Display for RoutingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoAccounts => write!(f, "No active upstream accounts configured in Aroxy"),
+            Self::ClaudeQuotaExhausted { reset } => write!(
+                f,
+                "Claude/GPT quota exhausted across all connected accounts (resets {})",
+                reset
+            ),
+            Self::GeminiQuotaExhausted { reset } => write!(
+                f,
+                "Gemini quota exhausted across all connected accounts (resets {})",
+                reset
+            ),
+            Self::AllCoolingDown => write!(f, "All upstream accounts are currently cooling down after rate limits"),
+        }
+    }
+}
+
 pub struct LoadBalancer {
     /// Active session pin mappings: session_id -> (account_id, last_access_time)
     session_bindings: Arc<RwLock<HashMap<String, (String, Instant)>>>,
@@ -120,23 +164,73 @@ impl LoadBalancer {
         self.failover_rotations.fetch_add(1, Ordering::Relaxed);
     }
 
-    /// Select optimal upstream account with cache affinity, quota balancing, and failover
+    /// Select optimal upstream account with cache affinity, quota balancing, model capability, and failover
     pub fn select_account(
         &self,
         config: &AppConfig,
+        target_model: &str,
         session_id: Option<&str>,
-    ) -> Option<UpstreamAccount> {
+    ) -> Result<UpstreamAccount, RoutingError> {
         let now = Instant::now();
         self.total_routed.fetch_add(1, Ordering::Relaxed);
 
-        // 1. Filter healthy accounts
+        let active_accounts: Vec<UpstreamAccount> = config
+            .accounts
+            .iter()
+            .filter(|a| a.is_active && !a.api_key.is_empty())
+            .cloned()
+            .collect();
+
+        if active_accounts.is_empty() {
+            return Err(RoutingError::NoAccounts);
+        }
+
+        let family = ModelFamily::from_model(target_model);
+
+        // 1. Filter accounts by quota eligibility for requested model family
+        let quota_eligible: Vec<UpstreamAccount> = active_accounts
+            .iter()
+            .filter(|a| match family {
+                ModelFamily::ClaudeOrGpt => {
+                    a.claude_gpt_percent > 0 && a.tier.to_uppercase() != "FREE"
+                }
+                ModelFamily::Gemini => a.gemini_percent > 0,
+            })
+            .cloned()
+            .collect();
+
+        if quota_eligible.is_empty() {
+            return match family {
+                ModelFamily::ClaudeOrGpt => {
+                    let reset = active_accounts
+                        .iter()
+                        .map(|a| a.claude_gpt_reset.as_str())
+                        .next()
+                        .unwrap_or("in 4h 00m");
+                    Err(RoutingError::ClaudeQuotaExhausted {
+                        reset: reset.to_string(),
+                    })
+                }
+                ModelFamily::Gemini => {
+                    let reset = active_accounts
+                        .iter()
+                        .map(|a| a.gemini_reset.as_str())
+                        .next()
+                        .unwrap_or("in 4h 00m");
+                    Err(RoutingError::GeminiQuotaExhausted {
+                        reset: reset.to_string(),
+                    })
+                }
+            };
+        }
+
+        // 2. Filter healthy accounts (not in cooldown)
         let mut healthy_accounts: Vec<UpstreamAccount> = {
             let cds = self.account_cooldowns.read();
-            config
-                .accounts
+            quota_eligible
                 .iter()
                 .filter(|a| {
-                    if !a.is_active || a.status != "Active" || a.api_key.is_empty() {
+                    if a.status != "Active" {
                         return false;
                     }
                     if let Some(exp) = cds.get(&a.id) {
@@ -150,33 +244,28 @@ impl LoadBalancer {
                 .collect()
         };
 
-        // If all accounts are in cooldown, clear expired cooldowns and take any active account
+        // If all eligible accounts are in cooldown, clear expired cooldowns and take any eligible
         if healthy_accounts.is_empty() {
             let mut cds = self.account_cooldowns.write();
             cds.clear();
-            healthy_accounts = config
-                .accounts
-                .iter()
-                .filter(|a| a.is_active && !a.api_key.is_empty())
-                .cloned()
-                .collect();
+            healthy_accounts = quota_eligible;
         }
 
         if healthy_accounts.is_empty() {
-            return None;
+            return Err(RoutingError::AllCoolingDown);
         }
 
-        // 2. Routing strategy overrides (e.g. strict Failover)
+        // 3. Routing strategy overrides (e.g. strict Failover)
         if config.routing_strategy == RoutingStrategy::Failover {
             if let Some(active_id) = &config.active_account_id {
                 if let Some(acc) = healthy_accounts.iter().find(|a| &a.id == active_id) {
-                    return Some(acc.clone());
+                    return Ok(acc.clone());
                 }
             }
-            return healthy_accounts.first().cloned();
+            return Ok(healthy_accounts.first().cloned().unwrap());
         }
 
-        // 3. Cache Affinity Evaluation
+        // 4. Cache Affinity Evaluation
         let ttl_secs = config.session_sticky_ttl_secs;
         let mode = config.cache_affinity_mode;
 
@@ -192,17 +281,20 @@ impl LoadBalancer {
 
                 if elapsed_secs < ttl_secs {
                     if let Some(bound_acc) = healthy_accounts.iter().find(|a| a.id == bound_id) {
-                        // Account is alive. Now check mode rules:
-                        let bound_rem = bound_acc.quota_limit.saturating_sub(bound_acc.quota_used);
+                        // Account is alive and eligible. Now check mode rules:
+                        let bound_rem = match family {
+                            ModelFamily::ClaudeOrGpt => bound_acc.claude_gpt_percent as u64,
+                            ModelFamily::Gemini => bound_acc.gemini_percent as u64,
+                        };
 
                         match mode {
                             CacheAffinityMode::CacheFirst => {
                                 // Strictly stick to the same account as long as it has remaining quota
-                                if bound_rem > 0 || bound_acc.quota_limit == 0 {
+                                if bound_rem > 0 {
                                     self.cache_hits.fetch_add(1, Ordering::Relaxed);
                                     let mut bindings = self.session_bindings.write();
                                     bindings.insert(sid.to_string(), (bound_id, now));
-                                    return Some(bound_acc.clone());
+                                    return Ok(bound_acc.clone());
                                 }
                             }
                             CacheAffinityMode::Balanced => {
@@ -210,20 +302,20 @@ impl LoadBalancer {
                                 let max_other_rem = healthy_accounts
                                     .iter()
                                     .filter(|a| a.id != bound_id)
-                                    .map(|a| a.quota_limit.saturating_sub(a.quota_used))
+                                    .map(|a| match family {
+                                        ModelFamily::ClaudeOrGpt => a.claude_gpt_percent as u64,
+                                        ModelFamily::Gemini => a.gemini_percent as u64,
+                                    })
                                     .max()
                                     .unwrap_or(0);
 
                                 let delta = max_other_rem.saturating_sub(bound_rem);
-                                let base = bound_acc.quota_limit.max(1) as f64;
-                                let imbalance_pct = (delta as f64 / base) * 100.0;
-
-                                if (imbalance_pct as u32) < config.quota_imbalance_threshold {
+                                if (delta as u32) < config.quota_imbalance_threshold {
                                     // Within threshold: stick to account to maximize prompt caching!
                                     self.cache_hits.fetch_add(1, Ordering::Relaxed);
                                     let mut bindings = self.session_bindings.write();
                                     bindings.insert(sid.to_string(), (bound_id, now));
-                                    return Some(bound_acc.clone());
+                                    return Ok(bound_acc.clone());
                                 } else {
                                     // Imbalance exceeded: smoothly rotate to level out quota
                                     self.failover_rotations.fetch_add(1, Ordering::Relaxed);
@@ -238,7 +330,7 @@ impl LoadBalancer {
             }
         }
 
-        // 4. Fallback selection when no pin exists or pin was rotated
+        // 5. Fallback selection when no pin exists or pin was rotated
         let chosen_acc = match config.routing_strategy {
             RoutingStrategy::RoundRobin => {
                 let idx = (self.rr_counter.fetch_add(1, Ordering::Relaxed) as usize)
@@ -246,10 +338,13 @@ impl LoadBalancer {
                 healthy_accounts[idx].clone()
             }
             RoutingStrategy::QuotaAware | RoutingStrategy::Failover => {
-                // Select account with maximum remaining quota
+                // Select account with maximum remaining percentage for this family
                 healthy_accounts
                     .into_iter()
-                    .max_by_key(|a| a.quota_limit.saturating_sub(a.quota_used))
+                    .max_by_key(|a| match family {
+                        ModelFamily::ClaudeOrGpt => a.claude_gpt_percent,
+                        ModelFamily::Gemini => a.gemini_percent,
+                    })
                     .unwrap()
             }
         };
@@ -262,7 +357,7 @@ impl LoadBalancer {
             }
         }
 
-        Some(chosen_acc)
+        Ok(chosen_acc)
     }
 
     /// Cleanup old expired sessions periodically
