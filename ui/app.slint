@@ -2406,26 +2406,33 @@ export component MainWindow inherits Window {
     // MODAL 1: ACCOUNT DETAILS DIALOG
     // ============================================================
     if root.show_account_info: Rectangle {
-        background: #000000bb;
-        TouchArea { } // Backdrop capture
+        background: #000000cc;
+        TouchArea {
+            clicked => { root.show_account_info = false; }
+        }
 
-        Rectangle {
-            width: 660px;
-            background: #18181b;
-            border-radius: 10px;
+        modal_card1 := Rectangle {
+            width: 600px;
+            height: modal_inner1.min-height;
+            background: #141416;
+            border-radius: 12px;
             border-width: 1px;
-            border-color: #3f3f46;
+            border-color: #27272a;
+            clip: true;
 
-            VerticalLayout {
-                padding: 20px;
-                spacing: 14px;
+            // Absorb touches inside so clicking inside won't close modal
+            TouchArea { }
+
+            modal_inner1 := VerticalLayout {
+                padding: 16px;
+                spacing: 10px;
 
                 HorizontalLayout {
                     alignment: space-between;
                     HorizontalLayout {
-                        spacing: 10px;
+                        spacing: 8px;
                         alignment: start;
-                        Text { text: root.info_account_name; font-size: 15px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
+                        Text { text: root.info_account_name; font-size: 14px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
                         VerticalLayout {
                             alignment: center;
                             Badge { text: root.info_account_tier; is_green: root.info_account_tier == "PRO" || root.info_account_tier == "Pro"; }
@@ -2446,41 +2453,41 @@ export component MainWindow inherits Window {
 
                 // Claude & GPT Quota Card
                 Rectangle {
-                    background: #121214;
+                    background: #1a1a1e;
                     border-radius: 8px;
                     border-width: 1px;
                     border-color: #27272a;
 
                     VerticalLayout {
-                        padding: 12px;
-                        spacing: 8px;
+                        padding: 10px;
+                        spacing: 6px;
 
-                        Text { text: "Claude & GPT Quota (Anthropic & OpenAI OSS)"; font-size: 12px; font-weight: 700; color: #ffffff; }
+                        Text { text: "Claude & GPT Quota (Anthropic & OpenAI OSS)"; font-size: 11px; font-weight: 700; color: #ffffff; }
 
                         HorizontalLayout {
-                            spacing: 14px;
+                            spacing: 12px;
                             VerticalLayout {
                                 horizontal-stretch: 1;
-                                spacing: 4px;
+                                spacing: 3px;
                                 HorizontalLayout {
                                     alignment: space-between;
-                                    Text { text: "5-Hour Window"; font-size: 11px; color: #a1a1aa; }
+                                    Text { text: "5-Hour Window"; font-size: 10px; color: #a1a1aa; }
                                     Text {
                                         text: root.info_account_claude_5h_pct + "% (" + root.info_account_claude_5h_reset + ")";
-                                        font-size: 11px;
+                                        font-size: 10px;
                                         font-weight: 600;
                                         color: root.info_account_claude_5h_pct <= 0 ? #ef4444 : (root.info_account_claude_5h_pct <= 20 ? #eab308 : #4ade80);
                                     }
                                 }
                                 Rectangle {
-                                    height: 6px;
-                                    border-radius: 3px;
+                                    height: 5px;
+                                    border-radius: 2.5px;
                                     background: #27272a;
                                     Rectangle {
                                         x: 0px;
                                         y: 0px;
-                                        height: 6px;
-                                        border-radius: 3px;
+                                        height: 5px;
+                                        border-radius: 2.5px;
                                         width: parent.width * (root.info_account_claude_5h_pct / 100.0);
                                         background: root.info_account_claude_5h_pct <= 0 ? #ef4444 : (root.info_account_claude_5h_pct <= 20 ? #eab308 : #4ade80);
                                     }
@@ -2489,26 +2496,26 @@ export component MainWindow inherits Window {
 
                             VerticalLayout {
                                 horizontal-stretch: 1;
-                                spacing: 4px;
+                                spacing: 3px;
                                 HorizontalLayout {
                                     alignment: space-between;
-                                    Text { text: "Weekly Window"; font-size: 11px; color: #a1a1aa; }
+                                    Text { text: "Weekly Window"; font-size: 10px; color: #a1a1aa; }
                                     Text {
                                         text: root.info_account_claude_week_pct + "% (" + root.info_account_claude_week_reset + ")";
-                                        font-size: 11px;
+                                        font-size: 10px;
                                         font-weight: 600;
                                         color: root.info_account_claude_week_pct <= 0 ? #ef4444 : (root.info_account_claude_week_pct <= 20 ? #eab308 : #4ade80);
                                     }
                                 }
                                 Rectangle {
-                                    height: 6px;
-                                    border-radius: 3px;
+                                    height: 5px;
+                                    border-radius: 2.5px;
                                     background: #27272a;
                                     Rectangle {
                                         x: 0px;
                                         y: 0px;
-                                        height: 6px;
-                                        border-radius: 3px;
+                                        height: 5px;
+                                        border-radius: 2.5px;
                                         width: parent.width * (root.info_account_claude_week_pct / 100.0);
                                         background: root.info_account_claude_week_pct <= 0 ? #ef4444 : (root.info_account_claude_week_pct <= 20 ? #eab308 : #4ade80);
                                     }
@@ -2520,41 +2527,41 @@ export component MainWindow inherits Window {
 
                 // Gemini Quota Card
                 Rectangle {
-                    background: #121214;
+                    background: #1a1a1e;
                     border-radius: 8px;
                     border-width: 1px;
                     border-color: #27272a;
 
                     VerticalLayout {
-                        padding: 12px;
-                        spacing: 8px;
+                        padding: 10px;
+                        spacing: 6px;
 
-                        Text { text: "Gemini Quota (Google Cloud Code / Gemini 3.x & 4)"; font-size: 12px; font-weight: 700; color: #ffffff; }
+                        Text { text: "Gemini Quota (Google Cloud Code / Gemini 3.x & 4)"; font-size: 11px; font-weight: 700; color: #ffffff; }
 
                         HorizontalLayout {
-                            spacing: 14px;
+                            spacing: 12px;
                             VerticalLayout {
                                 horizontal-stretch: 1;
-                                spacing: 4px;
+                                spacing: 3px;
                                 HorizontalLayout {
                                     alignment: space-between;
-                                    Text { text: "5-Hour Window"; font-size: 11px; color: #a1a1aa; }
+                                    Text { text: "5-Hour Window"; font-size: 10px; color: #a1a1aa; }
                                     Text {
                                         text: root.info_account_gemini_5h_pct + "% (" + root.info_account_gemini_5h_reset + ")";
-                                        font-size: 11px;
+                                        font-size: 10px;
                                         font-weight: 600;
                                         color: root.info_account_gemini_5h_pct <= 0 ? #ef4444 : (root.info_account_gemini_5h_pct <= 20 ? #eab308 : #4ade80);
                                     }
                                 }
                                 Rectangle {
-                                    height: 6px;
-                                    border-radius: 3px;
+                                    height: 5px;
+                                    border-radius: 2.5px;
                                     background: #27272a;
                                     Rectangle {
                                         x: 0px;
                                         y: 0px;
-                                        height: 6px;
-                                        border-radius: 3px;
+                                        height: 5px;
+                                        border-radius: 2.5px;
                                         width: parent.width * (root.info_account_gemini_5h_pct / 100.0);
                                         background: root.info_account_gemini_5h_pct <= 0 ? #ef4444 : (root.info_account_gemini_5h_pct <= 20 ? #eab308 : #4ade80);
                                     }
@@ -2563,26 +2570,26 @@ export component MainWindow inherits Window {
 
                             VerticalLayout {
                                 horizontal-stretch: 1;
-                                spacing: 4px;
+                                spacing: 3px;
                                 HorizontalLayout {
                                     alignment: space-between;
-                                    Text { text: "Weekly Window"; font-size: 11px; color: #a1a1aa; }
+                                    Text { text: "Weekly Window"; font-size: 10px; color: #a1a1aa; }
                                     Text {
                                         text: root.info_account_gemini_week_pct + "% (" + root.info_account_gemini_week_reset + ")";
-                                        font-size: 11px;
+                                        font-size: 10px;
                                         font-weight: 600;
                                         color: root.info_account_gemini_week_pct <= 0 ? #ef4444 : (root.info_account_gemini_week_pct <= 20 ? #eab308 : #4ade80);
                                     }
                                 }
                                 Rectangle {
-                                    height: 6px;
-                                    border-radius: 3px;
+                                    height: 5px;
+                                    border-radius: 2.5px;
                                     background: #27272a;
                                     Rectangle {
                                         x: 0px;
                                         y: 0px;
-                                        height: 6px;
-                                        border-radius: 3px;
+                                        height: 5px;
+                                        border-radius: 2.5px;
                                         width: parent.width * (root.info_account_gemini_week_pct / 100.0);
                                         background: root.info_account_gemini_week_pct <= 0 ? #ef4444 : (root.info_account_gemini_week_pct <= 20 ? #eab308 : #4ade80);
                                     }
@@ -2594,33 +2601,31 @@ export component MainWindow inherits Window {
 
                 // Upstream Metadata & Session Identity Card
                 Rectangle {
-                    background: #121214;
+                    background: #1a1a1e;
                     border-radius: 8px;
                     border-width: 1px;
                     border-color: #27272a;
 
                     VerticalLayout {
-                        padding: 12px;
-                        spacing: 6px;
-
-                        Text { text: "Upstream Metadata & Session Identity"; font-size: 12px; font-weight: 700; color: #ffffff; }
+                        padding: 10px;
+                        spacing: 5px;
 
                         HorizontalLayout {
                             alignment: space-between;
-                            Text { text: "Fingerprint / Client ID"; font-size: 11px; color: #a1a1aa; }
-                            Text { text: root.info_account_fingerprint != "" ? root.info_account_fingerprint : "Claude Code 2.x"; font-size: 11px; color: #e4e4e7; }
+                            Text { text: "Fingerprint / Client ID"; font-size: 10px; color: #a1a1aa; }
+                            Text { text: root.info_account_fingerprint != "" ? root.info_account_fingerprint : "Claude Code 2.x"; font-size: 10px; color: #e4e4e7; }
                         }
 
                         HorizontalLayout {
                             alignment: space-between;
-                            Text { text: "Upstream Service Endpoint"; font-size: 11px; color: #a1a1aa; }
-                            Text { text: "Google Cloud Code Pa API"; font-size: 11px; color: #e4e4e7; }
+                            Text { text: "Upstream Service Endpoint"; font-size: 10px; color: #a1a1aa; }
+                            Text { text: "Google Cloud Code Pa API"; font-size: 10px; color: #e4e4e7; }
                         }
 
                         HorizontalLayout {
                             alignment: space-between;
-                            Text { text: "Catalog Models Available"; font-size: 11px; color: #a1a1aa; }
-                            Text { text: root.info_account_models; font-size: 11px; color: #e4e4e7; }
+                            Text { text: "Catalog Models Available"; font-size: 10px; color: #a1a1aa; }
+                            Text { text: root.info_account_models; font-size: 10px; color: #e4e4e7; }
                         }
                     }
                 }
@@ -2631,10 +2636,10 @@ export component MainWindow inherits Window {
                     border-width: 1px;
                     border-color: #7f1d1d;
                     VerticalLayout {
-                        padding: 10px;
-                        spacing: 4px;
-                        Text { text: root.i18n.info_error_label + ":"; font-size: 11px; font-weight: 700; color: #f87171; }
-                        Text { text: root.info_account_error; font-size: 11px; color: #fca5a5; wrap: word-wrap; }
+                        padding: 8px;
+                        spacing: 3px;
+                        Text { text: root.i18n.info_error_label + ":"; font-size: 10px; font-weight: 700; color: #f87171; }
+                        Text { text: root.info_account_error; font-size: 10px; color: #fca5a5; wrap: word-wrap; }
                     }
                 }
             }
@@ -2645,19 +2650,26 @@ export component MainWindow inherits Window {
     // MODAL 2: TEST MODEL REQUEST DIALOG
     // ============================================================
     if root.show_test_dialog: Rectangle {
-        background: #000000bb;
-        TouchArea { } // Backdrop capture
+        background: #000000cc;
+        TouchArea {
+            clicked => { root.show_test_dialog = false; }
+        }
 
-        Rectangle {
-            width: 620px;
-            background: #18181b;
-            border-radius: 10px;
+        modal_card2 := Rectangle {
+            width: 600px;
+            height: modal_inner2.min-height;
+            background: #141416;
+            border-radius: 12px;
             border-width: 1px;
-            border-color: #3f3f46;
+            border-color: #27272a;
+            clip: true;
 
-            VerticalLayout {
-                padding: 22px;
-                spacing: 12px;
+            // Absorb touches inside
+            TouchArea { }
+
+            modal_inner2 := VerticalLayout {
+                padding: 16px;
+                spacing: 10px;
 
                 HorizontalLayout {
                     alignment: space-between;
@@ -2676,7 +2688,6 @@ export component MainWindow inherits Window {
                 Rectangle { height: 1px; background: #27272a; }
 
                 // Test Prompt
-                Text { text: root.i18n.test_prompt_label; font-size: 11px; font-weight: 600; color: #a1a1aa; }
                 LineEdit {
                     text <=> root.test_prompt;
                     placeholder-text: "Enter a test prompt to dispatch via Aroxy...";
@@ -2684,28 +2695,28 @@ export component MainWindow inherits Window {
 
                 // Parameters Bar
                 HorizontalLayout {
-                    spacing: 12px;
+                    spacing: 10px;
                     VerticalLayout {
-                        width: 100px;
-                        spacing: 4px;
+                        horizontal-stretch: 1;
+                        spacing: 3px;
                         Text { text: root.i18n.test_timeout_label; font-size: 10px; font-weight: 600; color: #71717a; }
                         LineEdit { text <=> root.test_timeout_secs; }
                     }
                     VerticalLayout {
-                        width: 110px;
-                        spacing: 4px;
+                        horizontal-stretch: 1;
+                        spacing: 3px;
                         Text { text: root.i18n.test_max_tokens_label; font-size: 10px; font-weight: 600; color: #71717a; }
                         LineEdit { text <=> root.test_max_tokens; }
                     }
                     VerticalLayout {
-                        width: 100px;
-                        spacing: 4px;
+                        horizontal-stretch: 1;
+                        spacing: 3px;
                         Text { text: "Temperature"; font-size: 10px; font-weight: 600; color: #71717a; }
                         LineEdit { text <=> root.test_temperature; }
                     }
                     VerticalLayout {
-                        horizontal-stretch: 1;
-                        spacing: 4px;
+                        width: 90px;
+                        spacing: 3px;
                         alignment: center;
                         Text { text: root.i18n.test_stream_toggle; font-size: 10px; font-weight: 600; color: #71717a; }
                         ToggleSwitch {
@@ -2742,7 +2753,7 @@ export component MainWindow inherits Window {
 
                 // Output Viewer
                 Rectangle {
-                    height: 140px;
+                    height: 80px;
                     border-radius: 6px;
                     background: #111113;
                     border-width: 1px;
@@ -2750,7 +2761,7 @@ export component MainWindow inherits Window {
 
                     ScrollView {
                         VerticalLayout {
-                            padding: 10px;
+                            padding: 8px;
                             Text {
                                 text: root.test_response == "" ? "Response body and streaming chunks will appear here..." : root.test_response;
                                 font-size: 11px;
@@ -2768,23 +2779,30 @@ export component MainWindow inherits Window {
     // MODAL 3: LOG DETAILS INSPECTOR
     // ============================================================
     if root.show_log_modal: Rectangle {
-        background: #000000bb;
-        TouchArea { } // Backdrop capture
+        background: #000000cc;
+        TouchArea {
+            clicked => { root.show_log_modal = false; }
+        }
 
-        Rectangle {
-            width: 520px;
-            background: #18181b;
-            border-radius: 10px;
+        modal_card3 := Rectangle {
+            width: 500px;
+            height: modal_inner3.min-height;
+            background: #141416;
+            border-radius: 12px;
             border-width: 1px;
-            border-color: #3f3f46;
+            border-color: #27272a;
+            clip: true;
 
-            VerticalLayout {
-                padding: 20px;
-                spacing: 14px;
+            // Absorb touches inside
+            TouchArea { }
+
+            modal_inner3 := VerticalLayout {
+                padding: 16px;
+                spacing: 10px;
 
                 HorizontalLayout {
                     alignment: space-between;
-                    Text { text: "HTTP Request Inspector"; font-size: 15px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
+                    Text { text: "HTTP Request Inspector"; font-size: 14px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
                     ActionButton {
                         text: "Close";
                         is_primary: false;
@@ -2802,11 +2820,11 @@ export component MainWindow inherits Window {
                 }
 
                 VerticalLayout {
-                    spacing: 8px;
-                    Text { text: "Timestamp: " + root.modal_log_time; font-size: 12px; color: #a1a1aa; }
-                    Text { text: "Dispatched Model: " + root.modal_log_model; font-size: 12px; color: #a1a1aa; }
-                    Text { text: "Processed Tokens: " + root.modal_log_tokens; font-size: 12px; color: #a1a1aa; }
-                    Text { text: "Response Latency: " + root.modal_log_latency; font-size: 12px; color: #a1a1aa; }
+                    spacing: 6px;
+                    Text { text: "Timestamp: " + root.modal_log_time; font-size: 11px; color: #a1a1aa; }
+                    Text { text: "Dispatched Model: " + root.modal_log_model; font-size: 11px; color: #a1a1aa; }
+                    Text { text: "Processed Tokens: " + root.modal_log_tokens; font-size: 11px; color: #a1a1aa; }
+                    Text { text: "Response Latency: " + root.modal_log_latency; font-size: 11px; color: #a1a1aa; }
                 }
             }
         }

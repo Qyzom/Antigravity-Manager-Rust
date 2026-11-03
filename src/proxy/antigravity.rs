@@ -465,6 +465,8 @@ pub async fn fetch_models_and_quota(
                             || id.contains("gemini-3.5")
                             || id.contains("gemini-3-flash")
                             || id.contains("gemini-3.9")
+                            || id.contains("gemini-3.7")
+                            || id.contains("gemini-3.6")
                             || id == "claude-3-7-sonnet"
                             || id == "gemini-2.5-pro"
                             || id == "gemini-2.5-flash"
@@ -476,8 +478,6 @@ pub async fn fetch_models_and_quota(
                             "claude-sonnet-5-5-high" => "claude-sonnet-5-5".to_string(),
                             "claude-opus-5-5-high" => "claude-opus-5-5".to_string(),
                             "gemini-3.8-flash-high" => "gemini-3.8-flash".to_string(),
-                            "gemini-3.7-flash-high" => "gemini-3.7-flash".to_string(),
-                            "gemini-3.6-flash-high" => "gemini-3.6-flash".to_string(),
                             "gemini-3.1-pro-high" => "gemini-3.1-pro".to_string(),
                             "gpt-oss-120b-medium" => "gpt-oss-120b".to_string(),
                             other => other.to_string(),
@@ -487,8 +487,6 @@ pub async fn fetch_models_and_quota(
                             "claude-sonnet-5-5" => "Claude Sonnet 5.5".to_string(),
                             "claude-opus-5-5" => "Claude Opus 5.5".to_string(),
                             "gemini-3.8-flash" => "Gemini 3.8 Flash".to_string(),
-                            "gemini-3.7-flash" => "Gemini 3.7 Flash".to_string(),
-                            "gemini-3.6-flash" => "Gemini 3.6 Flash".to_string(),
                             "gemini-3.1-pro" => "Gemini 3.1 Pro".to_string(),
                             "gpt-oss-120b" => "GPT-OSS 120B".to_string(),
                             _ => entry.display_name.clone().unwrap_or_else(|| clean_id.clone()),

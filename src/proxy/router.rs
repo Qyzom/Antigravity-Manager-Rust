@@ -93,10 +93,6 @@ pub fn resolve_model(requested_model: &str, account: &UpstreamAccount) -> String
                     "gemini-4-argon".to_string()
                 } else if lower.contains("3.8") || lower.contains("3-8") {
                     "gemini-3.8-flash-high".to_string()
-                } else if lower.contains("3.7") || lower.contains("3-7") {
-                    "gemini-3.7-flash-high".to_string()
-                } else if lower.contains("3.6") || lower.contains("3-6") {
-                    "gemini-3.6-flash-high".to_string()
                 } else if lower.contains("3.1") || lower.contains("3-1") {
                     "gemini-3.1-pro-high".to_string()
                 } else {

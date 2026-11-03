@@ -333,6 +333,72 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    // Startup dynamic catalog & quota sync
+    let startup_cfg = Arc::clone(&config_arc);
+    let startup_ver = Arc::clone(&cfg_version);
+    tokio::spawn(async move {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(15))
+            .build()
+            .unwrap_or_default();
+
+        let (acc_id, token, refresh_tok) = {
+            let cfg = startup_cfg.read();
+            if let Some(acc) = cfg.accounts.iter().find(|a| a.is_active && a.status != "ERROR" && !a.api_key.is_empty()) {
+                (acc.id.clone(), acc.api_key.clone(), acc.refresh_token.clone())
+            } else {
+                return;
+            }
+        };
+
+        log::info!("Synchronizing active upstream models on proxy launch...");
+        let mut res = antigravity::fetch_models_and_quota(&client, &token, None).await;
+
+        if res.is_err() {
+            if let Some(ref rtok) = refresh_tok {
+                if let Ok(ref_res) = antigravity::refresh_token(&client, rtok).await {
+                    let new_tok = ref_res.access_token;
+                    {
+                        let mut cfg = startup_cfg.write();
+                        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == acc_id) {
+                            acc.api_key = new_tok.clone();
+                            if ref_res.refresh_token.is_some() {
+                                acc.refresh_token = ref_res.refresh_token;
+                            }
+                        }
+                        let _ = cfg.save();
+                    }
+                    res = antigravity::fetch_models_and_quota(&client, &new_tok, None).await;
+                }
+            }
+        }
+
+        if let Ok((models, used, limit, reset, detailed_quota)) = res {
+            log::info!("Successfully synchronized {} models from Google Antigravity on startup", models.len());
+            {
+                let mut cfg = startup_cfg.write();
+                if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == acc_id) {
+                    acc.quota_used = used;
+                    acc.quota_limit = limit;
+                    acc.quota_reset = reset;
+                    acc.claude_gpt_percent = detailed_quota.claude_gpt_percent;
+                    acc.claude_gpt_reset = detailed_quota.claude_gpt_reset;
+                    acc.claude_gpt_weekly_percent = detailed_quota.claude_gpt_weekly_percent;
+                    acc.claude_gpt_weekly_reset = detailed_quota.claude_gpt_weekly_reset;
+                    acc.gemini_percent = detailed_quota.gemini_percent;
+                    acc.gemini_reset = detailed_quota.gemini_reset;
+                    acc.gemini_weekly_percent = detailed_quota.gemini_weekly_percent;
+                    acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
+                }
+                if !models.is_empty() {
+                    cfg.models = models;
+                }
+                let _ = cfg.save();
+            }
+            startup_ver.fetch_add(1, Ordering::SeqCst);
+        }
+    });
+
     if args.headless {
         log::info!("Aroxy running in headless daemon mode. Press Ctrl+C to stop.");
         tokio::signal::ctrl_c().await?;

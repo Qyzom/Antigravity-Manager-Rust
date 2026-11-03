@@ -370,22 +370,6 @@ impl Default for AppConfig {
                     supports_thinking: true,
                 },
                 ModelCatalogItem {
-                    id: "gemini-3.7-flash".to_string(),
-                    display_name: "Gemini 3.7 Flash".to_string(),
-                    provider: "gemini".to_string(),
-                    tier: "Pro".to_string(),
-                    is_enabled: true,
-                    supports_thinking: true,
-                },
-                ModelCatalogItem {
-                    id: "gemini-3.6-flash".to_string(),
-                    display_name: "Gemini 3.6 Flash".to_string(),
-                    provider: "gemini".to_string(),
-                    tier: "Pro".to_string(),
-                    is_enabled: true,
-                    supports_thinking: true,
-                },
-                ModelCatalogItem {
                     id: "gemini-3.1-pro".to_string(),
                     display_name: "Gemini 3.1 Pro".to_string(),
                     provider: "gemini".to_string(),
@@ -432,6 +416,8 @@ impl AppConfig {
                         !m.id.starts_with("chat_")
                             && !m.id.contains("gemini-3.5")
                             && !m.id.contains("gemini-3-flash")
+                            && !m.id.contains("gemini-3.7")
+                            && !m.id.contains("gemini-3.6")
                             && m.id != "gemini-3.9-flash"
                             && m.id != "o1"
                             && m.id != "gpt-4o"
@@ -454,12 +440,6 @@ impl AppConfig {
                         } else if m.id == "gemini-3.8-flash-high" {
                             m.id = "gemini-3.8-flash".to_string();
                             m.display_name = "Gemini 3.8 Flash".to_string();
-                        } else if m.id == "gemini-3.7-flash-high" {
-                            m.id = "gemini-3.7-flash".to_string();
-                            m.display_name = "Gemini 3.7 Flash".to_string();
-                        } else if m.id == "gemini-3.6-flash-high" {
-                            m.id = "gemini-3.6-flash".to_string();
-                            m.display_name = "Gemini 3.6 Flash".to_string();
                         } else if m.id == "gemini-3.1-pro-high" {
                             m.id = "gemini-3.1-pro".to_string();
                             m.display_name = "Gemini 3.1 Pro".to_string();
@@ -467,6 +447,10 @@ impl AppConfig {
                             m.id = "gpt-oss-120b".to_string();
                             m.display_name = "GPT-OSS 120B".to_string();
                         }
+                    }
+
+                    if cfg.models.is_empty() {
+                        cfg.models = Self::default().models;
                     }
 
                     // Deduplicate models by ID
