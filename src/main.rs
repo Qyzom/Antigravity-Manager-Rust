@@ -2,6 +2,7 @@ slint::include_modules!();
 
 use aroxy::cli::CliArgs;
 use aroxy::config::{AppConfig, RoutingStrategy, UpstreamAccount};
+use aroxy::proxy::antigravity;
 use aroxy::proxy::server::{create_proxy_router, AppState};
 use aroxy::proxy::stats::ProxyStats;
 use aroxy::tray::{SystemTray, TrayAction};
@@ -9,7 +10,7 @@ use clap::Parser;
 use parking_lot::RwLock;
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::watch;
@@ -26,6 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config_arc = Arc::new(RwLock::new(config));
     let stats_arc = Arc::new(ProxyStats::new());
+    let cfg_version = Arc::new(AtomicU64::new(1));
     let (stop_sender, stop_receiver) = watch::channel(false);
 
     let proxy_running = Arc::new(AtomicBool::new(true));
@@ -86,6 +88,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Accounts model
     let accounts_model = Rc::new(VecModel::<AccountData>::default());
+    main_window.set_accounts(ModelRc::from(accounts_model.clone()));
+
+    // Models catalog model
+    let models_model = Rc::new(VecModel::<ModelItemData>::default());
+    main_window.set_models(ModelRc::from(models_model.clone()));
+
+    main_window.set_proxy_running(true);
+    let port = config_arc.read().port;
+    main_window.set_proxy_port(port as i32);
+    main_window.set_proxy_host("127.0.0.1".into());
+    main_window.set_expose_reasoning_variants(config_arc.read().expose_reasoning_variants);
+
+    // Initial state populate
     {
         let cfg = config_arc.read();
         for acc in &cfg.accounts {
@@ -110,16 +125,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 is_active: acc.is_active,
             });
         }
-    }
-    main_window.set_accounts(ModelRc::from(accounts_model.clone()));
-    main_window.set_proxy_running(true);
-    let port = config_arc.read().port;
-    main_window.set_proxy_port(port as i32);
-    main_window.set_proxy_host("127.0.0.1".into());
 
-    // Update global quota state on startup
-    {
-        let cfg = config_arc.read();
+        for m in &cfg.models {
+            models_model.push(ModelItemData {
+                id: m.id.clone().into(),
+                display_name: m.display_name.clone().into(),
+                provider: m.provider.clone().into(),
+                tier: m.tier.clone().into(),
+                is_enabled: m.is_enabled,
+                supports_thinking: m.supports_thinking,
+            });
+        }
+
         let total_used = cfg.total_quota_used();
         let total_limit = cfg.total_quota_limit();
         let pct = if total_limit > 0 {
@@ -135,47 +152,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_quota_refresh_interval(cfg.quota_refresh_interval_secs as i32);
     }
 
-    // Models catalog model
-    let models_model = Rc::new(VecModel::<ModelItemData>::default());
-    {
-        let cfg = config_arc.read();
-        for m in &cfg.models {
-            models_model.push(ModelItemData {
-                id: m.id.clone().into(),
-                display_name: m.display_name.clone().into(),
-                provider: m.provider.clone().into(),
-                tier: m.tier.clone().into(),
-                is_enabled: m.is_enabled,
-                supports_thinking: m.supports_thinking,
-            });
-        }
-    }
-    main_window.set_models(ModelRc::from(models_model.clone()));
-    main_window.set_expose_reasoning_variants(config_arc.read().expose_reasoning_variants);
-
     // Toggle model callback
     let c_mod = Arc::clone(&config_arc);
-    let m_mod = models_model.clone();
+    let v_mod = Arc::clone(&cfg_version);
     main_window.on_toggle_model(move |id_slint| {
         let id_str = id_slint.to_string();
-        let mut next_val = false;
         {
             let mut cfg = c_mod.write();
             if let Some(item) = cfg.models.iter_mut().find(|m| m.id == id_str) {
                 item.is_enabled = !item.is_enabled;
-                next_val = item.is_enabled;
             }
             let _ = cfg.save();
         }
-        for i in 0..m_mod.row_count() {
-            if let Some(mut item) = m_mod.row_data(i) {
-                if item.id.as_str() == id_str {
-                    item.is_enabled = next_val;
-                    m_mod.set_row_data(i, item);
-                    break;
-                }
-            }
-        }
+        v_mod.fetch_add(1, Ordering::SeqCst);
     });
 
     // Toggle reasoning variants callback
@@ -210,93 +199,148 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         s_stats_clear.clear_logs();
     });
 
-    // Add account manually callback
+    // Add account manually callback (Auto-parses email & quota from token!)
     let c_add = Arc::clone(&config_arc);
-    let m_add = accounts_model.clone();
+    let v_add = Arc::clone(&cfg_version);
     let h_add = window_handle.clone();
     main_window.on_add_account(move || {
         if let Some(h) = h_add.upgrade() {
-            let name = h.get_new_acc_name().to_string();
-            let key = h.get_new_acc_key().to_string();
-            let fp = h.get_new_acc_fp().to_string();
+            let token = h.get_new_acc_token().to_string().trim().to_string();
+            if token.is_empty() { return; }
 
-            if name.is_empty() { return; }
+            h.set_new_acc_token("".into());
 
-            let id = format!("acc-{}", uuid::Uuid::new_v4().simple());
-            let new_acc = UpstreamAccount {
-                id: id.clone(),
-                name: name.clone(),
-                provider: "antigravity".to_string(),
-                base_url: "https://api.anthropic.com".to_string(),
-                api_key: key,
-                fingerprint: if fp.is_empty() { "Claude Code 2.x".to_string() } else { fp.clone() },
-                tier: "Pro".to_string(),
-                quota_used: 0,
-                quota_limit: 100_000,
-                quota_reset: "in 4h 00m".to_string(),
-                status: "Active".to_string(),
-                is_active: false,
-            };
+            let c_clone = Arc::clone(&c_add);
+            let v_clone = Arc::clone(&v_add);
 
-            {
-                let mut cfg = c_add.write();
-                cfg.accounts.push(new_acc);
-                let _ = cfg.save();
-            }
+            tokio::spawn(async move {
+                let http_client = reqwest::Client::new();
+                let mut access_token = token.clone();
 
-            m_add.push(AccountData {
-                id: id.into(),
-                name: name.into(),
-                provider: "antigravity".into(),
-                base_url: "https://api.anthropic.com".into(),
-                api_key_masked: "••••••••".into(),
-                fingerprint: fp.into(),
-                tier: "Pro".into(),
-                quota_used: 0,
-                quota_limit: 100000,
-                quota_percent: 0,
-                quota_reset: "in 4h 00m".into(),
-                status: "Active".into(),
-                is_active: false,
+                if token.starts_with("1//") {
+                    if let Ok(tok_res) = antigravity::refresh_token(&http_client, &token).await {
+                        access_token = tok_res.access_token;
+                    }
+                }
+
+                let email = match antigravity::fetch_user_info(&http_client, &access_token).await {
+                    Ok(info) => info.email,
+                    Err(_) => {
+                        if access_token.starts_with("sk-ant") {
+                            "anthropic.direct@api".to_string()
+                        } else if access_token.starts_with("sk-") {
+                            "openai.direct@api".to_string()
+                        } else {
+                            format!("account-{}@antigravity", &uuid::Uuid::new_v4().simple().to_string()[..6])
+                        }
+                    }
+                };
+
+                let (project_id, tier) = antigravity::fetch_project_and_tier(&http_client, &access_token).await;
+
+                let (fetched_models, quota_used, quota_limit, quota_reset) =
+                    match antigravity::fetch_models_and_quota(&http_client, &access_token, project_id.as_deref()).await {
+                        Ok(res) => (Some(res.0), res.1, res.2, res.3),
+                        Err(_) => (None, 0, 100_000, "in 4h 00m".to_string()),
+                    };
+
+                let new_id = format!("acc-{}", uuid::Uuid::new_v4().simple());
+                let new_acc = UpstreamAccount {
+                    id: new_id,
+                    name: email,
+                    provider: "antigravity".to_string(),
+                    base_url: "https://api.anthropic.com".to_string(),
+                    api_key: access_token,
+                    fingerprint: "Claude Code 2.x".to_string(),
+                    tier,
+                    quota_used,
+                    quota_limit,
+                    quota_reset,
+                    status: "Active".to_string(),
+                    is_active: true,
+                };
+
+                {
+                    let mut cfg = c_clone.write();
+                    cfg.accounts.push(new_acc);
+                    if let Some(m) = fetched_models {
+                        cfg.models = m;
+                    }
+                    let _ = cfg.save();
+                }
+
+                v_clone.fetch_add(1, Ordering::SeqCst);
             });
-
-            h.set_new_acc_name("".into());
-            h.set_new_acc_key("".into());
         }
     });
 
-    // Add account via Browser OAuth loopback callback
+    // Add account via Browser OAuth
     let port_oauth = config_arc.read().port;
     main_window.on_add_account_browser_oauth(move || {
-        let callback_url = format!("http://127.0.0.1:{}/oauth/callback", port_oauth);
-        log::info!("Opening browser for Antigravity OAuth: {}", callback_url);
+        let auth_url = antigravity::get_oauth_authorization_url(port_oauth);
+        log::info!("Opening Google OAuth in browser: {}", auth_url);
         #[cfg(target_os = "linux")]
-        let _ = std::process::Command::new("xdg-open").arg(&callback_url).spawn();
+        let _ = std::process::Command::new("xdg-open").arg(&auth_url).spawn();
         #[cfg(target_os = "windows")]
-        let _ = std::process::Command::new("cmd").args(["/C", "start", &callback_url]).spawn();
+        let _ = std::process::Command::new("cmd").args(["/C", "start", &auth_url]).spawn();
     });
 
     // Refresh quota callback
     let c_ref = Arc::clone(&config_arc);
-    let m_ref = accounts_model.clone();
+    let v_ref = Arc::clone(&cfg_version);
     main_window.on_refresh_account_quota(move |id_slint| {
         let id_str = id_slint.to_string();
-        for i in 0..m_ref.row_count() {
-            if let Some(mut acc) = m_ref.row_data(i) {
-                if acc.id.as_str() == id_str {
-                    acc.status = "Active".into();
-                    acc.quota_reset = "in 3h 45m".into();
-                    m_ref.set_row_data(i, acc);
-                    break;
+        let c_clone = Arc::clone(&c_ref);
+        let v_clone = Arc::clone(&v_ref);
+
+        tokio::spawn(async move {
+            let (token, project_id) = {
+                let cfg = c_clone.read();
+                if let Some(acc) = cfg.accounts.iter().find(|a| a.id == id_str) {
+                    (acc.api_key.clone(), None::<String>)
+                } else {
+                    return;
                 }
+            };
+
+            let client = reqwest::Client::new();
+            if let Ok((models, used, limit, reset)) = antigravity::fetch_models_and_quota(&client, &token, project_id.as_deref()).await {
+                {
+                    let mut cfg = c_clone.write();
+                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id_str) {
+                        acc.quota_used = used;
+                        acc.quota_limit = limit;
+                        acc.quota_reset = reset;
+                        acc.status = "Active".to_string();
+                    }
+                    cfg.models = models;
+                    let _ = cfg.save();
+                }
+                v_clone.fetch_add(1, Ordering::SeqCst);
+            }
+        });
+    });
+
+    // Show account info callback
+    let c_info = Arc::clone(&config_arc);
+    let h_info = window_handle.clone();
+    main_window.on_show_account_details(move |id_slint| {
+        let id_str = id_slint.to_string();
+        if let Some(h) = h_info.upgrade() {
+            let cfg = c_info.read();
+            if let Some(acc) = cfg.accounts.iter().find(|a| a.id == id_str) {
+                h.set_info_account_name(acc.name.clone().into());
+                h.set_info_account_tier(acc.tier.clone().into());
+                h.set_info_account_quota(format!("{} / {} tokens (Resets {})", acc.quota_used, acc.quota_limit, acc.quota_reset).into());
+                h.set_info_account_models(format!("{} upstream models synchronized with Antigravity", cfg.models.len()).into());
+                h.set_show_account_info(true);
             }
         }
-        let _ = c_ref.read();
     });
 
     // Delete account callback
     let c_del = Arc::clone(&config_arc);
-    let m_del = accounts_model.clone();
+    let v_del = Arc::clone(&cfg_version);
     main_window.on_delete_account(move |id_slint| {
         let id_str = id_slint.to_string();
         {
@@ -304,35 +348,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             cfg.accounts.retain(|a| a.id != id_str);
             let _ = cfg.save();
         }
-        for i in 0..m_del.row_count() {
-            if let Some(acc) = m_del.row_data(i) {
-                if acc.id.as_str() == id_str {
-                    m_del.remove(i);
-                    break;
-                }
-            }
-        }
-    });
-
-    // Activate account callback
-    let c_act = Arc::clone(&config_arc);
-    let m_act = accounts_model.clone();
-    main_window.on_activate_account(move |id_slint| {
-        let id_str = id_slint.to_string();
-        {
-            let mut cfg = c_act.write();
-            for a in &mut cfg.accounts {
-                a.is_active = a.id == id_str;
-            }
-            cfg.active_account_id = Some(id_str.clone());
-            let _ = cfg.save();
-        }
-        for i in 0..m_act.row_count() {
-            if let Some(mut acc) = m_act.row_data(i) {
-                acc.is_active = acc.id.as_str() == id_str;
-                m_act.set_row_data(i, acc);
-            }
-        }
+        v_del.fetch_add(1, Ordering::SeqCst);
     });
 
     // Set routing strategy callback
@@ -444,14 +460,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // Periodic UI stats updater timer
+    // Periodic UI stats and state updater timer
     let timer = slint::Timer::default();
     let s_timer = Arc::clone(&stats_arc);
+    let c_timer = Arc::clone(&config_arc);
+    let v_timer = Arc::clone(&cfg_version);
+    let mut last_seen_version: u64 = 0;
     let w_timer = window_handle.clone();
     let logs_model = Rc::new(VecModel::<LogEntryData>::default());
     main_window.set_log_entries(ModelRc::from(logs_model.clone()));
 
-    timer.start(slint::TimerMode::Repeated, Duration::from_millis(600), move || {
+    timer.start(slint::TimerMode::Repeated, Duration::from_millis(500), move || {
         if let Some(w) = w_timer.upgrade() {
             let (reqs, tokens, avg_lat) = s_timer.get_metrics();
             w.set_total_requests(reqs.to_string().into());
@@ -471,6 +490,67 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             w.set_stat_success_rate(succ_rate.into());
             w.set_stat_error_count(errs.to_string().into());
             w.set_stat_max_latency(format!("{} ms", max_lat).into());
+
+            // Sync accounts & models if changed
+            let current_version = v_timer.load(Ordering::Relaxed);
+            if current_version != last_seen_version {
+                last_seen_version = current_version;
+                let cfg = c_timer.read();
+
+                accounts_model.set_vec(
+                    cfg.accounts
+                        .iter()
+                        .map(|acc| {
+                            let pct = if acc.quota_limit > 0 {
+                                ((acc.quota_used as f64 / acc.quota_limit as f64) * 100.0) as i32
+                            } else {
+                                0
+                            };
+                            AccountData {
+                                id: acc.id.clone().into(),
+                                name: acc.name.clone().into(),
+                                provider: acc.provider.clone().into(),
+                                base_url: acc.base_url.clone().into(),
+                                api_key_masked: if acc.api_key.is_empty() { "No key".into() } else { "••••••••".into() },
+                                fingerprint: acc.fingerprint.clone().into(),
+                                tier: acc.tier.clone().into(),
+                                quota_used: acc.quota_used as i32,
+                                quota_limit: acc.quota_limit as i32,
+                                quota_percent: pct,
+                                quota_reset: acc.quota_reset.clone().into(),
+                                status: acc.status.clone().into(),
+                                is_active: acc.is_active,
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                );
+
+                models_model.set_vec(
+                    cfg.models
+                        .iter()
+                        .map(|m| ModelItemData {
+                            id: m.id.clone().into(),
+                            display_name: m.display_name.clone().into(),
+                            provider: m.provider.clone().into(),
+                            tier: m.tier.clone().into(),
+                            is_enabled: m.is_enabled,
+                            supports_thinking: m.supports_thinking,
+                        })
+                        .collect::<Vec<_>>(),
+                );
+
+                let total_used = cfg.total_quota_used();
+                let total_limit = cfg.total_quota_limit();
+                let pct = if total_limit > 0 {
+                    ((total_used as f64 / total_limit as f64) * 100.0) as i32
+                } else {
+                    0
+                };
+                w.set_global_quota_used(total_used.to_string().into());
+                w.set_global_quota_limit(total_limit.to_string().into());
+                w.set_global_quota_percent(pct);
+                w.set_healthy_accounts_count(cfg.accounts.iter().filter(|a| a.is_active).count() as i32);
+            }
 
             let logs = s_timer.get_recent_logs();
             if logs.len() != logs_model.row_count() {

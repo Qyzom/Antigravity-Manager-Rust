@@ -187,4 +187,63 @@ mod tests {
         assert_eq!(logs.len(), 2);
         assert_eq!(logs[0].tokens, 200);
     }
+
+    #[test]
+    fn test_antigravity_payload_conversion() {
+        use aroxy::proxy::antigravity::{build_antigravity_payload, convert_antigravity_response_to_openai};
+
+        let req = OpenAIChatRequest {
+            model: "claude-3-7-sonnet".into(),
+            messages: vec![
+                OpenAIMessage {
+                    role: "system".into(),
+                    content: Value::String("You are Antigravity system.".into()),
+                    reasoning_content: None,
+                    refusal: None,
+                    name: None,
+                },
+                OpenAIMessage {
+                    role: "user".into(),
+                    content: Value::String("Write a test".into()),
+                    reasoning_content: None,
+                    refusal: None,
+                    name: None,
+                },
+            ],
+            stream: false,
+            temperature: Some(0.2),
+            max_tokens: Some(2048),
+            reasoning_effort: None,
+            stream_options: None,
+            extra: Default::default(),
+        };
+
+        let payload = build_antigravity_payload(&req, "claude-3-7-sonnet", Some("test-project"), Some(ReasoningEffort::Medium));
+        assert_eq!(payload["model"], "claude-3-7-sonnet");
+        assert_eq!(payload["project"], "test-project");
+        assert_eq!(payload["userAgent"], "antigravity");
+        assert!(payload["request"]["systemInstruction"]["parts"][0]["text"].as_str().unwrap().contains("Antigravity"));
+        assert_eq!(payload["request"]["contents"][0]["role"], "user");
+        assert_eq!(payload["request"]["generationConfig"]["thinkingConfig"]["thinkingBudget"], 4096);
+
+        // Test Antigravity Response conversion
+        let raw_upstream = serde_json::json!({
+            "response": {
+                "candidates": [{
+                    "finishReason": "STOP",
+                    "content": {
+                        "parts": [
+                            { "thought": true, "text": "Deep thinking step..." },
+                            { "text": "Code output here." }
+                        ]
+                    }
+                }]
+            }
+        });
+
+        let oai = convert_antigravity_response_to_openai(&raw_upstream, "claude-3-7-sonnet");
+        assert_eq!(oai.choices[0].message.reasoning_content.as_deref(), Some("Deep thinking step..."));
+        assert_eq!(oai.choices[0].message.content, Value::String("Code output here.".into()));
+        assert_eq!(oai.choices[0].finish_reason.as_deref(), Some("stop"));
+    }
 }

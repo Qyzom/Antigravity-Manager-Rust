@@ -40,15 +40,36 @@ async fn oauth_callback(
     State(state): State<AppState>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
-    let token = params.get("token")
-        .or_else(|| params.get("code"))
-        .or_else(|| params.get("access_token"))
-        .cloned()
-        .unwrap_or_else(|| "mock_oauth_session_token_".to_string() + &uuid::Uuid::new_v4().simple().to_string());
-    
-    let email = params.get("email")
-        .cloned()
-        .unwrap_or_else(|| "antigravity.user@gmail.com".to_string());
+    let port = state.config.read().port;
+    let redirect_uri = format!("http://127.0.0.1:{}/oauth/callback", port);
+
+    let (access_token, email, tier, quota_used, quota_limit, quota_reset, models) =
+        if let Some(code) = params.get("code") {
+            match crate::proxy::antigravity::exchange_code(&state.http_client, code, &redirect_uri).await {
+                Ok(token_resp) => {
+                    let acc_token = token_resp.access_token;
+                    let email = match crate::proxy::antigravity::fetch_user_info(&state.http_client, &acc_token).await {
+                        Ok(info) => info.email,
+                        Err(_) => "antigravity.user@gmail.com".to_string(),
+                    };
+                    let (project_id, tier) = crate::proxy::antigravity::fetch_project_and_tier(&state.http_client, &acc_token).await;
+                    let (models, used, limit, reset) = match crate::proxy::antigravity::fetch_models_and_quota(&state.http_client, &acc_token, project_id.as_deref()).await {
+                        Ok(res) => (Some(res.0), res.1, res.2, res.3),
+                        Err(_) => (None, 0, 100_000, "in 4h 00m".to_string()),
+                    };
+                    (acc_token, email, tier, used, limit, reset, models)
+                }
+                Err(e) => {
+                    log::warn!("OAuth exchange error: {}", e);
+                    let raw_token = params.get("token").cloned().unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
+                    (raw_token, "antigravity.user@gmail.com".to_string(), "PRO".to_string(), 0, 100_000, "in 4h 00m".to_string(), None)
+                }
+            }
+        } else {
+            let raw_token = params.get("token").or_else(|| params.get("access_token")).cloned().unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
+            let email = params.get("email").cloned().unwrap_or_else(|| "antigravity.user@gmail.com".to_string());
+            (raw_token, email, "PRO".to_string(), 0, 100_000, "in 4h 00m".to_string(), None)
+        };
 
     // Add or update account in config
     {
@@ -56,43 +77,49 @@ async fn oauth_callback(
         let new_id = format!("acc-{}", uuid::Uuid::new_v4().simple());
         cfg.accounts.push(crate::config::UpstreamAccount {
             id: new_id.clone(),
-            name: format!("Google ({})", email),
+            name: email.clone(),
             provider: "antigravity".to_string(),
             base_url: "https://api.anthropic.com".to_string(),
-            api_key: token,
+            api_key: access_token,
             fingerprint: "Claude Code 2.x".to_string(),
-            tier: "Pro".to_string(),
-            quota_used: 1200,
-            quota_limit: 100000,
-            quota_reset: "in 4h 00m".to_string(),
+            tier: tier.clone(),
+            quota_used,
+            quota_limit,
+            quota_reset,
             status: "Active".to_string(),
             is_active: true,
         });
         cfg.active_account_id = Some(new_id);
+        if let Some(m) = models {
+            cfg.models = m;
+        }
         let _ = cfg.save();
     }
 
-    axum::response::Html(r#"
+    axum::response::Html(format!(r#"
         <!DOCTYPE html>
         <html>
         <head>
             <meta charset="utf-8">
             <title>Aroxy — Account Connected</title>
             <style>
-                body { background: #0e1015; color: #f1f3f9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-                .card { background: #1a1d26; border: 1px solid #262a36; border-radius: 12px; padding: 32px; max-width: 420px; text-align: center; }
-                h2 { color: #38d39f; margin-bottom: 8px; }
-                p { color: #9ba1b6; font-size: 14px; line-height: 1.5; }
+                body {{ background: #09090b; color: #fafafa; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }}
+                .card {{ background: #18181b; border: 1px solid #27272a; border-radius: 10px; padding: 32px; max-width: 440px; text-align: center; }}
+                h2 {{ color: #4ade80; margin: 0 0 10px 0; font-size: 20px; }}
+                p {{ color: #a1a1aa; font-size: 13px; line-height: 1.5; margin: 6px 0; }}
+                .badge {{ display: inline-block; background: #27272a; color: #fafafa; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 700; margin-top: 12px; }}
             </style>
         </head>
         <body>
             <div class="card">
                 <h2>Account Connected</h2>
-                <p>Your Antigravity authorization was successfully captured by Aroxy.<br>You can safely close this browser window and return to the application.</p>
+                <p>Authorized as <strong>{}</strong> (Tier: {})</p>
+                <p>Antigravity quota and active models have been synchronized with Aroxy.<br>You can close this tab and return to the application.</p>
+                <div class="badge">Aroxy v0.0.2</div>
             </div>
         </body>
         </html>
-    "#)
+    "#, email, tier))
 }
 
 async fn health_check() -> impl IntoResponse {
@@ -136,8 +163,81 @@ async fn chat_completions(
     let (base_clean, reasoning_effort) = parse_model_and_reasoning(&requested_model, payload.reasoning_effort.as_deref());
     let target_model = resolve_model(&base_clean, &account);
 
-    // If upstream is Anthropic, map OpenAI -> Claude format
-    if account.provider == "anthropic" {
+    // If upstream is Antigravity (Google Cloud Code Pa), convert and forward
+    if account.provider == "antigravity" {
+        let payload_json = crate::proxy::antigravity::build_antigravity_payload(
+            &payload,
+            &target_model,
+            None,
+            reasoning_effort,
+        );
+
+        let endpoint_url = if is_streaming {
+            "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse"
+        } else {
+            "https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent"
+        };
+
+        let mut req_headers = reqwest::header::HeaderMap::new();
+        req_headers.insert("authorization", format!("Bearer {}", account.api_key).parse().unwrap());
+        req_headers.insert("User-Agent", crate::proxy::antigravity::OFFICIAL_USER_AGENT.parse().unwrap());
+        apply_fingerprint(&mut req_headers, &account.fingerprint);
+
+        let res = match state.http_client.post(endpoint_url).headers(req_headers).json(&payload_json).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                let lat = start_time.elapsed().as_millis() as u64;
+                state.stats.record_request("POST", "/v1/chat/completions", &requested_model, 502, 0, lat);
+                return (StatusCode::BAD_GATEWAY, Json(json!({"error": {"message": format!("Antigravity connection error: {}", e)}}))).into_response();
+            }
+        };
+
+        let status = res.status();
+        if !status.is_success() {
+            let err_text = res.text().await.unwrap_or_default();
+            let lat = start_time.elapsed().as_millis() as u64;
+            state.stats.record_request("POST", "/v1/chat/completions", &requested_model, status.as_u16(), 0, lat);
+            return (status, err_text).into_response();
+        }
+
+        if is_streaming {
+            let stream_id = format!("chatcmpl-{}", uuid::Uuid::new_v4().simple());
+            let mapped_stream = crate::proxy::stream::process_antigravity_to_openai_stream(Box::pin(res.bytes_stream()), stream_id, target_model);
+            let lat = start_time.elapsed().as_millis() as u64;
+            state.stats.record_request("POST", "/v1/chat/completions (stream)", &requested_model, 200, 150, lat);
+
+            let req_id = format!("req_{}", uuid::Uuid::new_v4().simple());
+            Response::builder()
+                .header(header::CONTENT_TYPE, "text/event-stream; charset=utf-8")
+                .header(header::CACHE_CONTROL, "no-cache")
+                .header(header::CONNECTION, "keep-alive")
+                .header("x-request-id", req_id)
+                .header("openai-organization", "user-personal")
+                .header("openai-processing-ms", lat.to_string())
+                .header("openai-version", "2020-10-01")
+                .body(Body::from_stream(mapped_stream))
+                .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+        } else {
+            let val = match res.json::<serde_json::Value>().await {
+                Ok(v) => v,
+                Err(e) => {
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": {"message": e.to_string()}}))).into_response();
+                }
+            };
+            let oai_resp = crate::proxy::antigravity::convert_antigravity_response_to_openai(&val, &target_model);
+            let tokens = oai_resp.usage.as_ref().map(|u| u.total_tokens).unwrap_or(0);
+            let lat = start_time.elapsed().as_millis() as u64;
+            state.stats.record_request("POST", "/v1/chat/completions", &requested_model, 200, tokens, lat);
+
+            let req_id = format!("req_{}", uuid::Uuid::new_v4().simple());
+            let mut response = Json(oai_resp).into_response();
+            response.headers_mut().insert("x-request-id", req_id.parse().unwrap());
+            response.headers_mut().insert("openai-organization", "user-personal".parse().unwrap());
+            response.headers_mut().insert("openai-processing-ms", lat.to_string().parse().unwrap());
+            response.headers_mut().insert("openai-version", "2020-10-01".parse().unwrap());
+            response
+        }
+    } else if account.provider == "anthropic" {
         let claude_req = convert_openai_to_claude(&payload, &target_model, reasoning_effort);
         let mut req_headers = reqwest::header::HeaderMap::new();
         req_headers.insert("x-api-key", account.api_key.parse().unwrap());

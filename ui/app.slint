@@ -38,34 +38,24 @@ export struct ModelItemData {
 
 component NavItem inherits Rectangle {
     in property <string> text;
-    in property <string> icon_symbol: "•";
     in property <bool> is_active: false;
     callback clicked;
 
     height: 38px;
-    border-radius: 8px;
-    background: root.is_active ? #252836 : (touch.has-hover ? #1a1d28 : transparent);
+    border-radius: 6px;
+    background: root.is_active ? #27272a : (touch.has-hover ? #18181b : transparent);
     animate background { duration: 120ms; }
 
     HorizontalLayout {
-        padding-left: 12px;
-        padding-right: 12px;
-        spacing: 10px;
+        padding-left: 14px;
+        padding-right: 14px;
         alignment: start;
-
-        Text {
-            text: root.icon_symbol;
-            font-size: 13px;
-            font-weight: 700;
-            color: root.is_active ? #38d39f : (touch.has-hover ? #d2d5e2 : #6c7287);
-            vertical-alignment: center;
-        }
 
         Text {
             text: root.text;
             font-size: 13px;
             font-weight: root.is_active ? 700 : 500;
-            color: root.is_active ? #ffffff : (touch.has-hover ? #e4e7f2 : #969ba8);
+            color: root.is_active ? #fafafa : (touch.has-hover ? #e4e4e7 : #a1a1aa);
             vertical-alignment: center;
         }
     }
@@ -84,16 +74,16 @@ component ActionButton inherits Rectangle {
     callback clicked;
 
     height: 32px;
-    border-radius: 7px;
+    border-radius: 6px;
     background: root.is_danger 
-        ? (touch.pressed ? #992424 : (touch.has-hover ? #b82c2c : #7a1d1d))
+        ? (touch.pressed ? #5f1515 : (touch.has-hover ? #7f1d1d : #451010))
         : (root.is_accent
-            ? (touch.pressed ? #2bb586 : (touch.has-hover ? #38d39f : #22996f))
+            ? (touch.pressed ? #e4e4e7 : (touch.has-hover ? #ffffff : #f4f4f5))
             : (root.is_primary 
-                ? (touch.pressed ? #323647 : (touch.has-hover ? #3c4155 : #2a2d3c))
-                : (touch.pressed ? #14161f : (touch.has-hover ? #222533 : #1a1c26))));
+                ? (touch.pressed ? #323236 : (touch.has-hover ? #3f3f46 : #27272a))
+                : (touch.pressed ? #121214 : (touch.has-hover ? #202023 : #18181b))));
     border-width: 1px;
-    border-color: root.is_danger ? #d13d3d : (root.is_accent ? #4fe3af : #383d50);
+    border-color: root.is_danger ? #991b1b : (root.is_accent ? #ffffff : #3f3f46);
     animate background { duration: 100ms; }
 
     HorizontalLayout {
@@ -104,7 +94,7 @@ component ActionButton inherits Rectangle {
             text: root.text;
             font-size: 12px;
             font-weight: 700;
-            color: root.is_danger ? #ffffff : (root.is_accent ? #0c2b1e : #ffffff);
+            color: root.is_danger ? #fca5a5 : (root.is_accent ? #09090b : #fafafa);
             vertical-alignment: center;
             horizontal-alignment: center;
         }
@@ -123,16 +113,18 @@ component ToggleSwitch inherits Rectangle {
     width: 44px;
     height: 24px;
     border-radius: 12px;
-    background: root.checked ? #38d39f : #282b39;
+    background: root.checked ? #f4f4f5 : #27272a;
+    border-width: 1px;
+    border-color: #3f3f46;
     animate background { duration: 150ms; }
 
     Rectangle {
         x: root.checked ? 22px : 3px;
-        y: 3px;
+        y: 2px;
         width: 18px;
         height: 18px;
         border-radius: 9px;
-        background: #ffffff;
+        background: root.checked ? #09090b : #71717a;
         animate x { duration: 150ms; easing: ease-out; }
     }
 
@@ -149,12 +141,11 @@ component StatCard inherits Rectangle {
     in property <string> title;
     in property <string> value;
     in property <string> subtext;
-    in property <string> accent_color: "#ffffff";
 
-    background: #161821;
-    border-radius: 10px;
+    background: #18181b;
+    border-radius: 8px;
     border-width: 1px;
-    border-color: #242838;
+    border-color: #27272a;
 
     VerticalLayout {
         padding: 14px;
@@ -165,19 +156,19 @@ component StatCard inherits Rectangle {
             text: root.title;
             font-size: 10px;
             font-weight: 700;
-            color: #6c738a;
+            color: #71717a;
             letter-spacing: 0.5px;
         }
         Text {
             text: root.value;
             font-size: 22px;
             font-weight: 800;
-            color: #ffffff;
+            color: #fafafa;
         }
         Text {
             text: root.subtext;
             font-size: 11px;
-            color: #8f95ab;
+            color: #a1a1aa;
         }
     }
 }
@@ -185,14 +176,14 @@ component StatCard inherits Rectangle {
 component Badge inherits Rectangle {
     in property <string> text;
     in property <bool> is_green: false;
-    in property <bool> is_purple: false;
     in property <bool> is_amber: false;
+    in property <bool> is_danger: false;
 
     height: 20px;
     border-radius: 4px;
-    background: root.is_green ? #153225 : (root.is_purple ? #261f38 : (root.is_amber ? #332617 : #1f222e));
+    background: root.is_green ? #14281e : (root.is_amber ? #291c10 : (root.is_danger ? #291212 : #27272a));
     border-width: 1px;
-    border-color: root.is_green ? #276949 : (root.is_purple ? #523b82 : (root.is_amber ? #6e4e26 : #32374b));
+    border-color: root.is_green ? #1e4a34 : (root.is_amber ? #4e3518 : (root.is_danger ? #4a1c1c : #3f3f46));
 
     HorizontalLayout {
         padding-left: 6px;
@@ -202,7 +193,7 @@ component Badge inherits Rectangle {
             text: root.text;
             font-size: 10px;
             font-weight: 700;
-            color: root.is_green ? #38d39f : (root.is_purple ? #a78bfa : (root.is_amber ? #fbbf24 : #9ba1b6));
+            color: root.is_green ? #4ade80 : (root.is_amber ? #fbbf24 : (root.is_danger ? #f87171 : #d4d4d8));
             vertical-alignment: center;
         }
     }
@@ -214,7 +205,7 @@ export component MainWindow inherits Window {
     min-height: 620px;
     preferred-width: 1060px;
     preferred-height: 720px;
-    background: #0e1015;
+    background: #09090b;
 
     // Navigation & Status
     in-out property <int> active_tab: 0;
@@ -228,24 +219,27 @@ export component MainWindow inherits Window {
     in-out property <string> total_requests: "0";
     in-out property <string> total_tokens: "0";
     in-out property <string> avg_latency: "0 ms";
-    in-out property <string> active_account_name: "Antigravity Pro";
-    in-out property <string> global_quota_used: "12,450";
+    in-out property <string> active_account_name: "Antigravity Pool";
+    in-out property <string> global_quota_used: "0";
     in-out property <string> global_quota_limit: "100,000";
-    in-out property <int> global_quota_percent: 12;
-    in-out property <string> global_quota_reset: "in 3h 15m";
-    in-out property <int> healthy_accounts_count: 2;
+    in-out property <int> global_quota_percent: 0;
+    in-out property <string> global_quota_reset: "in 4h 00m";
+    in-out property <int> healthy_accounts_count: 0;
 
     // Lists
     in-out property <[LogEntryData]> log_entries: [];
     in-out property <[AccountData]> accounts: [];
     in-out property <[ModelItemData]> models: [];
 
-    // Account Form
-    in-out property <string> new_acc_name: "";
-    in-out property <string> new_acc_key: "";
-    in-out property <string> new_acc_provider: "antigravity";
-    in-out property <string> new_acc_tier: "Pro";
-    in-out property <string> new_acc_fp: "Claude Code 2.x";
+    // Account Form - Single Token Input (No manual name input!)
+    in-out property <string> new_acc_token: "";
+
+    // Account Details Dialog
+    in-out property <bool> show_account_info: false;
+    in-out property <string> info_account_name: "";
+    in-out property <string> info_account_tier: "";
+    in-out property <string> info_account_quota: "";
+    in-out property <string> info_account_models: "";
 
     // Playground
     in-out property <string> playground_prompt: "Write a high-performance Rust function to calculate SHA-256.";
@@ -282,8 +276,8 @@ export component MainWindow inherits Window {
     callback add_account();
     callback add_account_browser_oauth();
     callback delete_account(string);
-    callback activate_account(string);
     callback refresh_account_quota(string);
+    callback show_account_details(string);
     callback toggle_model(string);
     callback toggle_reasoning_variants();
     callback set_routing_strategy(int);
@@ -291,26 +285,25 @@ export component MainWindow inherits Window {
     callback save_settings();
 
     HorizontalLayout {
-        // Left Navigation Sidebar
+        // Left Navigation Sidebar (Clean Monocrome Charcoal)
         Rectangle {
-            width: 210px;
-            background: #13151c;
+            width: 200px;
+            background: #111113;
             border-width: 0px;
-            border-color: #212532;
 
             VerticalLayout {
                 padding: 14px;
-                spacing: 6px;
+                spacing: 4px;
 
                 // App Brand
                 HorizontalLayout {
-                    padding-bottom: 10px;
+                    padding-bottom: 12px;
                     padding-left: 6px;
                     spacing: 8px;
                     alignment: start;
                     Text {
                         text: "Aroxy";
-                        font-size: 17px;
+                        font-size: 16px;
                         font-weight: 800;
                         color: #ffffff;
                         vertical-alignment: center;
@@ -323,46 +316,39 @@ export component MainWindow inherits Window {
 
                 Rectangle { height: 4px; }
 
-                // 7 Navigation Tabs
+                // Clean Navigation Tabs (No Emojis!)
                 NavItem {
                     text: "Dashboard";
-                    icon_symbol: "▤";
                     is_active: root.active_tab == 0;
                     clicked => { root.active_tab = 0; }
                 }
                 NavItem {
                     text: "Accounts";
-                    icon_symbol: "👤";
                     is_active: root.active_tab == 1;
                     clicked => { root.active_tab = 1; }
                 }
                 NavItem {
                     text: "Models & Test";
-                    icon_symbol: "⊞";
                     is_active: root.active_tab == 2;
                     clicked => { root.active_tab = 2; }
                 }
                 NavItem {
                     text: "Proxy Layer";
-                    icon_symbol: "⇄";
                     is_active: root.active_tab == 3;
                     clicked => { root.active_tab = 3; }
                 }
                 NavItem {
                     text: "Traffic Logs";
-                    icon_symbol: "☰";
                     is_active: root.active_tab == 4;
                     clicked => { root.active_tab = 4; }
                 }
                 NavItem {
                     text: "Statistics";
-                    icon_symbol: "📊";
                     is_active: root.active_tab == 5;
                     clicked => { root.active_tab = 5; }
                 }
                 NavItem {
                     text: "Settings";
-                    icon_symbol: "⚙";
                     is_active: root.active_tab == 6;
                     clicked => { root.active_tab = 6; }
                 }
@@ -370,31 +356,32 @@ export component MainWindow inherits Window {
                 // Flexible Spacer
                 Rectangle { }
 
-                // Daemon Status Badge in Sidebar
+                // Daemon Status Badge in Sidebar (Perfect alignment, no broken dot)
                 Rectangle {
-                    height: 38px;
-                    border-radius: 8px;
-                    background: root.proxy_running ? #142a20 : #291818;
+                    height: 34px;
+                    border-radius: 6px;
+                    background: root.proxy_running ? #14281e : #221414;
                     border-width: 1px;
-                    border-color: root.proxy_running ? #24573f : #592929;
+                    border-color: root.proxy_running ? #1e4a34 : #451a1a;
 
                     HorizontalLayout {
+                        alignment: center;
+                        spacing: 8px;
                         padding-left: 10px;
                         padding-right: 10px;
-                        spacing: 8px;
-                        alignment: center;
 
                         Rectangle {
-                            width: 8px;
-                            height: 8px;
-                            border-radius: 4px;
-                            background: root.proxy_running ? #38d39f : #f05454;
+                            width: 6px;
+                            height: 6px;
+                            border-radius: 3px;
+                            background: root.proxy_running ? #4ade80 : #f87171;
+                            y: (parent.height - self.height) / 2;
                         }
                         Text {
                             text: root.proxy_running ? ("ONLINE :" + root.proxy_port) : "OFFLINE";
                             font-size: 11px;
                             font-weight: 700;
-                            color: root.proxy_running ? #38d39f : #f05454;
+                            color: root.proxy_running ? #4ade80 : #f87171;
                             vertical-alignment: center;
                         }
                     }
@@ -420,20 +407,20 @@ export component MainWindow inherits Window {
                             : root.active_tab == 4 ? "Real-time Traffic & Stream Inspector"
                             : root.active_tab == 5 ? "Telemetry Analytics & Token Distribution"
                             : "Application & System Preferences";
-                        font-size: 19px;
+                        font-size: 18px;
                         font-weight: 800;
                         color: #ffffff;
                     }
                     Text {
                         text: root.active_tab == 0 ? "Aggregate quota health, active proxy state, and client bindings"
-                            : root.active_tab == 1 ? "Connect Antigravity accounts via 1-click browser OAuth or manual session keys"
+                            : root.active_tab == 1 ? "Pooled Antigravity accounts with automatic email parsing and quota tracking"
                             : root.active_tab == 2 ? "Configure model broadcast toggles, reasoning aliases, and test prompts"
                             : root.active_tab == 3 ? "Configure smart quota routing, account rotation, and listening ports"
                             : root.active_tab == 4 ? "Inspect live HTTP streams, headers, latency percentiles, and errors"
                             : root.active_tab == 5 ? "Deep insight into prompt, completion, and reasoning token consumption"
                             : "System tray behaviors, portable config, and network timeouts";
                         font-size: 11px;
-                        color: #797f94;
+                        color: #71717a;
                     }
                 }
 
@@ -450,7 +437,7 @@ export component MainWindow inherits Window {
                 }
             }
 
-            // Scrollable Content Container (Ensures NO clipping on long pages)
+            // Scrollable Content Container (Smooth scrolling, zero clipping)
             ScrollView {
                 VerticalLayout {
                     padding-right: 8px;
@@ -481,18 +468,18 @@ export component MainWindow inherits Window {
                                 subtext: "Time to first token (TTFT)";
                             }
                             StatCard {
-                                title: "ACTIVE ACCOUNTS";
+                                title: "POOLED ACCOUNTS";
                                 value: root.healthy_accounts_count + "";
-                                subtext: root.active_account_name;
+                                subtext: "Active in routing pool";
                             }
                         }
 
                         // Aggregate Quota Health Card
                         Rectangle {
-                            background: #161821;
-                            border-radius: 10px;
+                            background: #18181b;
+                            border-radius: 8px;
                             border-width: 1px;
-                            border-color: #242838;
+                            border-color: #27272a;
 
                             VerticalLayout {
                                 padding: 16px;
@@ -503,7 +490,7 @@ export component MainWindow inherits Window {
                                     VerticalLayout {
                                         spacing: 2px;
                                         Text { text: "Aggregate Antigravity Quota Available"; font-size: 13px; font-weight: 700; color: #ffffff; }
-                                        Text { text: "Total remaining tokens across all active accounts pool"; font-size: 11px; color: #7f869e; }
+                                        Text { text: "Total remaining tokens across all active pooled accounts"; font-size: 11px; color: #71717a; }
                                     }
                                     Badge {
                                         text: "Resets " + root.global_quota_reset;
@@ -513,17 +500,17 @@ export component MainWindow inherits Window {
 
                                 // Progress Bar Container
                                 Rectangle {
-                                    height: 10px;
-                                    border-radius: 5px;
-                                    background: #242735;
+                                    height: 8px;
+                                    border-radius: 4px;
+                                    background: #27272a;
 
                                     Rectangle {
                                         x: 0px;
                                         y: 0px;
-                                        height: 10px;
-                                        border-radius: 5px;
+                                        height: 8px;
+                                        border-radius: 4px;
                                         width: parent.width * (root.global_quota_percent / 100.0);
-                                        background: root.global_quota_percent > 85 ? #e05252 : (root.global_quota_percent > 60 ? #fbbf24 : #38d39f);
+                                        background: root.global_quota_percent > 85 ? #ef4444 : (root.global_quota_percent > 60 ? #fbbf24 : #4ade80);
                                     }
                                 }
 
@@ -533,12 +520,12 @@ export component MainWindow inherits Window {
                                         text: root.global_quota_used + " / " + root.global_quota_limit + " tokens used (" + root.global_quota_percent + "%)";
                                         font-size: 11px;
                                         font-weight: 600;
-                                        color: #9ea4b8;
+                                        color: #a1a1aa;
                                     }
                                     Text {
-                                        text: "Quota strategy: Quota-Aware (Smart)";
+                                        text: "Routing: Quota-Aware Pool";
                                         font-size: 11px;
-                                        color: #686f85;
+                                        color: #71717a;
                                     }
                                 }
                             }
@@ -546,10 +533,10 @@ export component MainWindow inherits Window {
 
                         // Client Connection Cards
                         Rectangle {
-                            background: #161821;
-                            border-radius: 10px;
+                            background: #18181b;
+                            border-radius: 8px;
                             border-width: 1px;
-                            border-color: #242838;
+                            border-color: #27272a;
 
                             VerticalLayout {
                                 padding: 16px;
@@ -560,27 +547,27 @@ export component MainWindow inherits Window {
                                 HorizontalLayout {
                                     spacing: 12px;
                                     Rectangle {
-                                        border-radius: 8px;
-                                        background: #1c1f2b;
+                                        border-radius: 6px;
+                                        background: #121214;
                                         border-width: 1px;
-                                        border-color: #2a2f42;
+                                        border-color: #27272a;
                                         VerticalLayout {
                                             padding: 12px;
                                             spacing: 4px;
                                             Text { text: "Claude Code CLI"; font-size: 12px; font-weight: 700; color: #ffffff; }
-                                            Text { text: "export ANTHROPIC_BASE_URL=\"http://127.0.0.1:" + root.proxy_port + "\""; font-size: 11px; color: #38d39f; }
+                                            Text { text: "export ANTHROPIC_BASE_URL=\"http://127.0.0.1:" + root.proxy_port + "\""; font-size: 11px; color: #a1a1aa; }
                                         }
                                     }
                                     Rectangle {
-                                        border-radius: 8px;
-                                        background: #1c1f2b;
+                                        border-radius: 6px;
+                                        background: #121214;
                                         border-width: 1px;
-                                        border-color: #2a2f42;
+                                        border-color: #27272a;
                                         VerticalLayout {
                                             padding: 12px;
                                             spacing: 4px;
                                             Text { text: "OpenAI / Cursor / Aider / LibreChat"; font-size: 12px; font-weight: 700; color: #ffffff; }
-                                            Text { text: "export OPENAI_BASE_URL=\"http://127.0.0.1:" + root.proxy_port + "/v1\""; font-size: 11px; color: #a78bfa; }
+                                            Text { text: "export OPENAI_BASE_URL=\"http://127.0.0.1:" + root.proxy_port + "/v1\""; font-size: 11px; color: #a1a1aa; }
                                         }
                                     }
                                 }
@@ -594,12 +581,12 @@ export component MainWindow inherits Window {
                     if root.active_tab == 1: VerticalLayout {
                         spacing: 14px;
 
-                        // Top Connect Actions Box
+                        // Top Connect Actions Box (Clean single token input, no manual account name!)
                         Rectangle {
-                            background: #161821;
-                            border-radius: 10px;
+                            background: #18181b;
+                            border-radius: 8px;
                             border-width: 1px;
-                            border-color: #242838;
+                            border-color: #27272a;
 
                             VerticalLayout {
                                 padding: 16px;
@@ -610,7 +597,7 @@ export component MainWindow inherits Window {
                                     VerticalLayout {
                                         spacing: 2px;
                                         Text { text: "Add Antigravity Account"; font-size: 13px; font-weight: 700; color: #ffffff; }
-                                        Text { text: "Authorize via browser OAuth loopback or paste account session token manually"; font-size: 11px; color: #7f869e; }
+                                        Text { text: "Authorize via browser OAuth or paste Session / Refresh Token (email & quota are auto-parsed)"; font-size: 11px; color: #71717a; }
                                     }
                                     ActionButton {
                                         text: "Login via Browser (OAuth)";
@@ -619,17 +606,12 @@ export component MainWindow inherits Window {
                                     }
                                 }
 
-                                // Manual Token Entry Form
+                                // Single Token Input Form
                                 HorizontalLayout {
                                     spacing: 10px;
                                     LineEdit {
-                                        placeholder-text: "Account Name (e.g. Work Pro)";
-                                        text <=> root.new_acc_name;
-                                        width: 180px;
-                                    }
-                                    LineEdit {
-                                        placeholder-text: "Session Token / API Key";
-                                        text <=> root.new_acc_key;
+                                        placeholder-text: "Paste Refresh Token / OAuth Session Key (ya29... or 1//...)";
+                                        text <=> root.new_acc_token;
                                         horizontal-stretch: 1;
                                     }
                                     ActionButton {
@@ -641,14 +623,42 @@ export component MainWindow inherits Window {
                             }
                         }
 
-                        // Accounts List
-                        Text { text: "CONNECTED ACCOUNTS & HEALTH"; font-size: 11px; font-weight: 700; color: #6c738a; }
-
-                        for acc in root.accounts: Rectangle {
-                            background: #161821;
-                            border-radius: 10px;
+                        // Info Modal Drawer (if active)
+                        if root.show_account_info: Rectangle {
+                            background: #18181b;
+                            border-radius: 8px;
                             border-width: 1px;
-                            border-color: acc.is_active ? #2e4c3d : #242838;
+                            border-color: #3f3f46;
+
+                            VerticalLayout {
+                                padding: 14px;
+                                spacing: 8px;
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    Text { text: "Account Details: " + root.info_account_name; font-size: 13px; font-weight: 700; color: #ffffff; }
+                                    ActionButton {
+                                        text: "Close";
+                                        is_primary: false;
+                                        clicked => { root.show_account_info = false; }
+                                    }
+                                }
+
+                                Text { text: "Subscription Tier: " + root.info_account_tier; font-size: 12px; color: #a1a1aa; }
+                                Text { text: "Quota Status: " + root.info_account_quota; font-size: 12px; color: #a1a1aa; }
+                                Text { text: "Active Models: " + root.info_account_models; font-size: 12px; color: #a1a1aa; }
+                            }
+                        }
+
+                        // Accounts List Header
+                        Text { text: "CONNECTED ACCOUNTS (POOL)"; font-size: 11px; font-weight: 700; color: #71717a; }
+
+                        // Account Cards (Only Update, Info, Delete - No Set Active!)
+                        for acc in root.accounts: Rectangle {
+                            background: #18181b;
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: #27272a;
 
                             VerticalLayout {
                                 padding: 14px;
@@ -661,31 +671,26 @@ export component MainWindow inherits Window {
                                         Text { text: acc.name; font-size: 13px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
                                         Badge {
                                             text: acc.tier;
-                                            is_purple: acc.tier == "Pro";
-                                            is_green: acc.tier != "Pro";
+                                            is_green: acc.tier == "PRO" || acc.tier == "Pro";
                                         }
                                         Badge {
                                             text: acc.status;
                                             is_green: acc.status == "Active";
-                                            is_amber: acc.status != "Active";
-                                        }
-                                        if acc.is_active: Badge {
-                                            text: "ACTIVE ROUTE";
-                                            is_green: true;
+                                            is_danger: acc.status != "Active";
                                         }
                                     }
 
                                     HorizontalLayout {
                                         spacing: 8px;
                                         ActionButton {
-                                            text: "Check Quota";
+                                            text: "Update";
                                             is_primary: false;
                                             clicked => { root.refresh_account_quota(acc.id); }
                                         }
-                                        if !acc.is_active: ActionButton {
-                                            text: "Set Active";
-                                            is_primary: true;
-                                            clicked => { root.activate_account(acc.id); }
+                                        ActionButton {
+                                            text: "Info";
+                                            is_primary: false;
+                                            clicked => { root.show_account_details(acc.id); }
                                         }
                                         ActionButton {
                                             text: "Delete";
@@ -699,7 +704,7 @@ export component MainWindow inherits Window {
                                 Rectangle {
                                     height: 6px;
                                     border-radius: 3px;
-                                    background: #242735;
+                                    background: #27272a;
 
                                     Rectangle {
                                         x: 0px;
@@ -707,7 +712,7 @@ export component MainWindow inherits Window {
                                         height: 6px;
                                         border-radius: 3px;
                                         width: parent.width * (acc.quota_percent / 100.0);
-                                        background: acc.quota_percent > 85 ? #e05252 : (acc.quota_percent > 60 ? #fbbf24 : #38d39f);
+                                        background: acc.quota_percent > 85 ? #ef4444 : (acc.quota_percent > 60 ? #fbbf24 : #4ade80);
                                     }
                                 }
 
@@ -716,12 +721,12 @@ export component MainWindow inherits Window {
                                     Text {
                                         text: acc.quota_used + " / " + acc.quota_limit + " tokens (" + acc.quota_percent + "%) • Resets " + acc.quota_reset;
                                         font-size: 11px;
-                                        color: #8b92a8;
+                                        color: #a1a1aa;
                                     }
                                     Text {
                                         text: "Fingerprint: " + acc.fingerprint;
                                         font-size: 10px;
-                                        color: #61677c;
+                                        color: #71717a;
                                     }
                                 }
                             }
@@ -736,10 +741,10 @@ export component MainWindow inherits Window {
 
                         // Master Toggle for Reasoning Effort Clones
                         Rectangle {
-                            background: #161821;
-                            border-radius: 10px;
+                            background: #18181b;
+                            border-radius: 8px;
                             border-width: 1px;
-                            border-color: #242838;
+                            border-color: #27272a;
 
                             VerticalLayout {
                                 padding: 14px;
@@ -749,7 +754,7 @@ export component MainWindow inherits Window {
                                     VerticalLayout {
                                         spacing: 2px;
                                         Text { text: "Expose Reasoning Effort Clones in /v1/models"; font-size: 13px; font-weight: 700; color: #ffffff; }
-                                        Text { text: "Generates virtual aliases (low), (medium), (high) for clients without native reasoning controls"; font-size: 11px; color: #7f869e; }
+                                        Text { text: "Generates virtual aliases (low), (medium), (high) for clients without native reasoning controls"; font-size: 11px; color: #71717a; }
                                     }
                                     ToggleSwitch {
                                         checked: root.expose_reasoning_variants;
@@ -761,10 +766,10 @@ export component MainWindow inherits Window {
 
                         // Test Request / Model Playground
                         Rectangle {
-                            background: #161821;
-                            border-radius: 10px;
+                            background: #18181b;
+                            border-radius: 8px;
                             border-width: 1px;
-                            border-color: #2f3448;
+                            border-color: #27272a;
 
                             VerticalLayout {
                                 padding: 16px;
@@ -775,11 +780,11 @@ export component MainWindow inherits Window {
                                     HorizontalLayout {
                                         spacing: 8px;
                                         Text { text: "Model Playground & Debug Inspector"; font-size: 13px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
-                                        Badge { text: root.playground_model; is_purple: true; }
+                                        Badge { text: root.playground_model; }
                                     }
                                     HorizontalLayout {
                                         spacing: 10px;
-                                        Text { text: "Status: " + root.playground_status + " | " + root.playground_latency + " | " + root.playground_tokens + " tok"; font-size: 11px; color: #9ba1b6; vertical-alignment: center; }
+                                        Text { text: "Status: " + root.playground_status + " | " + root.playground_latency + " | " + root.playground_tokens + " tok"; font-size: 11px; color: #a1a1aa; vertical-alignment: center; }
                                         ActionButton {
                                             text: root.playground_running ? "Sending..." : "Send Test Request";
                                             is_accent: true;
@@ -795,17 +800,17 @@ export component MainWindow inherits Window {
 
                                 Rectangle {
                                     height: 110px;
-                                    border-radius: 8px;
-                                    background: #0f1117;
+                                    border-radius: 6px;
+                                    background: #111113;
                                     border-width: 1px;
-                                    border-color: #222634;
+                                    border-color: #27272a;
 
                                     VerticalLayout {
                                         padding: 10px;
                                         Text {
                                             text: root.playground_response == "" ? "Response output, streaming debug telemetry, and headers will appear here..." : root.playground_response;
                                             font-size: 12px;
-                                            color: root.playground_response == "" ? #585e72 : #e0e4f0;
+                                            color: root.playground_response == "" ? #52525b : #e4e4e7;
                                             wrap: word-wrap;
                                         }
                                     }
@@ -813,15 +818,15 @@ export component MainWindow inherits Window {
                             }
                         }
 
-                        Text { text: "CATALOG MODELS & BROADCAST PERMISSIONS"; font-size: 11px; font-weight: 700; color: #6c738a; }
+                        Text { text: "CATALOG MODELS & BROADCAST PERMISSIONS"; font-size: 11px; font-weight: 700; color: #71717a; }
 
                         // Models Table
                         for model in root.models: Rectangle {
-                            height: 48px;
-                            background: #161821;
-                            border-radius: 8px;
+                            height: 44px;
+                            background: #18181b;
+                            border-radius: 6px;
                             border-width: 1px;
-                            border-color: #242838;
+                            border-color: #27272a;
 
                             HorizontalLayout {
                                 padding-left: 14px;
@@ -832,8 +837,8 @@ export component MainWindow inherits Window {
                                     spacing: 10px;
                                     alignment: start;
                                     Text { text: model.display_name; font-size: 13px; font-weight: 600; color: #ffffff; vertical-alignment: center; }
-                                    Badge { text: model.id; is_green: false; }
-                                    Badge { text: model.tier; is_purple: model.tier == "Pro"; is_green: model.tier != "Pro"; }
+                                    Badge { text: model.id; }
+                                    Badge { text: model.tier; is_green: model.tier == "PRO" || model.tier == "Pro"; }
                                     if model.supports_thinking: Badge { text: "Thinking"; is_amber: true; }
                                 }
 
@@ -865,10 +870,10 @@ export component MainWindow inherits Window {
 
                         // Routing Strategy Box
                         Rectangle {
-                            background: #161821;
-                            border-radius: 10px;
+                            background: #18181b;
+                            border-radius: 8px;
                             border-width: 1px;
-                            border-color: #242838;
+                            border-color: #27272a;
 
                             VerticalLayout {
                                 padding: 16px;
@@ -905,17 +910,17 @@ export component MainWindow inherits Window {
                                             ? "• Round-Robin: Evenly distributes traffic sequentially across all active connected accounts."
                                             : "• Failover: Routes solely to the primary account, automatically falling back to secondary on rate-limit (429).");
                                     font-size: 11px;
-                                    color: #8b92a8;
+                                    color: #a1a1aa;
                                 }
                             }
                         }
 
                         // Network Binding & Protocol Endpoints
                         Rectangle {
-                            background: #161821;
-                            border-radius: 10px;
+                            background: #18181b;
+                            border-radius: 8px;
                             border-width: 1px;
-                            border-color: #242838;
+                            border-color: #27272a;
 
                             VerticalLayout {
                                 padding: 16px;
@@ -926,20 +931,20 @@ export component MainWindow inherits Window {
                                 HorizontalLayout {
                                     padding-left: 6px;
                                     padding-right: 6px;
-                                    Text { text: "PROTOCOL"; width: 120px; font-size: 10px; font-weight: 700; color: #52576b; }
-                                    Text { text: "ENDPOINT PATH"; horizontal-stretch: 1; font-size: 10px; font-weight: 700; color: #52576b; }
-                                    Text { text: "STATUS"; width: 90px; font-size: 10px; font-weight: 700; color: #52576b; }
+                                    Text { text: "PROTOCOL"; width: 120px; font-size: 10px; font-weight: 700; color: #71717a; }
+                                    Text { text: "ENDPOINT PATH"; horizontal-stretch: 1; font-size: 10px; font-weight: 700; color: #71717a; }
+                                    Text { text: "STATUS"; width: 90px; font-size: 10px; font-weight: 700; color: #71717a; }
                                 }
 
                                 Rectangle {
                                     height: 34px;
                                     border-radius: 6px;
-                                    background: #1c1f2b;
+                                    background: #121214;
                                     HorizontalLayout {
                                         padding-left: 10px;
                                         padding-right: 10px;
                                         Text { text: "OpenAI v1"; width: 120px; font-size: 12px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
-                                        Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/chat/completions"; horizontal-stretch: 1; font-size: 12px; color: #38d39f; vertical-alignment: center; }
+                                        Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/chat/completions"; horizontal-stretch: 1; font-size: 12px; color: #a1a1aa; vertical-alignment: center; }
                                         Badge { text: root.proxy_running ? "ONLINE" : "OFFLINE"; is_green: root.proxy_running; }
                                     }
                                 }
@@ -947,12 +952,12 @@ export component MainWindow inherits Window {
                                 Rectangle {
                                     height: 34px;
                                     border-radius: 6px;
-                                    background: #1c1f2b;
+                                    background: #121214;
                                     HorizontalLayout {
                                         padding-left: 10px;
                                         padding-right: 10px;
                                         Text { text: "Claude Messages"; width: 120px; font-size: 12px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
-                                        Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/messages"; horizontal-stretch: 1; font-size: 12px; color: #a78bfa; vertical-alignment: center; }
+                                        Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/messages"; horizontal-stretch: 1; font-size: 12px; color: #a1a1aa; vertical-alignment: center; }
                                         Badge { text: root.proxy_running ? "ONLINE" : "OFFLINE"; is_green: root.proxy_running; }
                                     }
                                 }
@@ -960,12 +965,12 @@ export component MainWindow inherits Window {
                                 Rectangle {
                                     height: 34px;
                                     border-radius: 6px;
-                                    background: #1c1f2b;
+                                    background: #121214;
                                     HorizontalLayout {
                                         padding-left: 10px;
                                         padding-right: 10px;
                                         Text { text: "Model Catalog"; width: 120px; font-size: 12px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
-                                        Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/models"; horizontal-stretch: 1; font-size: 12px; color: #8b92a8; vertical-alignment: center; }
+                                        Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/models"; horizontal-stretch: 1; font-size: 12px; color: #a1a1aa; vertical-alignment: center; }
                                         Badge { text: root.proxy_running ? "ONLINE" : "OFFLINE"; is_green: root.proxy_running; }
                                     }
                                 }
@@ -973,12 +978,12 @@ export component MainWindow inherits Window {
                                 Rectangle {
                                     height: 34px;
                                     border-radius: 6px;
-                                    background: #1c1f2b;
+                                    background: #121214;
                                     HorizontalLayout {
                                         padding-left: 10px;
                                         padding-right: 10px;
                                         Text { text: "Browser OAuth"; width: 120px; font-size: 12px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
-                                        Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/oauth/callback"; horizontal-stretch: 1; font-size: 12px; color: #fbbf24; vertical-alignment: center; }
+                                        Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/oauth/callback"; horizontal-stretch: 1; font-size: 12px; color: #a1a1aa; vertical-alignment: center; }
                                         Badge { text: root.proxy_running ? "ONLINE" : "OFFLINE"; is_green: root.proxy_running; }
                                     }
                                 }
@@ -994,7 +999,7 @@ export component MainWindow inherits Window {
 
                         HorizontalLayout {
                             alignment: space-between;
-                            Text { text: "RECENT TRAFFIC LOGS (STREAM & BATCH)"; font-size: 11px; font-weight: 700; color: #6c738a; vertical-alignment: center; }
+                            Text { text: "RECENT TRAFFIC LOGS (STREAM & BATCH)"; font-size: 11px; font-weight: 700; color: #71717a; vertical-alignment: center; }
                             ActionButton {
                                 text: "Clear Logs";
                                 is_primary: false;
@@ -1003,10 +1008,10 @@ export component MainWindow inherits Window {
                         }
 
                         Rectangle {
-                            background: #161821;
-                            border-radius: 10px;
+                            background: #18181b;
+                            border-radius: 8px;
                             border-width: 1px;
-                            border-color: #242838;
+                            border-color: #27272a;
 
                             VerticalLayout {
                                 padding: 12px;
@@ -1016,38 +1021,38 @@ export component MainWindow inherits Window {
                                 HorizontalLayout {
                                     padding-left: 8px;
                                     padding-right: 8px;
-                                    Text { text: "TIME"; width: 70px; font-size: 10px; font-weight: 700; color: #52576b; }
-                                    Text { text: "METHOD"; width: 60px; font-size: 10px; font-weight: 700; color: #52576b; }
-                                    Text { text: "ENDPOINT"; horizontal-stretch: 1; font-size: 10px; font-weight: 700; color: #52576b; }
-                                    Text { text: "MODEL"; width: 150px; font-size: 10px; font-weight: 700; color: #52576b; }
-                                    Text { text: "STATUS"; width: 65px; font-size: 10px; font-weight: 700; color: #52576b; }
-                                    Text { text: "TOKENS"; width: 60px; font-size: 10px; font-weight: 700; color: #52576b; }
-                                    Text { text: "LATENCY"; width: 65px; font-size: 10px; font-weight: 700; color: #52576b; }
+                                    Text { text: "TIME"; width: 70px; font-size: 10px; font-weight: 700; color: #71717a; }
+                                    Text { text: "METHOD"; width: 60px; font-size: 10px; font-weight: 700; color: #71717a; }
+                                    Text { text: "ENDPOINT"; horizontal-stretch: 1; font-size: 10px; font-weight: 700; color: #71717a; }
+                                    Text { text: "MODEL"; width: 150px; font-size: 10px; font-weight: 700; color: #71717a; }
+                                    Text { text: "STATUS"; width: 65px; font-size: 10px; font-weight: 700; color: #71717a; }
+                                    Text { text: "TOKENS"; width: 60px; font-size: 10px; font-weight: 700; color: #71717a; }
+                                    Text { text: "LATENCY"; width: 65px; font-size: 10px; font-weight: 700; color: #71717a; }
                                 }
 
                                 // Table Rows
                                 for log in root.log_entries: Rectangle {
                                     height: 32px;
                                     border-radius: 6px;
-                                    background: #12141c;
+                                    background: #121214;
 
                                     HorizontalLayout {
                                         padding-left: 8px;
                                         padding-right: 8px;
-                                        Text { text: log.time; width: 70px; font-size: 11px; color: #72788e; vertical-alignment: center; }
+                                        Text { text: log.time; width: 70px; font-size: 11px; color: #71717a; vertical-alignment: center; }
                                         Text { text: log.method; width: 60px; font-size: 11px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
-                                        Text { text: log.path; horizontal-stretch: 1; font-size: 11px; color: #c4c7d5; vertical-alignment: center; }
-                                        Text { text: log.model; width: 150px; font-size: 11px; color: #8e95ad; vertical-alignment: center; }
+                                        Text { text: log.path; horizontal-stretch: 1; font-size: 11px; color: #d4d4d8; vertical-alignment: center; }
+                                        Text { text: log.model; width: 150px; font-size: 11px; color: #a1a1aa; vertical-alignment: center; }
                                         Text {
                                             text: log.status == 200 ? "200 OK" : (log.status + "");
                                             width: 65px;
                                             font-size: 11px;
                                             font-weight: 700;
-                                            color: log.status == 200 ? #38d39f : #f05454;
+                                            color: log.status == 200 ? #4ade80 : #f87171;
                                             vertical-alignment: center;
                                         }
-                                        Text { text: log.tokens + ""; width: 60px; font-size: 11px; color: #9ea4b8; vertical-alignment: center; }
-                                        Text { text: log.latency_ms + "ms"; width: 65px; font-size: 11px; color: #72788e; vertical-alignment: center; }
+                                        Text { text: log.tokens + ""; width: 60px; font-size: 11px; color: #a1a1aa; vertical-alignment: center; }
+                                        Text { text: log.latency_ms + "ms"; width: 65px; font-size: 11px; color: #71717a; vertical-alignment: center; }
                                     }
                                 }
                             }
@@ -1061,7 +1066,7 @@ export component MainWindow inherits Window {
                         spacing: 14px;
 
                         // Token Distribution Cards
-                        Text { text: "TOKEN VOLUME BREAKDOWN"; font-size: 11px; font-weight: 700; color: #6c738a; }
+                        Text { text: "TOKEN VOLUME BREAKDOWN"; font-size: 11px; font-weight: 700; color: #71717a; }
 
                         HorizontalLayout {
                             spacing: 12px;
@@ -1083,7 +1088,7 @@ export component MainWindow inherits Window {
                         }
 
                         // Quality of Service & Latency Percentiles
-                        Text { text: "QUALITY OF SERVICE & PERFORMANCE"; font-size: 11px; font-weight: 700; color: #6c738a; }
+                        Text { text: "QUALITY OF SERVICE & PERFORMANCE"; font-size: 11px; font-weight: 700; color: #71717a; }
 
                         HorizontalLayout {
                             spacing: 12px;
@@ -1112,10 +1117,10 @@ export component MainWindow inherits Window {
                         spacing: 14px;
 
                         Rectangle {
-                            background: #161821;
-                            border-radius: 10px;
+                            background: #18181b;
+                            border-radius: 8px;
                             border-width: 1px;
-                            border-color: #242838;
+                            border-color: #27272a;
 
                             VerticalLayout {
                                 padding: 16px;
@@ -1127,8 +1132,8 @@ export component MainWindow inherits Window {
                                     alignment: space-between;
                                     VerticalLayout {
                                         spacing: 2px;
-                                        Text { text: "Minimize to System Tray on Close"; font-size: 12px; color: #e0e4f0; }
-                                        Text { text: "Keeps the proxy daemon serving API requests silently in the background"; font-size: 11px; color: #7f869e; }
+                                        Text { text: "Minimize to System Tray on Close"; font-size: 12px; color: #e4e4e7; }
+                                        Text { text: "Keeps the proxy daemon serving API requests silently in the background"; font-size: 11px; color: #71717a; }
                                     }
                                     ToggleSwitch {
                                         checked: root.setting_minimize_tray;
@@ -1140,8 +1145,8 @@ export component MainWindow inherits Window {
                                     alignment: space-between;
                                     VerticalLayout {
                                         spacing: 2px;
-                                        Text { text: "Portable Configuration Mode"; font-size: 12px; color: #e0e4f0; }
-                                        Text { text: "Store configuration in aroxy.json next to binary instead of OS AppData"; font-size: 11px; color: #7f869e; }
+                                        Text { text: "Portable Configuration Mode"; font-size: 12px; color: #e4e4e7; }
+                                        Text { text: "Store configuration in aroxy.json next to binary instead of OS AppData"; font-size: 11px; color: #71717a; }
                                     }
                                     ToggleSwitch {
                                         checked: root.setting_portable_mode;
@@ -1153,8 +1158,8 @@ export component MainWindow inherits Window {
                                     alignment: space-between;
                                     VerticalLayout {
                                         spacing: 2px;
-                                        Text { text: "Start Minimized with Operating System"; font-size: 12px; color: #e0e4f0; }
-                                        Text { text: "Launches Aroxy daemon on user login"; font-size: 11px; color: #7f869e; }
+                                        Text { text: "Start Minimized with Operating System"; font-size: 12px; color: #e4e4e7; }
+                                        Text { text: "Launches Aroxy daemon on user login"; font-size: 11px; color: #71717a; }
                                     }
                                     ToggleSwitch {
                                         checked: root.setting_autostart;
@@ -1165,10 +1170,10 @@ export component MainWindow inherits Window {
                         }
 
                         Rectangle {
-                            background: #161821;
-                            border-radius: 10px;
+                            background: #18181b;
+                            border-radius: 8px;
                             border-width: 1px;
-                            border-color: #242838;
+                            border-color: #27272a;
 
                             VerticalLayout {
                                 padding: 16px;
@@ -1180,8 +1185,8 @@ export component MainWindow inherits Window {
                                     alignment: space-between;
                                     VerticalLayout {
                                         spacing: 2px;
-                                        Text { text: "SSE Keepalive / Heartbeat Interval: " + root.setting_heartbeat_secs + "s"; font-size: 12px; color: #e0e4f0; }
-                                        Text { text: "Sends ': ping' frames during long thinking steps to avoid client disconnection"; font-size: 11px; color: #7f869e; }
+                                        Text { text: "SSE Keepalive / Heartbeat Interval: " + root.setting_heartbeat_secs + "s"; font-size: 12px; color: #e4e4e7; }
+                                        Text { text: "Sends ': ping' frames during long thinking steps to avoid client disconnection"; font-size: 11px; color: #71717a; }
                                     }
                                     ActionButton {
                                         text: "12s (Default)";
@@ -1194,8 +1199,8 @@ export component MainWindow inherits Window {
                                     alignment: space-between;
                                     VerticalLayout {
                                         spacing: 2px;
-                                        Text { text: "Upstream Request Timeout: " + root.setting_timeout_secs + "s"; font-size: 12px; color: #e0e4f0; }
-                                        Text { text: "Maximum wait duration before returning 504 Gateway Timeout"; font-size: 11px; color: #7f869e; }
+                                        Text { text: "Upstream Request Timeout: " + root.setting_timeout_secs + "s"; font-size: 12px; color: #e4e4e7; }
+                                        Text { text: "Maximum wait duration before returning 504 Gateway Timeout"; font-size: 11px; color: #71717a; }
                                     }
                                     ActionButton {
                                         text: "120s (Default)";
