@@ -68,7 +68,19 @@ pub fn resolve_model(requested_model: &str, account: &UpstreamAccount) -> String
 
     match account.provider.as_str() {
         "antigravity" => {
-            if lower.contains("claude") {
+            if lower.contains("5-5") || lower.contains("5.5") {
+                if lower.contains("opus") {
+                    "claude-opus-5-5-high".to_string()
+                } else {
+                    "claude-sonnet-5-5-high".to_string()
+                }
+            } else if lower.contains("4-6") || lower.contains("4.6") {
+                if lower.contains("opus") {
+                    "claude-opus-4-6-thinking".to_string()
+                } else {
+                    "claude-sonnet-4-6".to_string()
+                }
+            } else if lower.contains("claude") {
                 if lower.contains("opus") {
                     "claude-opus-4-6-thinking".to_string()
                 } else {
@@ -87,14 +99,6 @@ pub fn resolve_model(requested_model: &str, account: &UpstreamAccount) -> String
                     "gemini-3.6-flash-high".to_string()
                 } else if lower.contains("3.1") || lower.contains("3-1") {
                     "gemini-3.1-pro-high".to_string()
-                } else if lower.contains("flash-lite") || lower.contains("lite") {
-                    "gemini-2.5-flash-lite".to_string()
-                } else if lower.contains("2.5") || lower.contains("2-5") {
-                    if lower.contains("pro") {
-                        "gemini-2.5-pro".to_string()
-                    } else {
-                        "gemini-2.5-flash-lite".to_string()
-                    }
                 } else {
                     "gemini-3.8-flash-high".to_string()
                 }

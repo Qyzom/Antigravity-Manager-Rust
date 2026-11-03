@@ -76,6 +76,7 @@ mod tests {
     #[test]
     fn test_broadcast_models_generation() {
         let mut cfg = AppConfig::default();
+        cfg.group_reasoning_clones = false;
         cfg.expose_reasoning_variants = true;
 
         let broadcasted = cfg.get_broadcast_models();
@@ -85,11 +86,11 @@ mod tests {
         assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6 (high)"));
         assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6 (no-thinking)"));
 
-        // If disabled, clones should not be present
-        cfg.expose_reasoning_variants = false;
-        let non_variant = cfg.get_broadcast_models();
-        assert!(non_variant.iter().any(|m| m["id"] == "claude-sonnet-4-6"));
-        assert!(!non_variant.iter().any(|m| m["id"] == "claude-sonnet-4-6 (low)"));
+        // When group_reasoning_clones is enabled, clones should NOT be present
+        cfg.group_reasoning_clones = true;
+        let grouped = cfg.get_broadcast_models();
+        assert!(grouped.iter().any(|m| m["id"] == "claude-sonnet-4-6"));
+        assert!(!grouped.iter().any(|m| m["id"] == "claude-sonnet-4-6 (low)"));
     }
 
     #[test]

@@ -332,12 +332,17 @@ async fn execute_chat_request(
 
             if is_auth_error || error_msg.contains("invalid_grant") || error_msg.contains("PERMISSION_DENIED") {
                 log::warn!("Upstream account auth failed for {}: {}", account.name, error_msg);
+                let helpful_err = if account.refresh_token.is_none() {
+                    "Google OAuth access token (ya29...) has expired. Please Login via Browser to obtain a persistent session.".to_string()
+                } else {
+                    format!("HTTP {}: {}", status.as_u16(), error_msg)
+                };
                 {
                     let mut cfg = state.config.write();
                     if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
                         acc.status = "ERROR".to_string();
                         acc.is_active = false;
-                        acc.error_message = Some(format!("HTTP {}: {}", status.as_u16(), error_msg));
+                        acc.error_message = Some(helpful_err);
                     }
                     let _ = cfg.save();
                 }
@@ -494,12 +499,17 @@ async fn execute_chat_request(
 
             if is_auth_error || error_msg.contains("invalid_grant") || error_msg.contains("PERMISSION_DENIED") {
                 log::warn!("Upstream account auth failed for {}: {}", account.name, error_msg);
+                let helpful_err = if account.refresh_token.is_none() {
+                    "Google OAuth access token (ya29...) has expired. Please Login via Browser to obtain a persistent session.".to_string()
+                } else {
+                    format!("HTTP {}: {}", status.as_u16(), error_msg)
+                };
                 {
                     let mut cfg = state.config.write();
                     if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
                         acc.status = "ERROR".to_string();
                         acc.is_active = false;
-                        acc.error_message = Some(format!("HTTP {}: {}", status.as_u16(), error_msg));
+                        acc.error_message = Some(helpful_err);
                     }
                     let _ = cfg.save();
                 }
@@ -751,12 +761,17 @@ async fn execute_claude_request(
 
             if is_auth_error || error_msg.contains("invalid_grant") || error_msg.contains("PERMISSION_DENIED") {
                 log::warn!("Upstream account auth failed for {}: {}", account.name, error_msg);
+                let helpful_err = if account.refresh_token.is_none() {
+                    "Google OAuth access token (ya29...) has expired. Please Login via Browser to obtain a persistent session.".to_string()
+                } else {
+                    format!("HTTP {}: {}", status.as_u16(), error_msg)
+                };
                 {
                     let mut cfg = state.config.write();
                     if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
                         acc.status = "ERROR".to_string();
                         acc.is_active = false;
-                        acc.error_message = Some(format!("HTTP {}: {}", status.as_u16(), error_msg));
+                        acc.error_message = Some(helpful_err);
                     }
                     let _ = cfg.save();
                 }

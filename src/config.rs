@@ -443,6 +443,36 @@ impl AppConfig {
                             && m.id != "gemini-2.5-pro"
                     });
 
+                    // Normalize any leftover -high / -medium suffix models to clean base models
+                    for m in &mut cfg.models {
+                        if m.id == "claude-sonnet-5-5-high" {
+                            m.id = "claude-sonnet-5-5".to_string();
+                            m.display_name = "Claude Sonnet 5.5".to_string();
+                        } else if m.id == "claude-opus-5-5-high" {
+                            m.id = "claude-opus-5-5".to_string();
+                            m.display_name = "Claude Opus 5.5".to_string();
+                        } else if m.id == "gemini-3.8-flash-high" {
+                            m.id = "gemini-3.8-flash".to_string();
+                            m.display_name = "Gemini 3.8 Flash".to_string();
+                        } else if m.id == "gemini-3.7-flash-high" {
+                            m.id = "gemini-3.7-flash".to_string();
+                            m.display_name = "Gemini 3.7 Flash".to_string();
+                        } else if m.id == "gemini-3.6-flash-high" {
+                            m.id = "gemini-3.6-flash".to_string();
+                            m.display_name = "Gemini 3.6 Flash".to_string();
+                        } else if m.id == "gemini-3.1-pro-high" {
+                            m.id = "gemini-3.1-pro".to_string();
+                            m.display_name = "Gemini 3.1 Pro".to_string();
+                        } else if m.id == "gpt-oss-120b-medium" {
+                            m.id = "gpt-oss-120b".to_string();
+                            m.display_name = "GPT-OSS 120B".to_string();
+                        }
+                    }
+
+                    // Deduplicate models by ID
+                    let mut seen_ids = std::collections::HashSet::new();
+                    cfg.models.retain(|m| seen_ids.insert(m.id.clone()));
+
                     // Ensure modern gemini-3.8-flash exists
                     if !cfg.models.iter().any(|m| m.id == "gemini-3.8-flash") {
                         cfg.models.push(ModelCatalogItem {
@@ -652,8 +682,8 @@ impl AppConfig {
                 "tier": m.tier
             }));
 
-            // If thinking variants are enabled, expose clones
-            if self.expose_reasoning_variants && m.supports_thinking {
+            // If reasoning clones are NOT grouped into base models, expose clones
+            if !self.group_reasoning_clones && self.expose_reasoning_variants && m.supports_thinking {
                 for (suffix, label) in [
                     (" (low)", "Low Effort"),
                     (" (medium)", "Medium Effort"),

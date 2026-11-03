@@ -455,7 +455,7 @@ pub async fn fetch_models_and_quota(
         {
             if resp.status().is_success() {
                 if let Ok(data) = resp.json::<FetchModelsResponse>().await {
-                    let mut models = Vec::new();
+                    let mut models: Vec<ModelCatalogItem> = Vec::new();
                     let mut min_fraction: f64 = 1.0;
                     let mut nearest_reset = "in 4h 00m".to_string();
 
@@ -472,28 +472,47 @@ pub async fn fetch_models_and_quota(
                             continue;
                         }
 
-                        let disp_name = entry
-                            .display_name
-                            .clone()
-                            .unwrap_or_else(|| id.clone());
+                        let clean_id = match id.as_str() {
+                            "claude-sonnet-5-5-high" => "claude-sonnet-5-5".to_string(),
+                            "claude-opus-5-5-high" => "claude-opus-5-5".to_string(),
+                            "gemini-3.8-flash-high" => "gemini-3.8-flash".to_string(),
+                            "gemini-3.7-flash-high" => "gemini-3.7-flash".to_string(),
+                            "gemini-3.6-flash-high" => "gemini-3.6-flash".to_string(),
+                            "gemini-3.1-pro-high" => "gemini-3.1-pro".to_string(),
+                            "gpt-oss-120b-medium" => "gpt-oss-120b".to_string(),
+                            other => other.to_string(),
+                        };
 
-                        let provider = if id.contains("claude") {
+                        let disp_name = match clean_id.as_str() {
+                            "claude-sonnet-5-5" => "Claude Sonnet 5.5".to_string(),
+                            "claude-opus-5-5" => "Claude Opus 5.5".to_string(),
+                            "gemini-3.8-flash" => "Gemini 3.8 Flash".to_string(),
+                            "gemini-3.7-flash" => "Gemini 3.7 Flash".to_string(),
+                            "gemini-3.6-flash" => "Gemini 3.6 Flash".to_string(),
+                            "gemini-3.1-pro" => "Gemini 3.1 Pro".to_string(),
+                            "gpt-oss-120b" => "GPT-OSS 120B".to_string(),
+                            _ => entry.display_name.clone().unwrap_or_else(|| clean_id.clone()),
+                        };
+
+                        let provider = if clean_id.contains("claude") {
                             "anthropic".to_string()
-                        } else if id.contains("gemini") {
+                        } else if clean_id.contains("gemini") {
                             "gemini".to_string()
                         } else {
                             "openai".to_string()
                         };
 
-                        let supports_thinking = id.contains("3-7")
-                            || id.contains("2.5")
-                            || id.contains("o1")
-                            || id.contains("o3")
-                            || id.contains("thinking");
+                        let supports_thinking = clean_id.contains("3-7")
+                            || clean_id.contains("3.7")
+                            || clean_id.contains("3.8")
+                            || clean_id.contains("4-argon")
+                            || clean_id.contains("4.6")
+                            || clean_id.contains("5.5")
+                            || clean_id.contains("thinking");
 
-                        let tier = if id.contains("haiku")
-                            || id.contains("flash-lite")
-                            || id.contains("mini")
+                        let tier = if clean_id.contains("haiku")
+                            || clean_id.contains("flash-lite")
+                            || clean_id.contains("mini")
                         {
                             "FREE".to_string()
                         } else {
@@ -518,14 +537,16 @@ pub async fn fetch_models_and_quota(
                             }
                         }
 
-                        models.push(ModelCatalogItem {
-                            id,
-                            display_name: disp_name,
-                            provider,
-                            tier,
-                            is_enabled: true,
-                            supports_thinking,
-                        });
+                        if !models.iter().any(|m| m.id == clean_id) {
+                            models.push(ModelCatalogItem {
+                                id: clean_id,
+                                display_name: disp_name,
+                                provider,
+                                tier,
+                                is_enabled: true,
+                                supports_thinking,
+                            });
+                        }
                     }
 
                     if !models.is_empty() {
