@@ -79,17 +79,17 @@ mod tests {
         cfg.expose_reasoning_variants = true;
 
         let broadcasted = cfg.get_broadcast_models();
-        assert!(broadcasted.iter().any(|m| m["id"] == "claude-3-7-sonnet"));
-        assert!(broadcasted.iter().any(|m| m["id"] == "claude-3-7-sonnet (low)"));
-        assert!(broadcasted.iter().any(|m| m["id"] == "claude-3-7-sonnet (medium)"));
-        assert!(broadcasted.iter().any(|m| m["id"] == "claude-3-7-sonnet (high)"));
-        assert!(broadcasted.iter().any(|m| m["id"] == "claude-3-7-sonnet (no-thinking)"));
+        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6"));
+        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6 (low)"));
+        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6 (medium)"));
+        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6 (high)"));
+        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6 (no-thinking)"));
 
         // If disabled, clones should not be present
         cfg.expose_reasoning_variants = false;
         let non_variant = cfg.get_broadcast_models();
-        assert!(non_variant.iter().any(|m| m["id"] == "claude-3-7-sonnet"));
-        assert!(!non_variant.iter().any(|m| m["id"] == "claude-3-7-sonnet (low)"));
+        assert!(non_variant.iter().any(|m| m["id"] == "claude-sonnet-4-6"));
+        assert!(!non_variant.iter().any(|m| m["id"] == "claude-sonnet-4-6 (low)"));
     }
 
     #[test]

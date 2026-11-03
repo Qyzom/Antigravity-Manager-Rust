@@ -254,9 +254,9 @@ pub fn get_translations(lang: Language) -> TranslationBundle {
             lbl_app_folder: "Папка конфигурации и данных программы",
             btn_open_folder: "Открыть папку",
             lbl_quota_view_mode: "Режим отображения квоты (окно)",
-            opt_quota_both: "5-часовая и недельная",
-            opt_quota_5h: "Только 5-часовая",
-            opt_quota_weekly: "Только недельная",
+            opt_quota_both: "Обе квоты",
+            opt_quota_5h: "Только 5ч",
+            opt_quota_weekly: "Только неделя",
         },
 
         Language::Zh => TranslationBundle {
@@ -360,9 +360,9 @@ pub fn get_translations(lang: Language) -> TranslationBundle {
             lbl_app_folder: "应用程序配置与数据目录",
             btn_open_folder: "打开目录",
             lbl_quota_view_mode: "配额指标视图模式",
-            opt_quota_both: "5小时与每周全部显示",
-            opt_quota_5h: "仅显示5小时滚动窗口",
-            opt_quota_weekly: "仅显示每周窗口",
+            opt_quota_both: "全部显示",
+            opt_quota_5h: "仅5小时",
+            opt_quota_weekly: "仅每周",
         },
 
         Language::En => TranslationBundle {
@@ -466,9 +466,9 @@ pub fn get_translations(lang: Language) -> TranslationBundle {
             lbl_app_folder: "Application Config & Data Directory",
             btn_open_folder: "Open Folder",
             lbl_quota_view_mode: "Quota Window Metric Display",
-            opt_quota_both: "Both (5h & Weekly)",
-            opt_quota_5h: "5-Hour Window Only",
-            opt_quota_weekly: "Weekly Window Only",
+            opt_quota_both: "Both (5h & Week)",
+            opt_quota_5h: "5-Hour Only",
+            opt_quota_weekly: "Weekly Only",
         },
     }
 }

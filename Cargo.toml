@@ -37,6 +37,7 @@ uuid = { version = "1.10", features = ["v4"] }
 # System Tray
 tray-icon = { version = "0.19", default-features = false }
 muda = { version = "0.15", default-features = false }
+arboard = "3.7.0"
 
 [target.'cfg(windows)'.dependencies]
 auto-launch = "0.5"

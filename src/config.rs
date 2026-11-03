@@ -233,9 +233,15 @@ pub struct AppConfig {
     pub check_updates_startup: bool,
     #[serde(default)]
     pub clear_logs_on_exit: bool,
+    #[serde(default = "default_master_api_key")]
+    pub master_api_key: String,
     pub accounts: Vec<UpstreamAccount>,
     pub active_account_id: Option<String>,
     pub models: Vec<ModelCatalogItem>,
+}
+
+fn default_master_api_key() -> String {
+    format!("sk-aroxy-{}", &uuid::Uuid::new_v4().simple().to_string()[..16])
 }
 
 fn default_session_ttl() -> u64 {
@@ -311,17 +317,10 @@ impl Default for AppConfig {
             compact_ui_mode: false,
             check_updates_startup: true,
             clear_logs_on_exit: false,
+            master_api_key: "sk-aroxy-v1-master-key".to_string(),
             accounts: Vec::new(),
             active_account_id: None,
             models: vec![
-                ModelCatalogItem {
-                    id: "claude-3-7-sonnet".to_string(),
-                    display_name: "Claude 3.7 Sonnet (Thinking)".to_string(),
-                    provider: "anthropic".to_string(),
-                    tier: "Pro".to_string(),
-                    is_enabled: true,
-                    supports_thinking: true,
-                },
                 ModelCatalogItem {
                     id: "claude-sonnet-4-6".to_string(),
                     display_name: "Claude Sonnet 4.6 (Thinking)".to_string(),
@@ -339,16 +338,16 @@ impl Default for AppConfig {
                     supports_thinking: true,
                 },
                 ModelCatalogItem {
-                    id: "claude-sonnet-5-5-high".to_string(),
-                    display_name: "Claude Sonnet 5.5 (High)".to_string(),
+                    id: "claude-sonnet-5-5".to_string(),
+                    display_name: "Claude Sonnet 5.5".to_string(),
                     provider: "anthropic".to_string(),
                     tier: "Pro".to_string(),
                     is_enabled: true,
                     supports_thinking: true,
                 },
                 ModelCatalogItem {
-                    id: "claude-opus-5-5-high".to_string(),
-                    display_name: "Claude Opus 5.5 (High)".to_string(),
+                    id: "claude-opus-5-5".to_string(),
+                    display_name: "Claude Opus 5.5".to_string(),
                     provider: "anthropic".to_string(),
                     tier: "Pro".to_string(),
                     is_enabled: true,
@@ -363,48 +362,40 @@ impl Default for AppConfig {
                     supports_thinking: true,
                 },
                 ModelCatalogItem {
-                    id: "gemini-3.8-flash-high".to_string(),
-                    display_name: "Gemini 3.8 Flash (High)".to_string(),
+                    id: "gemini-3.8-flash".to_string(),
+                    display_name: "Gemini 3.8 Flash".to_string(),
                     provider: "gemini".to_string(),
                     tier: "Pro".to_string(),
                     is_enabled: true,
                     supports_thinking: true,
                 },
                 ModelCatalogItem {
-                    id: "gemini-3.7-flash-high".to_string(),
-                    display_name: "Gemini 3.7 Flash (High)".to_string(),
+                    id: "gemini-3.7-flash".to_string(),
+                    display_name: "Gemini 3.7 Flash".to_string(),
                     provider: "gemini".to_string(),
                     tier: "Pro".to_string(),
                     is_enabled: true,
                     supports_thinking: true,
                 },
                 ModelCatalogItem {
-                    id: "gemini-3.6-flash-high".to_string(),
-                    display_name: "Gemini 3.6 Flash (High)".to_string(),
+                    id: "gemini-3.6-flash".to_string(),
+                    display_name: "Gemini 3.6 Flash".to_string(),
                     provider: "gemini".to_string(),
                     tier: "Pro".to_string(),
                     is_enabled: true,
                     supports_thinking: true,
                 },
                 ModelCatalogItem {
-                    id: "gemini-3.1-pro-high".to_string(),
-                    display_name: "Gemini 3.1 Pro (High)".to_string(),
+                    id: "gemini-3.1-pro".to_string(),
+                    display_name: "Gemini 3.1 Pro".to_string(),
                     provider: "gemini".to_string(),
                     tier: "Pro".to_string(),
                     is_enabled: true,
                     supports_thinking: true,
                 },
                 ModelCatalogItem {
-                    id: "gemini-2.5-pro".to_string(),
-                    display_name: "Gemini 2.5 Pro".to_string(),
-                    provider: "gemini".to_string(),
-                    tier: "Pro".to_string(),
-                    is_enabled: true,
-                    supports_thinking: true,
-                },
-                ModelCatalogItem {
-                    id: "gpt-oss-120b-medium".to_string(),
-                    display_name: "GPT-OSS 120B (Medium)".to_string(),
+                    id: "gpt-oss-120b".to_string(),
+                    display_name: "GPT-OSS 120B".to_string(),
                     provider: "openai".to_string(),
                     tier: "Pro".to_string(),
                     is_enabled: true,
@@ -447,8 +438,22 @@ impl AppConfig {
                             && m.id != "gpt-4o-mini"
                             && m.id != "o3-mini"
                             && m.id != "claude-3-5-sonnet"
+                            && m.id != "claude-3-7-sonnet"
                             && m.id != "gemini-2.5-flash"
+                            && m.id != "gemini-2.5-pro"
                     });
+
+                    // Ensure modern gemini-3.8-flash exists
+                    if !cfg.models.iter().any(|m| m.id == "gemini-3.8-flash") {
+                        cfg.models.push(ModelCatalogItem {
+                            id: "gemini-3.8-flash".to_string(),
+                            display_name: "Gemini 3.8 Flash".to_string(),
+                            provider: "gemini".to_string(),
+                            tier: "Pro".to_string(),
+                            is_enabled: true,
+                            supports_thinking: true,
+                        });
+                    }
 
                     if cfg.models.is_empty() {
                         let defaults = Self::default();

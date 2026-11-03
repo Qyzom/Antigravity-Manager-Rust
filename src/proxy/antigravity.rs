@@ -465,6 +465,9 @@ pub async fn fetch_models_and_quota(
                             || id.contains("gemini-3.5")
                             || id.contains("gemini-3-flash")
                             || id.contains("gemini-3.9")
+                            || id == "claude-3-7-sonnet"
+                            || id == "gemini-2.5-pro"
+                            || id == "gemini-2.5-flash"
                         {
                             continue;
                         }

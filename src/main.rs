@@ -392,6 +392,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_logging_enabled(cfg.log_enabled);
         main_window.set_max_log_capacity(cfg.max_log_entries as i32);
         main_window.set_max_log_capacity_input(cfg.max_log_entries.to_string().into());
+        main_window.set_master_api_key(cfg.master_api_key.clone().into());
 
         let (f_path, f_size) = AppConfig::config_folder_info();
         main_window.set_config_folder_path(f_path.to_string_lossy().to_string().into());
@@ -427,6 +428,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 status: acc.status.clone().into(),
                 is_active: acc.is_active,
                 error_message: acc.error_message.clone().unwrap_or_default().into(),
+                is_updating: false,
+                update_status_text: "".into(),
             });
         }
 
@@ -674,9 +677,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = std::process::Command::new("cmd").args(["/C", "start", &auth_url]).spawn();
     });
 
+    // Shared update states for account interactive feedback: id -> (is_updating, status_text)
+    let account_update_states = Arc::new(parking_lot::RwLock::new(std::collections::HashMap::<String, (bool, String)>::new()));
+
     // Toggle account active state callback
     let c_tog = Arc::clone(&config_arc);
     let v_tog = Arc::clone(&cfg_version);
+    let acc_model_tog = accounts_model.clone();
     main_window.on_toggle_account_active(move |id_slint| {
         let id_str = id_slint.to_string();
         {
@@ -687,16 +694,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             let _ = cfg.save();
         }
+        for i in 0..acc_model_tog.row_count() {
+            if let Some(mut row) = acc_model_tog.row_data(i) {
+                if row.id == id_slint {
+                    row.is_active = !row.is_active;
+                    row.status = if row.is_active { "ACTIVE".into() } else { "DISABLED".into() };
+                    acc_model_tog.set_row_data(i, row);
+                    break;
+                }
+            }
+        }
         v_tog.fetch_add(1, Ordering::SeqCst);
     });
 
-    // Refresh quota callback
+    // Refresh quota callback with interactive feedback
     let c_ref = Arc::clone(&config_arc);
     let v_ref = Arc::clone(&cfg_version);
+    let states_ref = Arc::clone(&account_update_states);
     main_window.on_refresh_account_quota(move |id_slint| {
         let id_str = id_slint.to_string();
         let c_clone = Arc::clone(&c_ref);
         let v_clone = Arc::clone(&v_ref);
+        let states_clone = Arc::clone(&states_ref);
+
+        states_ref.write().insert(id_str.clone(), (true, "Updating...".to_string()));
+        v_ref.fetch_add(1, Ordering::SeqCst);
 
         tokio::spawn(async move {
             let (token, project_id) = {
@@ -709,30 +731,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             let client = reqwest::Client::new();
-            if let Ok((models, used, limit, reset, detailed_quota)) = antigravity::fetch_models_and_quota(&client, &token, project_id.as_deref()).await {
-                {
-                    let mut cfg = c_clone.write();
-                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id_str) {
-                        acc.quota_used = used;
-                        acc.quota_limit = limit;
-                        acc.quota_reset = reset;
-                        acc.claude_gpt_percent = detailed_quota.claude_gpt_percent;
-                        acc.claude_gpt_reset = detailed_quota.claude_gpt_reset;
-                        acc.claude_gpt_weekly_percent = detailed_quota.claude_gpt_weekly_percent;
-                        acc.claude_gpt_weekly_reset = detailed_quota.claude_gpt_weekly_reset;
-                        acc.gemini_percent = detailed_quota.gemini_percent;
-                        acc.gemini_reset = detailed_quota.gemini_reset;
-                        acc.gemini_weekly_percent = detailed_quota.gemini_weekly_percent;
-                        acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
+            let res = antigravity::fetch_models_and_quota(&client, &token, project_id.as_deref()).await;
+            let success = match res {
+                Ok((models, used, limit, reset, detailed_quota)) => {
+                    {
+                        let mut cfg = c_clone.write();
+                        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id_str) {
+                            acc.quota_used = used;
+                            acc.quota_limit = limit;
+                            acc.quota_reset = reset;
+                            acc.claude_gpt_percent = detailed_quota.claude_gpt_percent;
+                            acc.claude_gpt_reset = detailed_quota.claude_gpt_reset;
+                            acc.claude_gpt_weekly_percent = detailed_quota.claude_gpt_weekly_percent;
+                            acc.claude_gpt_weekly_reset = detailed_quota.claude_gpt_weekly_reset;
+                            acc.gemini_percent = detailed_quota.gemini_percent;
+                            acc.gemini_reset = detailed_quota.gemini_reset;
+                            acc.gemini_weekly_percent = detailed_quota.gemini_weekly_percent;
+                            acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
+                        }
+                        let clean_models: Vec<_> = models.into_iter().filter(|x| !x.id.starts_with("chat_") && !x.id.contains("gemini-3.5")).collect();
+                        if !clean_models.is_empty() {
+                            cfg.models = clean_models;
+                        }
+                        let _ = cfg.save();
                     }
-                    let clean_models: Vec<_> = models.into_iter().filter(|x| !x.id.starts_with("chat_") && !x.id.contains("gemini-3.5")).collect();
-                    if !clean_models.is_empty() {
-                        cfg.models = clean_models;
-                    }
-                    let _ = cfg.save();
+                    true
                 }
-                v_clone.fetch_add(1, Ordering::SeqCst);
-            }
+                Err(_) => false,
+            };
+
+            states_clone.write().insert(id_str.clone(), (false, if success { "Updated ✓".to_string() } else { "Failed ✕".to_string() }));
+            v_clone.fetch_add(1, Ordering::SeqCst);
+
+            tokio::time::sleep(tokio::time::Duration::from_millis(2500)).await;
+            states_clone.write().remove(&id_str);
+            v_clone.fetch_add(1, Ordering::SeqCst);
         });
     });
 
@@ -747,17 +780,114 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 h.set_info_account_name(acc.name.clone().into());
                 h.set_info_account_tier(acc.tier.clone().into());
                 h.set_info_account_status(acc.status.clone().into());
-                h.set_info_account_claude(format!("5h: {}% (resets {}) | Weekly: {}% (resets {})",
-                    acc.claude_gpt_percent, acc.claude_gpt_reset,
-                    acc.claude_gpt_weekly_percent, acc.claude_gpt_weekly_reset).into());
-                h.set_info_account_gemini(format!("5h: {}% (resets {}) | Weekly: {}% (resets {})",
-                    acc.gemini_percent, acc.gemini_reset,
-                    acc.gemini_weekly_percent, acc.gemini_weekly_reset).into());
+                h.set_info_account_claude_5h_pct(acc.claude_gpt_percent);
+                h.set_info_account_claude_5h_reset(acc.claude_gpt_reset.clone().into());
+                h.set_info_account_claude_week_pct(acc.claude_gpt_weekly_percent);
+                h.set_info_account_claude_week_reset(acc.claude_gpt_weekly_reset.clone().into());
+                h.set_info_account_gemini_5h_pct(acc.gemini_percent);
+                h.set_info_account_gemini_5h_reset(acc.gemini_reset.clone().into());
+                h.set_info_account_gemini_week_pct(acc.gemini_weekly_percent);
+                h.set_info_account_gemini_week_reset(acc.gemini_weekly_reset.clone().into());
+                h.set_info_account_fingerprint(acc.fingerprint.clone().into());
                 h.set_info_account_models(format!("{} upstream models available", cfg.models.len()).into());
                 h.set_info_account_error(acc.error_message.clone().unwrap_or_default().into());
                 h.set_show_account_info(true);
             }
         }
+    });
+
+    // Master API Key Callbacks
+    let c_mkey = Arc::clone(&config_arc);
+    let h_mkey = window_handle.clone();
+    main_window.on_copy_master_key(move || {
+        let key = {
+            let cfg = c_mkey.read();
+            cfg.master_api_key.clone()
+        };
+        let _ = arboard::Clipboard::new().and_then(|mut cb| cb.set_text(key));
+        if let Some(h) = h_mkey.upgrade() {
+            h.set_master_key_status_text("Copied ✓".into());
+        }
+        let h_timer = h_mkey.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(h) = h_timer.upgrade() {
+                    h.set_master_key_status_text("Copy Key".into());
+                }
+            });
+        });
+    });
+
+    let c_regen = Arc::clone(&config_arc);
+    let h_regen = window_handle.clone();
+    main_window.on_regenerate_master_key(move || {
+        let new_key = format!("sk-aroxy-{}", &uuid::Uuid::new_v4().simple().to_string()[..16]);
+        {
+            let mut cfg = c_regen.write();
+            cfg.master_api_key = new_key.clone();
+            let _ = cfg.save();
+        }
+        if let Some(h) = h_regen.upgrade() {
+            h.set_master_api_key(new_key.into());
+            h.set_master_key_status_text("Regenerated ✓".into());
+        }
+        let h_timer = h_regen.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(h) = h_timer.upgrade() {
+                    h.set_master_key_status_text("Copy Key".into());
+                }
+            });
+        });
+    });
+
+    // GitHub Update Check Callback
+    let h_gh = window_handle.clone();
+    main_window.on_check_github_updates(move || {
+        if let Some(h) = h_gh.upgrade() {
+            h.set_github_checking_update(true);
+            h.set_github_update_status("Checking GitHub...".into());
+        }
+        let h_res = h_gh.clone();
+        tokio::spawn(async move {
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(5))
+                .build()
+                .unwrap_or_default();
+            let res = client
+                .get("https://api.github.com/repos/Qyzom/Aroxy/releases/latest")
+                .header("User-Agent", "Aroxy-Client")
+                .send()
+                .await;
+
+            let status_str = match res {
+                Ok(resp) if resp.status().is_success() => {
+                    if let Ok(json) = resp.json::<serde_json::Value>().await {
+                        if let Some(tag) = json.get("tag_name").and_then(|v| v.as_str()) {
+                            if tag == "v0.0.2" {
+                                "v0.0.2 (Latest ✓)".to_string()
+                            } else {
+                                format!("Update Available ({})", tag)
+                            }
+                        } else {
+                            "v0.0.2 (Latest ✓)".to_string()
+                        }
+                    } else {
+                        "v0.0.2 (Up-to-date)".to_string()
+                    }
+                }
+                _ => "v0.0.2 (Up-to-date)".to_string(),
+            };
+
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(h) = h_res.upgrade() {
+                    h.set_github_checking_update(false);
+                    h.set_github_update_status(status_str.into());
+                }
+            });
+        });
     });
 
     // Delete account callback
@@ -1306,6 +1436,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let s_timer = Arc::clone(&stats_arc);
     let c_timer = Arc::clone(&config_arc);
     let v_timer = Arc::clone(&cfg_version);
+    let states_timer = Arc::clone(&account_update_states);
     let mut last_seen_version: u64 = 0;
     let w_timer = window_handle.clone();
 
@@ -1353,37 +1484,59 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 last_seen_version = current_version;
                 let cfg = c_timer.read();
 
-                accounts_model.set_vec(
-                    cfg.accounts
-                        .iter()
-                        .map(|acc| {
-                            AccountData {
-                                id: acc.id.clone().into(),
-                                name: acc.name.clone().into(),
-                                provider: acc.provider.clone().into(),
-                                base_url: acc.base_url.clone().into(),
-                                api_key_masked: if acc.api_key.is_empty() { "No key".into() } else { "••••••••".into() },
-                                fingerprint: acc.fingerprint.clone().into(),
-                                tier: acc.tier.clone().into(),
-                                quota_used: acc.quota_used as i32,
-                                quota_limit: acc.quota_limit as i32,
-                                quota_percent: acc.claude_gpt_percent,
-                                quota_reset: acc.claude_gpt_reset.clone().into(),
-                                claude_gpt_percent: acc.claude_gpt_percent,
-                                claude_gpt_reset: acc.claude_gpt_reset.clone().into(),
-                                claude_gpt_weekly_percent: acc.claude_gpt_weekly_percent,
-                                claude_gpt_weekly_reset: acc.claude_gpt_weekly_reset.clone().into(),
-                                gemini_percent: acc.gemini_percent,
-                                gemini_reset: acc.gemini_reset.clone().into(),
-                                gemini_weekly_percent: acc.gemini_weekly_percent,
-                                gemini_weekly_reset: acc.gemini_weekly_reset.clone().into(),
-                                status: acc.status.clone().into(),
-                                is_active: acc.is_active,
-                                error_message: acc.error_message.clone().unwrap_or_default().into(),
-                            }
-                        })
-                        .collect::<Vec<_>>(),
-                );
+                let new_acc_data: Vec<AccountData> = cfg.accounts
+                    .iter()
+                    .map(|acc| {
+                        AccountData {
+                            id: acc.id.clone().into(),
+                            name: acc.name.clone().into(),
+                            provider: acc.provider.clone().into(),
+                            base_url: acc.base_url.clone().into(),
+                            api_key_masked: if acc.api_key.is_empty() { "No key".into() } else { "••••••••".into() },
+                            fingerprint: acc.fingerprint.clone().into(),
+                            tier: acc.tier.clone().into(),
+                            quota_used: acc.quota_used as i32,
+                            quota_limit: acc.quota_limit as i32,
+                            quota_percent: acc.claude_gpt_percent,
+                            quota_reset: acc.claude_gpt_reset.clone().into(),
+                            claude_gpt_percent: acc.claude_gpt_percent,
+                            claude_gpt_reset: acc.claude_gpt_reset.clone().into(),
+                            claude_gpt_weekly_percent: acc.claude_gpt_weekly_percent,
+                            claude_gpt_weekly_reset: acc.claude_gpt_weekly_reset.clone().into(),
+                            gemini_percent: acc.gemini_percent,
+                            gemini_reset: acc.gemini_reset.clone().into(),
+                            gemini_weekly_percent: acc.gemini_weekly_percent,
+                            gemini_weekly_reset: acc.gemini_weekly_reset.clone().into(),
+                            status: acc.status.clone().into(),
+                            is_active: acc.is_active,
+                            error_message: acc.error_message.clone().unwrap_or_default().into(),
+                            is_updating: false,
+                            update_status_text: "".into(),
+                        }
+                    })
+                    .collect();
+
+                if accounts_len != accounts_model.row_count() {
+                    let cur_states = states_timer.read();
+                    let mut final_accs = new_acc_data;
+                    for row in &mut final_accs {
+                        if let Some((is_updating, status_text)) = cur_states.get(row.id.as_str()) {
+                            row.is_updating = *is_updating;
+                            row.update_status_text = status_text.clone().into();
+                        }
+                    }
+                    accounts_model.set_vec(final_accs);
+                } else {
+                    let cur_states = states_timer.read();
+                    for (idx, item) in new_acc_data.into_iter().enumerate() {
+                        let mut row = item;
+                        if let Some((is_updating, status_text)) = cur_states.get(row.id.as_str()) {
+                            row.is_updating = *is_updating;
+                            row.update_status_text = status_text.clone().into();
+                        }
+                        accounts_model.set_row_data(idx, row);
+                    }
+                }
 
                 let filtered_models = if cfg.group_reasoning_clones {
                     cfg.models.iter().filter(|m| !m.id.ends_with("-low") && !m.id.ends_with("-medium") && !m.id.ends_with("-high")).collect::<Vec<_>>()
