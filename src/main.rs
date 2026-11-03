@@ -37,6 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let s_cfg = Arc::clone(&config_arc);
     let s_stats = Arc::clone(&stats_arc);
     let s_balancer = Arc::clone(&balancer_arc);
+    let s_ver = Arc::clone(&cfg_version);
     let mut s_stop_rx = stop_receiver.clone();
 
     tokio::spawn(async move {
@@ -54,6 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             stats: s_stats,
             balancer: s_balancer,
             http_client: client,
+            cfg_version: s_ver,
         };
 
         let app = create_proxy_router(state);
@@ -107,11 +109,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let cfg = config_arc.read();
         for acc in &cfg.accounts {
-            let pct = if acc.quota_limit > 0 {
-                ((acc.quota_used as f64 / acc.quota_limit as f64) * 100.0) as i32
-            } else {
-                0
-            };
             accounts_model.push(AccountData {
                 id: acc.id.clone().into(),
                 name: acc.name.clone().into(),
@@ -122,8 +119,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 tier: acc.tier.clone().into(),
                 quota_used: acc.quota_used as i32,
                 quota_limit: acc.quota_limit as i32,
-                quota_percent: pct,
-                quota_reset: acc.quota_reset.clone().into(),
+                quota_percent: acc.claude_gpt_percent,
+                quota_reset: acc.claude_gpt_reset.clone().into(),
+                claude_gpt_percent: acc.claude_gpt_percent,
+                claude_gpt_reset: acc.claude_gpt_reset.clone().into(),
+                gemini_percent: acc.gemini_percent,
+                gemini_reset: acc.gemini_reset.clone().into(),
                 status: acc.status.clone().into(),
                 is_active: acc.is_active,
             });
@@ -150,6 +151,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_global_quota_used(total_used.to_string().into());
         main_window.set_global_quota_limit(total_limit.to_string().into());
         main_window.set_global_quota_percent(pct);
+        main_window.set_global_claude_percent(cfg.aggregate_claude_gpt_percent());
+        main_window.set_global_claude_reset(cfg.nearest_claude_reset().into());
+        main_window.set_global_gemini_percent(cfg.aggregate_gemini_percent());
+        main_window.set_global_gemini_reset(cfg.nearest_gemini_reset().into());
         main_window.set_healthy_accounts_count(cfg.accounts.iter().filter(|a| a.is_active).count() as i32);
         main_window.set_routing_strategy_index(cfg.routing_strategy.to_index());
         main_window.set_quota_refresh_interval(cfg.quota_refresh_interval_secs as i32);
@@ -245,10 +250,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 let (project_id, tier) = antigravity::fetch_project_and_tier(&http_client, &access_token).await;
 
-                let (fetched_models, quota_used, quota_limit, quota_reset) =
+                let (fetched_models, quota_used, quota_limit, quota_reset, detailed_quota) =
                     match antigravity::fetch_models_and_quota(&http_client, &access_token, project_id.as_deref()).await {
-                        Ok(res) => (Some(res.0), res.1, res.2, res.3),
-                        Err(_) => (None, 0, 100_000, "in 4h 00m".to_string()),
+                        Ok(res) => (Some(res.0), res.1, res.2, res.3, res.4),
+                        Err(_) => {
+                            let det = antigravity::fetch_user_quota_summary(&http_client, &access_token).await;
+                            (None, 0, 100_000, "in 4h 00m".to_string(), det)
+                        }
                     };
 
                 let new_id = format!("acc-{}", uuid::Uuid::new_v4().simple());
@@ -263,6 +271,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     quota_used,
                     quota_limit,
                     quota_reset,
+                    claude_gpt_percent: detailed_quota.claude_gpt_percent,
+                    claude_gpt_reset: detailed_quota.claude_gpt_reset,
+                    gemini_percent: detailed_quota.gemini_percent,
+                    gemini_reset: detailed_quota.gemini_reset,
                     status: "Active".to_string(),
                     is_active: true,
                 };
@@ -311,13 +323,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             let client = reqwest::Client::new();
-            if let Ok((models, used, limit, reset)) = antigravity::fetch_models_and_quota(&client, &token, project_id.as_deref()).await {
+            if let Ok((models, used, limit, reset, detailed_quota)) = antigravity::fetch_models_and_quota(&client, &token, project_id.as_deref()).await {
                 {
                     let mut cfg = c_clone.write();
                     if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id_str) {
                         acc.quota_used = used;
                         acc.quota_limit = limit;
                         acc.quota_reset = reset;
+                        acc.claude_gpt_percent = detailed_quota.claude_gpt_percent;
+                        acc.claude_gpt_reset = detailed_quota.claude_gpt_reset;
+                        acc.gemini_percent = detailed_quota.gemini_percent;
+                        acc.gemini_reset = detailed_quota.gemini_reset;
                         acc.status = "Active".to_string();
                     }
                     cfg.models = models;
@@ -565,7 +581,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Sync accounts & models if changed
             let current_version = v_timer.load(Ordering::Relaxed);
-            if current_version != last_seen_version {
+            let accounts_len = c_timer.read().accounts.len();
+            if current_version != last_seen_version || accounts_len != accounts_model.row_count() {
                 last_seen_version = current_version;
                 let cfg = c_timer.read();
 
@@ -573,11 +590,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     cfg.accounts
                         .iter()
                         .map(|acc| {
-                            let pct = if acc.quota_limit > 0 {
-                                ((acc.quota_used as f64 / acc.quota_limit as f64) * 100.0) as i32
-                            } else {
-                                0
-                            };
                             AccountData {
                                 id: acc.id.clone().into(),
                                 name: acc.name.clone().into(),
@@ -588,8 +600,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 tier: acc.tier.clone().into(),
                                 quota_used: acc.quota_used as i32,
                                 quota_limit: acc.quota_limit as i32,
-                                quota_percent: pct,
-                                quota_reset: acc.quota_reset.clone().into(),
+                                quota_percent: acc.claude_gpt_percent,
+                                quota_reset: acc.claude_gpt_reset.clone().into(),
+                                claude_gpt_percent: acc.claude_gpt_percent,
+                                claude_gpt_reset: acc.claude_gpt_reset.clone().into(),
+                                gemini_percent: acc.gemini_percent,
+                                gemini_reset: acc.gemini_reset.clone().into(),
                                 status: acc.status.clone().into(),
                                 is_active: acc.is_active,
                             }
@@ -621,6 +637,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 w.set_global_quota_used(total_used.to_string().into());
                 w.set_global_quota_limit(total_limit.to_string().into());
                 w.set_global_quota_percent(pct);
+                w.set_global_claude_percent(cfg.aggregate_claude_gpt_percent());
+                w.set_global_claude_reset(cfg.nearest_claude_reset().into());
+                w.set_global_gemini_percent(cfg.aggregate_gemini_percent());
+                w.set_global_gemini_reset(cfg.nearest_gemini_reset().into());
                 w.set_healthy_accounts_count(cfg.accounts.iter().filter(|a| a.is_active).count() as i32);
             }
 

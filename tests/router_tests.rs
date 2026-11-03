@@ -25,6 +25,10 @@ mod tests {
             quota_used: 1000,
             quota_limit: 100000,
             quota_reset: "in 2h".into(),
+            claude_gpt_percent: 100,
+            claude_gpt_reset: "in 2h".into(),
+            gemini_percent: 100,
+            gemini_reset: "in 2h".into(),
             status: "Active".into(),
             is_active: true,
         };
@@ -270,6 +274,10 @@ mod tests {
             quota_used: 20000,
             quota_limit: 100000,
             quota_reset: "in 3h".into(),
+            claude_gpt_percent: 80,
+            claude_gpt_reset: "in 3h".into(),
+            gemini_percent: 100,
+            gemini_reset: "in 3h".into(),
             status: "Active".into(),
             is_active: true,
         };
@@ -285,6 +293,10 @@ mod tests {
             quota_used: 50000,
             quota_limit: 100000,
             quota_reset: "in 2h".into(),
+            claude_gpt_percent: 50,
+            claude_gpt_reset: "in 2h".into(),
+            gemini_percent: 100,
+            gemini_reset: "in 2h".into(),
             status: "Active".into(),
             is_active: true,
         };

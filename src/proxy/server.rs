@@ -22,6 +22,7 @@ pub struct AppState {
     pub stats: Arc<ProxyStats>,
     pub balancer: Arc<crate::proxy::balancer::LoadBalancer>,
     pub http_client: reqwest::Client,
+    pub cfg_version: Arc<std::sync::atomic::AtomicU64>,
 }
 
 pub fn create_proxy_router(state: AppState) -> Router {
@@ -44,7 +45,7 @@ async fn oauth_callback(
     let port = state.config.read().port;
     let redirect_uri = format!("http://127.0.0.1:{}/oauth/callback", port);
 
-    let (access_token, email, tier, quota_used, quota_limit, quota_reset, models) =
+    let (access_token, email, tier, quota_used, quota_limit, quota_reset, models, detailed_quota) =
         if let Some(code) = params.get("code") {
             match crate::proxy::antigravity::exchange_code(&state.http_client, code, &redirect_uri).await {
                 Ok(token_resp) => {
@@ -54,48 +55,79 @@ async fn oauth_callback(
                         Err(_) => "antigravity.user@gmail.com".to_string(),
                     };
                     let (project_id, tier) = crate::proxy::antigravity::fetch_project_and_tier(&state.http_client, &acc_token).await;
-                    let (models, used, limit, reset) = match crate::proxy::antigravity::fetch_models_and_quota(&state.http_client, &acc_token, project_id.as_deref()).await {
-                        Ok(res) => (Some(res.0), res.1, res.2, res.3),
-                        Err(_) => (None, 0, 100_000, "in 4h 00m".to_string()),
+                    let (models, used, limit, reset, det) = match crate::proxy::antigravity::fetch_models_and_quota(&state.http_client, &acc_token, project_id.as_deref()).await {
+                        Ok(res) => (Some(res.0), res.1, res.2, res.3, res.4),
+                        Err(_) => {
+                            let det = crate::proxy::antigravity::fetch_user_quota_summary(&state.http_client, &acc_token).await;
+                            (None, 0, 100_000, "in 4h 00m".to_string(), det)
+                        }
                     };
-                    (acc_token, email, tier, used, limit, reset, models)
+                    (acc_token, email, tier, used, limit, reset, models, det)
                 }
                 Err(e) => {
                     log::warn!("OAuth exchange error: {}", e);
                     let raw_token = params.get("token").cloned().unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
-                    (raw_token, "antigravity.user@gmail.com".to_string(), "PRO".to_string(), 0, 100_000, "in 4h 00m".to_string(), None)
+                    let det = crate::proxy::antigravity::DetailedQuotaInfo {
+                        claude_gpt_percent: 100,
+                        claude_gpt_reset: "in 4h 00m".to_string(),
+                        gemini_percent: 100,
+                        gemini_reset: "in 4h 00m".to_string(),
+                    };
+                    (raw_token, "antigravity.user@gmail.com".to_string(), "PRO".to_string(), 0, 100_000, "in 4h 00m".to_string(), None, det)
                 }
             }
         } else {
             let raw_token = params.get("token").or_else(|| params.get("access_token")).cloned().unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
             let email = params.get("email").cloned().unwrap_or_else(|| "antigravity.user@gmail.com".to_string());
-            (raw_token, email, "PRO".to_string(), 0, 100_000, "in 4h 00m".to_string(), None)
+            let det = crate::proxy::antigravity::fetch_user_quota_summary(&state.http_client, &raw_token).await;
+            (raw_token, email, "PRO".to_string(), 0, 100_000, "in 4h 00m".to_string(), None, det)
         };
 
     // Add or update account in config
     {
         let mut cfg = state.config.write();
-        let new_id = format!("acc-{}", uuid::Uuid::new_v4().simple());
-        cfg.accounts.push(crate::config::UpstreamAccount {
-            id: new_id.clone(),
-            name: email.clone(),
-            provider: "antigravity".to_string(),
-            base_url: "https://api.anthropic.com".to_string(),
-            api_key: access_token,
-            fingerprint: "Claude Code 2.x".to_string(),
-            tier: tier.clone(),
-            quota_used,
-            quota_limit,
-            quota_reset,
-            status: "Active".to_string(),
-            is_active: true,
-        });
-        cfg.active_account_id = Some(new_id);
+        if let Some(existing) = cfg.accounts.iter_mut().find(|a| a.name == email) {
+            existing.api_key = access_token;
+            existing.tier = tier.clone();
+            existing.quota_used = quota_used;
+            existing.quota_limit = quota_limit;
+            existing.quota_reset = quota_reset;
+            existing.claude_gpt_percent = detailed_quota.claude_gpt_percent;
+            existing.claude_gpt_reset = detailed_quota.claude_gpt_reset;
+            existing.gemini_percent = detailed_quota.gemini_percent;
+            existing.gemini_reset = detailed_quota.gemini_reset;
+            existing.status = "Active".to_string();
+            existing.is_active = true;
+            cfg.active_account_id = Some(existing.id.clone());
+        } else {
+            let new_id = format!("acc-{}", uuid::Uuid::new_v4().simple());
+            cfg.accounts.push(crate::config::UpstreamAccount {
+                id: new_id.clone(),
+                name: email.clone(),
+                provider: "antigravity".to_string(),
+                base_url: "https://api.anthropic.com".to_string(),
+                api_key: access_token,
+                fingerprint: "Claude Code 2.x".to_string(),
+                tier: tier.clone(),
+                quota_used,
+                quota_limit,
+                quota_reset,
+                claude_gpt_percent: detailed_quota.claude_gpt_percent,
+                claude_gpt_reset: detailed_quota.claude_gpt_reset,
+                gemini_percent: detailed_quota.gemini_percent,
+                gemini_reset: detailed_quota.gemini_reset,
+                status: "Active".to_string(),
+                is_active: true,
+            });
+            cfg.active_account_id = Some(new_id);
+        }
         if let Some(m) = models {
             cfg.models = m;
         }
         let _ = cfg.save();
     }
+
+    state.cfg_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
     axum::response::Html(format!(r#"
         <!DOCTYPE html>

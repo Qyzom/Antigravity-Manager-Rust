@@ -111,9 +111,21 @@ pub struct UpstreamAccount {
     pub quota_limit: u64,
     #[serde(default = "default_quota_reset")]
     pub quota_reset: String, // e.g. "in 3h 12m"
+    #[serde(default = "default_pct_100")]
+    pub claude_gpt_percent: i32,
+    #[serde(default = "default_quota_reset")]
+    pub claude_gpt_reset: String,
+    #[serde(default = "default_pct_100")]
+    pub gemini_percent: i32,
+    #[serde(default = "default_quota_reset")]
+    pub gemini_reset: String,
     #[serde(default = "default_status")]
     pub status: String,      // "Active", "Cooling Down", "Expired"
     pub is_active: bool,
+}
+
+fn default_pct_100() -> i32 {
+    100
 }
 
 fn default_account_tier() -> String {
@@ -215,7 +227,7 @@ impl Default for AppConfig {
             models: vec![
                 ModelCatalogItem {
                     id: "claude-3-7-sonnet".to_string(),
-                    display_name: "Claude 3.7 Sonnet".to_string(),
+                    display_name: "Claude 3.7 Sonnet (Thinking)".to_string(),
                     provider: "anthropic".to_string(),
                     tier: "Pro".to_string(),
                     is_enabled: true,
@@ -230,12 +242,84 @@ impl Default for AppConfig {
                     supports_thinking: false,
                 },
                 ModelCatalogItem {
-                    id: "claude-3-5-haiku".to_string(),
-                    display_name: "Claude 3.5 Haiku".to_string(),
+                    id: "claude-sonnet-4-6".to_string(),
+                    display_name: "Claude Sonnet 4.6 (Thinking)".to_string(),
                     provider: "anthropic".to_string(),
+                    tier: "Pro".to_string(),
+                    is_enabled: true,
+                    supports_thinking: true,
+                },
+                ModelCatalogItem {
+                    id: "claude-opus-4-6-thinking".to_string(),
+                    display_name: "Claude Opus 4.6 (Thinking)".to_string(),
+                    provider: "anthropic".to_string(),
+                    tier: "Pro".to_string(),
+                    is_enabled: true,
+                    supports_thinking: true,
+                },
+                ModelCatalogItem {
+                    id: "claude-sonnet-5-5-high".to_string(),
+                    display_name: "Claude Sonnet 5.5 (High)".to_string(),
+                    provider: "anthropic".to_string(),
+                    tier: "Pro".to_string(),
+                    is_enabled: true,
+                    supports_thinking: true,
+                },
+                ModelCatalogItem {
+                    id: "claude-opus-5-5-high".to_string(),
+                    display_name: "Claude Opus 5.5 (High)".to_string(),
+                    provider: "anthropic".to_string(),
+                    tier: "Pro".to_string(),
+                    is_enabled: true,
+                    supports_thinking: true,
+                },
+                ModelCatalogItem {
+                    id: "gemini-4-argon".to_string(),
+                    display_name: "Gemini 4 Argon".to_string(),
+                    provider: "gemini".to_string(),
+                    tier: "Pro".to_string(),
+                    is_enabled: true,
+                    supports_thinking: true,
+                },
+                ModelCatalogItem {
+                    id: "gemini-3.8-flash-high".to_string(),
+                    display_name: "Gemini 3.8 Flash (High)".to_string(),
+                    provider: "gemini".to_string(),
+                    tier: "Pro".to_string(),
+                    is_enabled: true,
+                    supports_thinking: true,
+                },
+                ModelCatalogItem {
+                    id: "gemini-3.7-flash-high".to_string(),
+                    display_name: "Gemini 3.7 Flash (High)".to_string(),
+                    provider: "gemini".to_string(),
+                    tier: "Pro".to_string(),
+                    is_enabled: true,
+                    supports_thinking: true,
+                },
+                ModelCatalogItem {
+                    id: "gemini-3.6-flash-high".to_string(),
+                    display_name: "Gemini 3.6 Flash (High)".to_string(),
+                    provider: "gemini".to_string(),
+                    tier: "Pro".to_string(),
+                    is_enabled: true,
+                    supports_thinking: true,
+                },
+                ModelCatalogItem {
+                    id: "gemini-3.5-flash-low".to_string(),
+                    display_name: "Gemini 3.5 Flash (Medium)".to_string(),
+                    provider: "gemini".to_string(),
                     tier: "Free".to_string(),
                     is_enabled: true,
-                    supports_thinking: false,
+                    supports_thinking: true,
+                },
+                ModelCatalogItem {
+                    id: "gemini-3.1-pro-high".to_string(),
+                    display_name: "Gemini 3.1 Pro (High)".to_string(),
+                    provider: "gemini".to_string(),
+                    tier: "Pro".to_string(),
+                    is_enabled: true,
+                    supports_thinking: true,
                 },
                 ModelCatalogItem {
                     id: "gemini-2.5-pro".to_string(),
@@ -247,39 +331,15 @@ impl Default for AppConfig {
                 },
                 ModelCatalogItem {
                     id: "gemini-2.5-flash".to_string(),
-                    display_name: "Gemini 2.5 Flash".to_string(),
+                    display_name: "Gemini 2.5 Flash Lite".to_string(),
                     provider: "gemini".to_string(),
                     tier: "Free".to_string(),
                     is_enabled: true,
                     supports_thinking: true,
                 },
                 ModelCatalogItem {
-                    id: "gpt-4o".to_string(),
-                    display_name: "GPT-4o (Omni)".to_string(),
-                    provider: "openai".to_string(),
-                    tier: "Pro".to_string(),
-                    is_enabled: true,
-                    supports_thinking: false,
-                },
-                ModelCatalogItem {
-                    id: "gpt-4o-mini".to_string(),
-                    display_name: "GPT-4o Mini".to_string(),
-                    provider: "openai".to_string(),
-                    tier: "Free".to_string(),
-                    is_enabled: true,
-                    supports_thinking: false,
-                },
-                ModelCatalogItem {
-                    id: "o3-mini".to_string(),
-                    display_name: "o3-mini (Reasoning)".to_string(),
-                    provider: "openai".to_string(),
-                    tier: "Pro".to_string(),
-                    is_enabled: true,
-                    supports_thinking: true,
-                },
-                ModelCatalogItem {
-                    id: "o1".to_string(),
-                    display_name: "o1 Preview".to_string(),
+                    id: "gpt-oss-120b-medium".to_string(),
+                    display_name: "GPT-OSS 120B (Medium)".to_string(),
                     provider: "openai".to_string(),
                     tier: "Pro".to_string(),
                     is_enabled: true,
@@ -310,7 +370,13 @@ impl AppConfig {
         let path = Self::config_path();
         if path.exists() {
             if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(cfg) = serde_json::from_str::<AppConfig>(&content) {
+                if let Ok(mut cfg) = serde_json::from_str::<AppConfig>(&content) {
+                    // Automatically upgrade model catalog if it contains obsolete legacy models
+                    if cfg.models.iter().any(|m| m.id == "o1" || m.id == "gpt-4o" || m.id == "gpt-4o-mini" || m.id == "o3-mini") {
+                        let defaults = Self::default();
+                        cfg.models = defaults.models;
+                        let _ = cfg.save();
+                    }
                     return cfg;
                 }
             }
@@ -318,6 +384,42 @@ impl AppConfig {
         let default_cfg = Self::default();
         let _ = default_cfg.save();
         default_cfg
+    }
+
+    pub fn aggregate_claude_gpt_percent(&self) -> i32 {
+        let active: Vec<_> = self.accounts.iter().filter(|a| a.is_active).collect();
+        if active.is_empty() {
+            return 100;
+        }
+        let sum: i32 = active.iter().map(|a| a.claude_gpt_percent).sum();
+        sum / active.len() as i32
+    }
+
+    pub fn aggregate_gemini_percent(&self) -> i32 {
+        let active: Vec<_> = self.accounts.iter().filter(|a| a.is_active).collect();
+        if active.is_empty() {
+            return 100;
+        }
+        let sum: i32 = active.iter().map(|a| a.gemini_percent).sum();
+        sum / active.len() as i32
+    }
+
+    pub fn nearest_claude_reset(&self) -> String {
+        self.accounts
+            .iter()
+            .filter(|a| a.is_active)
+            .map(|a| a.claude_gpt_reset.clone())
+            .next()
+            .unwrap_or_else(|| "in 4h 00m".to_string())
+    }
+
+    pub fn nearest_gemini_reset(&self) -> String {
+        self.accounts
+            .iter()
+            .filter(|a| a.is_active)
+            .map(|a| a.gemini_reset.clone())
+            .next()
+            .unwrap_or_else(|| "in 4h 00m".to_string())
     }
 
     pub fn save(&self) -> std::io::Result<()> {

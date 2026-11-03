@@ -1,4 +1,5 @@
 import { ScrollView, LineEdit } from "std-widgets.slint";
+import "./fonts/Unbounded.ttf";
 
 export struct LogEntryData {
     id: string,
@@ -23,6 +24,10 @@ export struct AccountData {
     quota_limit: int,
     quota_percent: int,
     quota_reset: string,
+    claude_gpt_percent: int,
+    claude_gpt_reset: string,
+    gemini_percent: int,
+    gemini_reset: string,
     status: string,
     is_active: bool,
 }
@@ -200,7 +205,8 @@ component Badge inherits Rectangle {
 }
 
 export component MainWindow inherits Window {
-    title: "Aroxy — AI Protocol Proxy & Management Console";
+    title: "Aroxy";
+    default-font-family: "Unbounded";
     min-width: 960px;
     min-height: 620px;
     preferred-width: 1060px;
@@ -220,6 +226,10 @@ export component MainWindow inherits Window {
     in-out property <string> total_tokens: "0";
     in-out property <string> avg_latency: "0 ms";
     in-out property <string> active_account_name: "Antigravity Pool";
+    in-out property <int> global_claude_percent: 100;
+    in-out property <string> global_claude_reset: "in 4h 00m";
+    in-out property <int> global_gemini_percent: 100;
+    in-out property <string> global_gemini_reset: "in 4h 00m";
     in-out property <string> global_quota_used: "0";
     in-out property <string> global_quota_limit: "100,000";
     in-out property <int> global_quota_percent: 0;
@@ -308,8 +318,8 @@ export component MainWindow inherits Window {
 
                 // App Brand
                 HorizontalLayout {
-                    padding-bottom: 12px;
-                    padding-left: 6px;
+                    padding-bottom: 16px;
+                    padding-left: 8px;
                     spacing: 8px;
                     alignment: start;
                     Text {
@@ -319,9 +329,12 @@ export component MainWindow inherits Window {
                         color: #ffffff;
                         vertical-alignment: center;
                     }
-                    Badge {
+                    Text {
                         text: "v0.0.2";
-                        is_green: true;
+                        font-size: 11px;
+                        font-weight: 600;
+                        color: #71717a;
+                        vertical-alignment: center;
                     }
                 }
 
@@ -366,39 +379,6 @@ export component MainWindow inherits Window {
 
                 // Flexible Spacer
                 Rectangle { }
-
-                // Daemon Status Badge in Sidebar (Perfect alignment, no broken dot)
-                Rectangle {
-                    height: 34px;
-                    border-radius: 6px;
-                    background: root.proxy_running ? #14281e : #221414;
-                    border-width: 1px;
-                    border-color: root.proxy_running ? #1e4a34 : #451a1a;
-
-                    HorizontalLayout {
-                        alignment: center;
-                        spacing: 8px;
-                        padding-left: 10px;
-                        padding-right: 10px;
-
-                        VerticalLayout {
-                            alignment: center;
-                            Rectangle {
-                                width: 6px;
-                                height: 6px;
-                                border-radius: 3px;
-                                background: root.proxy_running ? #4ade80 : #f87171;
-                            }
-                        }
-                        Text {
-                            text: root.proxy_running ? ("ONLINE :" + root.proxy_port) : "OFFLINE";
-                            font-size: 11px;
-                            font-weight: 700;
-                            color: root.proxy_running ? #4ade80 : #f87171;
-                            vertical-alignment: center;
-                        }
-                    }
-                }
             }
         }
 
@@ -438,8 +418,30 @@ export component MainWindow inherits Window {
                 }
 
                 HorizontalLayout {
-                    spacing: 10px;
+                    spacing: 14px;
                     alignment: end;
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: center;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 7px;
+                                height: 7px;
+                                border-radius: 4px;
+                                background: root.proxy_running ? #4ade80 : #f87171;
+                            }
+                        }
+                        Text {
+                            text: root.proxy_running ? (":" + root.proxy_port + " Active") : "Stopped";
+                            font-size: 12px;
+                            font-weight: 600;
+                            color: root.proxy_running ? #4ade80 : #71717a;
+                            vertical-alignment: center;
+                        }
+                    }
+
                     ActionButton {
                         text: root.proxy_running ? "STOP PROXY" : "START PROXY";
                         is_primary: !root.proxy_running;
@@ -450,16 +452,18 @@ export component MainWindow inherits Window {
                 }
             }
 
-            // Scrollable Content Container (Smooth scrolling, zero clipping)
+            // Scrollable Content Container (Smooth scrolling, zero clipping, no stretching)
             ScrollView {
                 VerticalLayout {
+                    alignment: start;
                     padding-right: 8px;
-                    spacing: 14px;
+                    spacing: 16px;
 
                     // ==========================================
                     // TAB 0: DASHBOARD
                     // ==========================================
                     if root.active_tab == 0: VerticalLayout {
+                        alignment: start;
                         spacing: 14px;
 
                         // Quick Stat Cards
@@ -487,7 +491,7 @@ export component MainWindow inherits Window {
                             }
                         }
 
-                        // Aggregate Quota Health Card
+                        // Claude & GPT Models Quota Card
                         Rectangle {
                             background: #18181b;
                             border-radius: 8px;
@@ -502,12 +506,13 @@ export component MainWindow inherits Window {
                                     alignment: space-between;
                                     VerticalLayout {
                                         spacing: 2px;
-                                        Text { text: "Aggregate Antigravity Quota Available"; font-size: 13px; font-weight: 700; color: #ffffff; }
-                                        Text { text: "Total remaining tokens across all active pooled accounts"; font-size: 11px; color: #71717a; }
+                                        Text { text: "Claude & GPT Quota Pool"; font-size: 13px; font-weight: 700; color: #ffffff; }
+                                        Text { text: "Shared 5-hour rolling & weekly capacity (Claude 3.7 / 3.5 Sonnet, GPT-OSS)"; font-size: 11px; color: #71717a; }
                                     }
                                     Badge {
-                                        text: "Resets " + root.global_quota_reset;
-                                        is_green: true;
+                                        text: "Resets " + root.global_claude_reset;
+                                        is_green: root.global_claude_percent > 20;
+                                        is_danger: root.global_claude_percent <= 20;
                                     }
                                 }
 
@@ -522,21 +527,21 @@ export component MainWindow inherits Window {
                                         y: 0px;
                                         height: 8px;
                                         border-radius: 4px;
-                                        width: parent.width * (root.global_quota_percent / 100.0);
-                                        background: root.global_quota_percent > 85 ? #ef4444 : (root.global_quota_percent > 60 ? #fbbf24 : #4ade80);
+                                        width: parent.width * (root.global_claude_percent / 100.0);
+                                        background: root.global_claude_percent < 20 ? #ef4444 : (root.global_claude_percent < 50 ? #fbbf24 : #4ade80);
                                     }
                                 }
 
                                 HorizontalLayout {
                                     alignment: space-between;
                                     Text {
-                                        text: root.global_quota_used + " / " + root.global_quota_limit + " tokens used (" + root.global_quota_percent + "%)";
+                                        text: root.global_claude_percent + "% Available Capacity";
                                         font-size: 11px;
-                                        font-weight: 600;
-                                        color: #a1a1aa;
+                                        font-weight: 700;
+                                        color: root.global_claude_percent < 20 ? #f87171 : (root.global_claude_percent < 50 ? #fbbf24 : #4ade80);
                                     }
                                     Text {
-                                        text: "Routing: Quota-Aware Pool";
+                                        text: "Routing: Cache Affinity Pool";
                                         font-size: 11px;
                                         color: #71717a;
                                     }
@@ -544,7 +549,7 @@ export component MainWindow inherits Window {
                             }
                         }
 
-                        // Client Connection Cards
+                        // Gemini Models Quota Card
                         Rectangle {
                             background: #18181b;
                             border-radius: 8px;
@@ -553,35 +558,50 @@ export component MainWindow inherits Window {
 
                             VerticalLayout {
                                 padding: 16px;
-                                spacing: 12px;
-
-                                Text { text: "Compatible AI Client Connection Snippets"; font-size: 13px; font-weight: 700; color: #ffffff; }
+                                spacing: 10px;
 
                                 HorizontalLayout {
-                                    spacing: 12px;
-                                    Rectangle {
-                                        border-radius: 6px;
-                                        background: #121214;
-                                        border-width: 1px;
-                                        border-color: #27272a;
-                                        VerticalLayout {
-                                            padding: 12px;
-                                            spacing: 4px;
-                                            Text { text: "Claude Code CLI"; font-size: 12px; font-weight: 700; color: #ffffff; }
-                                            Text { text: "export ANTHROPIC_BASE_URL=\"http://127.0.0.1:" + root.proxy_port + "\""; font-size: 11px; color: #a1a1aa; }
-                                        }
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Text { text: "Gemini Quota Pool"; font-size: 13px; font-weight: 700; color: #ffffff; }
+                                        Text { text: "Dedicated capacity for Gemini 2.5 Flash, 2.5 Pro, and Gemini 3.x models"; font-size: 11px; color: #71717a; }
                                     }
+                                    Badge {
+                                        text: "Resets " + root.global_gemini_reset;
+                                        is_green: root.global_gemini_percent > 20;
+                                        is_danger: root.global_gemini_percent <= 20;
+                                    }
+                                }
+
+                                // Progress Bar Container
+                                Rectangle {
+                                    height: 8px;
+                                    border-radius: 4px;
+                                    background: #27272a;
+
                                     Rectangle {
-                                        border-radius: 6px;
-                                        background: #121214;
-                                        border-width: 1px;
-                                        border-color: #27272a;
-                                        VerticalLayout {
-                                            padding: 12px;
-                                            spacing: 4px;
-                                            Text { text: "OpenAI / Cursor / Aider / LibreChat"; font-size: 12px; font-weight: 700; color: #ffffff; }
-                                            Text { text: "export OPENAI_BASE_URL=\"http://127.0.0.1:" + root.proxy_port + "/v1\""; font-size: 11px; color: #a1a1aa; }
-                                        }
+                                        x: 0px;
+                                        y: 0px;
+                                        height: 8px;
+                                        border-radius: 4px;
+                                        width: parent.width * (root.global_gemini_percent / 100.0);
+                                        background: root.global_gemini_percent < 20 ? #ef4444 : (root.global_gemini_percent < 50 ? #fbbf24 : #4ade80);
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    Text {
+                                        text: root.global_gemini_percent + "% Available Capacity";
+                                        font-size: 11px;
+                                        font-weight: 700;
+                                        color: root.global_gemini_percent < 20 ? #f87171 : (root.global_gemini_percent < 50 ? #fbbf24 : #4ade80);
+                                    }
+                                    Text {
+                                        text: "Multi-Turn Optimized";
+                                        font-size: 11px;
+                                        color: #71717a;
                                     }
                                 }
                             }
@@ -592,6 +612,7 @@ export component MainWindow inherits Window {
                     // TAB 1: ACCOUNTS & QUOTAS
                     // ==========================================
                     if root.active_tab == 1: VerticalLayout {
+                        alignment: start;
                         spacing: 14px;
 
                         // Top Connect Actions Box (Clean single token input, no manual account name!)
@@ -713,33 +734,63 @@ export component MainWindow inherits Window {
                                     }
                                 }
 
-                                // Quota Progress Bar for each account
+                                // Claude & GPT Quota Bar
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    Text {
+                                        text: "Claude & GPT: " + acc.claude_gpt_percent + "% Available";
+                                        font-size: 11px;
+                                        font-weight: 700;
+                                        color: acc.claude_gpt_percent < 20 ? #f87171 : (acc.claude_gpt_percent < 50 ? #fbbf24 : #4ade80);
+                                    }
+                                    Text {
+                                        text: "Resets " + acc.claude_gpt_reset;
+                                        font-size: 10px;
+                                        color: #71717a;
+                                    }
+                                }
                                 Rectangle {
-                                    height: 6px;
+                                    height: 5px;
                                     border-radius: 3px;
                                     background: #27272a;
 
                                     Rectangle {
                                         x: 0px;
                                         y: 0px;
-                                        height: 6px;
+                                        height: 5px;
                                         border-radius: 3px;
-                                        width: parent.width * (acc.quota_percent / 100.0);
-                                        background: acc.quota_percent > 85 ? #ef4444 : (acc.quota_percent > 60 ? #fbbf24 : #4ade80);
+                                        width: parent.width * (acc.claude_gpt_percent / 100.0);
+                                        background: acc.claude_gpt_percent < 20 ? #ef4444 : (acc.claude_gpt_percent < 50 ? #fbbf24 : #4ade80);
                                     }
                                 }
 
+                                // Gemini Quota Bar
                                 HorizontalLayout {
                                     alignment: space-between;
                                     Text {
-                                        text: acc.quota_used + " / " + acc.quota_limit + " tokens (" + acc.quota_percent + "%) • Resets " + acc.quota_reset;
+                                        text: "Gemini: " + acc.gemini_percent + "% Available";
                                         font-size: 11px;
-                                        color: #a1a1aa;
+                                        font-weight: 700;
+                                        color: acc.gemini_percent < 20 ? #f87171 : (acc.gemini_percent < 50 ? #fbbf24 : #4ade80);
                                     }
                                     Text {
-                                        text: "Fingerprint: " + acc.fingerprint;
+                                        text: "Resets " + acc.gemini_reset;
                                         font-size: 10px;
                                         color: #71717a;
+                                    }
+                                }
+                                Rectangle {
+                                    height: 5px;
+                                    border-radius: 3px;
+                                    background: #27272a;
+
+                                    Rectangle {
+                                        x: 0px;
+                                        y: 0px;
+                                        height: 5px;
+                                        border-radius: 3px;
+                                        width: parent.width * (acc.gemini_percent / 100.0);
+                                        background: acc.gemini_percent < 20 ? #ef4444 : (acc.gemini_percent < 50 ? #fbbf24 : #4ade80);
                                     }
                                 }
                             }
@@ -750,6 +801,7 @@ export component MainWindow inherits Window {
                     // TAB 2: MODELS & TEST PLAYGROUND
                     // ==========================================
                     if root.active_tab == 2: VerticalLayout {
+                        alignment: start;
                         spacing: 14px;
 
                         // Master Toggle for Reasoning Effort Clones
@@ -879,6 +931,7 @@ export component MainWindow inherits Window {
                     // TAB 3: PROXY LAYER ("Прослойка")
                     // ==========================================
                     if root.active_tab == 3: VerticalLayout {
+                        alignment: start;
                         spacing: 14px;
 
                         // Routing Strategy Box
@@ -1180,6 +1233,7 @@ export component MainWindow inherits Window {
                     // TAB 4: TRAFFIC LOGS
                     // ==========================================
                     if root.active_tab == 4: VerticalLayout {
+                        alignment: start;
                         spacing: 12px;
 
                         HorizontalLayout {
@@ -1248,6 +1302,7 @@ export component MainWindow inherits Window {
                     // TAB 5: STATISTICS
                     // ==========================================
                     if root.active_tab == 5: VerticalLayout {
+                        alignment: start;
                         spacing: 14px;
 
                         // Token Distribution Cards
@@ -1299,6 +1354,7 @@ export component MainWindow inherits Window {
                     // TAB 6: SETTINGS
                     // ==========================================
                     if root.active_tab == 6: VerticalLayout {
+                        alignment: start;
                         spacing: 14px;
 
                         Rectangle {

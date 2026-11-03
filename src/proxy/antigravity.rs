@@ -255,11 +255,130 @@ pub async fn fetch_project_and_tier(
     (None, "FREE".to_string())
 }
 
+const QUOTA_SUMMARY_ENDPOINTS: [&str; 3] = [
+    "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+    "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:retrieveUserQuotaSummary",
+    "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+];
+
+#[derive(Debug, Deserialize)]
+struct QuotaSummaryResponse {
+    #[serde(default)]
+    pub groups: Vec<QuotaSummaryGroup>,
+}
+
+#[derive(Debug, Deserialize)]
+struct QuotaSummaryGroup {
+    #[serde(rename = "displayName")]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub buckets: Vec<QuotaSummaryBucket>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct QuotaSummaryBucket {
+    #[serde(rename = "bucketId")]
+    pub bucket_id: Option<String>,
+    pub window: Option<String>,
+    #[serde(rename = "remainingFraction")]
+    pub remaining_fraction: Option<f64>,
+    #[serde(rename = "resetTime")]
+    pub reset_time: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DetailedQuotaInfo {
+    pub claude_gpt_percent: i32,
+    pub claude_gpt_reset: String,
+    pub gemini_percent: i32,
+    pub gemini_reset: String,
+}
+
+pub async fn fetch_user_quota_summary(
+    client: &reqwest::Client,
+    access_token: &str,
+) -> DetailedQuotaInfo {
+    for endpoint in QUOTA_SUMMARY_ENDPOINTS {
+        if let Ok(resp) = client
+            .post(endpoint)
+            .header("User-Agent", OFFICIAL_USER_AGENT)
+            .bearer_auth(access_token)
+            .header("Content-Type", "application/json")
+            .json(&serde_json::json!({}))
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                if let Ok(data) = resp.json::<QuotaSummaryResponse>().await {
+                    let mut claude_frac = 1.0f64;
+                    let mut claude_reset = "in 4h 00m".to_string();
+                    let mut gemini_frac = 1.0f64;
+                    let mut gemini_reset = "in 4h 00m".to_string();
+
+                    for group in data.groups {
+                        let name = group.display_name.unwrap_or_default().to_lowercase();
+                        let is_gemini = name.contains("gemini");
+
+                        for bucket in group.buckets {
+                            if let Some(frac) = bucket.remaining_fraction {
+                                if is_gemini {
+                                    if frac < gemini_frac {
+                                        gemini_frac = frac;
+                                    }
+                                } else {
+                                    if frac < claude_frac {
+                                        claude_frac = frac;
+                                    }
+                                }
+                            }
+                            if let Some(rt) = bucket.reset_time {
+                                if let Ok(parsed_time) = DateTime::parse_from_rfc3339(&rt) {
+                                    let now = Utc::now();
+                                    let dur = parsed_time.with_timezone(&Utc).signed_duration_since(now);
+                                    let total_min = dur.num_minutes().max(0);
+                                    let h = total_min / 60;
+                                    let m = total_min % 60;
+                                    let formatted = if h > 0 {
+                                        format!("in {}h {:02}m", h, m)
+                                    } else {
+                                        format!("in {}m", m)
+                                    };
+                                    if is_gemini {
+                                        gemini_reset = formatted;
+                                    } else {
+                                        claude_reset = formatted;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    return DetailedQuotaInfo {
+                        claude_gpt_percent: (claude_frac * 100.0).round() as i32,
+                        claude_gpt_reset: claude_reset,
+                        gemini_percent: (gemini_frac * 100.0).round() as i32,
+                        gemini_reset: gemini_reset,
+                    };
+                }
+            }
+        }
+    }
+
+    DetailedQuotaInfo {
+        claude_gpt_percent: 100,
+        claude_gpt_reset: "in 4h 00m".to_string(),
+        gemini_percent: 100,
+        gemini_reset: "in 4h 00m".to_string(),
+    }
+}
+
 pub async fn fetch_models_and_quota(
     client: &reqwest::Client,
     access_token: &str,
     project_id: Option<&str>,
-) -> Result<(Vec<ModelCatalogItem>, u64, u64, String), String> {
+) -> Result<(Vec<ModelCatalogItem>, u64, u64, String, DetailedQuotaInfo), String> {
+    let quota_summary = fetch_user_quota_summary(client, access_token).await;
     let payload = if let Some(pid) = project_id {
         serde_json::json!({ "project": pid })
     } else {
@@ -345,7 +464,7 @@ pub async fn fetch_models_and_quota(
                     if !models.is_empty() {
                         let quota_limit = 100_000u64;
                         let quota_used = ((1.0 - min_fraction) * (quota_limit as f64)) as u64;
-                        return Ok((models, quota_used, quota_limit, nearest_reset));
+                        return Ok((models, quota_used, quota_limit, nearest_reset, quota_summary));
                     }
                 }
             }
