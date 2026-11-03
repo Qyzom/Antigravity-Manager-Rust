@@ -23,9 +23,11 @@ pub struct OpenAIChatRequest {
 pub struct OpenAIMessage {
     pub role: String,
     pub content: Value, // Can be string or array of multimodal parts
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refusal: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 }
 
@@ -35,8 +37,9 @@ pub struct OpenAIChatResponse {
     pub object: String,
     pub created: u64,
     pub model: String,
+    pub system_fingerprint: String,
     pub choices: Vec<OpenAIChoice>,
-    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub usage: Option<OpenAIUsage>,
 }
 
@@ -44,6 +47,8 @@ pub struct OpenAIChatResponse {
 pub struct OpenAIChoice {
     pub index: usize,
     pub message: OpenAIMessage,
+    #[serde(default)]
+    pub logprobs: Option<Value>,
     pub finish_reason: Option<String>,
 }
 
@@ -52,6 +57,24 @@ pub struct OpenAIUsage {
     pub prompt_tokens: u64,
     pub completion_tokens: u64,
     pub total_tokens: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_tokens_details: Option<PromptTokensDetails>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completion_tokens_details: Option<CompletionTokensDetails>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PromptTokensDetails {
+    pub cached_tokens: u64,
+    pub audio_tokens: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CompletionTokensDetails {
+    pub reasoning_tokens: u64,
+    pub audio_tokens: u64,
+    pub accepted_prediction_tokens: u64,
+    pub rejected_prediction_tokens: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,8 +83,9 @@ pub struct OpenAIStreamChunk {
     pub object: String,
     pub created: u64,
     pub model: String,
+    pub system_fingerprint: String,
     pub choices: Vec<OpenAIStreamChoice>,
-    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub usage: Option<OpenAIUsage>,
 }
 
@@ -69,6 +93,8 @@ pub struct OpenAIStreamChunk {
 pub struct OpenAIStreamChoice {
     pub index: usize,
     pub delta: OpenAIStreamDelta,
+    #[serde(default)]
+    pub logprobs: Option<Value>,
     pub finish_reason: Option<String>,
 }
 
@@ -80,6 +106,8 @@ pub struct OpenAIStreamDelta {
     pub content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refusal: Option<Value>,
 }
 
 pub fn create_stream_chunk(
@@ -94,13 +122,16 @@ pub fn create_stream_chunk(
         object: "chat.completion.chunk".to_string(),
         created: chrono::Utc::now().timestamp() as u64,
         model: model.to_string(),
+        system_fingerprint: "fp_44709d6fcb".to_string(),
         choices: vec![OpenAIStreamChoice {
             index: 0,
             delta: OpenAIStreamDelta {
                 role: if content.is_some() || reasoning.is_some() { None } else { Some("assistant".to_string()) },
                 content: content.map(|s| s.to_string()),
                 reasoning_content: reasoning.map(|s| s.to_string()),
+                refusal: None,
             },
+            logprobs: None,
             finish_reason: finish_reason.map(|s| s.to_string()),
         }],
         usage: None,

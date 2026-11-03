@@ -2,7 +2,7 @@
 
 # Aroxy
 
-**Ultra-lightweight, high-performance AI API proxy & protocol emulator.**  
+**Ultra-lightweight API emulator for Antigravity supporting OpenAI, Claude & Gemini protocols.**  
 *Native Linux & Windows • Pure Rust • Slint GUI • Zero Telemetry*
 
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC_BY--NC--SA_4.0-lightgrey.svg)](LICENSE)

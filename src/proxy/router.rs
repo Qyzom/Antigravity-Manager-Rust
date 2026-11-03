@@ -175,20 +175,33 @@ pub fn convert_claude_response_to_openai(resp: &ClaudeMessageResponse) -> OpenAI
         object: "chat.completion".to_string(),
         created: chrono::Utc::now().timestamp() as u64,
         model: resp.model.clone(),
+        system_fingerprint: "fp_44709d6fcb".to_string(),
         choices: vec![OpenAIChoice {
             index: 0,
             message: OpenAIMessage {
                 role: "assistant".to_string(),
                 content: Value::String(full_text),
                 reasoning_content: thinking_text,
+                refusal: None,
                 name: None,
             },
+            logprobs: None,
             finish_reason: resp.stop_reason.clone().or(Some("stop".to_string())),
         }],
         usage: Some(OpenAIUsage {
             prompt_tokens: resp.usage.input_tokens,
             completion_tokens: resp.usage.output_tokens,
             total_tokens: resp.usage.input_tokens + resp.usage.output_tokens,
+            prompt_tokens_details: Some(PromptTokensDetails {
+                cached_tokens: 0,
+                audio_tokens: 0,
+            }),
+            completion_tokens_details: Some(CompletionTokensDetails {
+                reasoning_tokens: 0,
+                audio_tokens: 0,
+                accepted_prediction_tokens: 0,
+                rejected_prediction_tokens: 0,
+            }),
         }),
     }
 }

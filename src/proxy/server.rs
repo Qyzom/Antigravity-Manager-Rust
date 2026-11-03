@@ -102,15 +102,20 @@ async fn chat_completions(
         }
 
         if is_streaming {
-            let stream_id = format!("chatcmpl-{}", uuid::Uuid::new_v4());
+            let stream_id = format!("chatcmpl-{}", uuid::Uuid::new_v4().simple());
             let mapped_stream = process_claude_to_openai_stream(Box::pin(res.bytes_stream()), stream_id, target_model);
             let lat = start_time.elapsed().as_millis() as u64;
             state.stats.record_request("POST", "/v1/chat/completions (stream)", &requested_model, 200, 150, lat);
 
+            let req_id = format!("req_{}", uuid::Uuid::new_v4().simple());
             Response::builder()
                 .header(header::CONTENT_TYPE, "text/event-stream; charset=utf-8")
                 .header(header::CACHE_CONTROL, "no-cache")
                 .header(header::CONNECTION, "keep-alive")
+                .header("x-request-id", req_id)
+                .header("openai-organization", "user-personal")
+                .header("openai-processing-ms", lat.to_string())
+                .header("openai-version", "2020-10-01")
                 .body(Body::from_stream(mapped_stream))
                 .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
         } else {
@@ -124,7 +129,14 @@ async fn chat_completions(
             let tokens = oai_resp.usage.as_ref().map(|u| u.total_tokens).unwrap_or(0);
             let lat = start_time.elapsed().as_millis() as u64;
             state.stats.record_request("POST", "/v1/chat/completions", &requested_model, 200, tokens, lat);
-            Json(oai_resp).into_response()
+
+            let req_id = format!("req_{}", uuid::Uuid::new_v4().simple());
+            let mut response = Json(oai_resp).into_response();
+            response.headers_mut().insert("x-request-id", req_id.parse().unwrap());
+            response.headers_mut().insert("openai-organization", "user-personal".parse().unwrap());
+            response.headers_mut().insert("openai-processing-ms", lat.to_string().parse().unwrap());
+            response.headers_mut().insert("openai-version", "2020-10-01".parse().unwrap());
+            response
         }
     } else {
         // Direct OpenAI or custom endpoint pass-through
