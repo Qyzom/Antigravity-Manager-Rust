@@ -635,11 +635,9 @@ pub fn build_antigravity_payload(
     }
 
     if let Some(eff) = reasoning_effort {
-        if eff != ReasoningEffort::Off {
-            gen_config["thinkingConfig"] = serde_json::json!({
-                "thinkingBudget": eff.budget_tokens()
-            });
-        }
+        gen_config["thinkingConfig"] = serde_json::json!({
+            "thinkingBudget": eff.budget_tokens()
+        });
     }
 
     let mut inner_request = serde_json::json!({
@@ -776,9 +774,7 @@ pub fn build_antigravity_payload_from_claude(
         }
     }
     if let Some(eff) = reasoning_effort {
-        if eff != ReasoningEffort::Off {
-            thinking_budget = Some(eff.budget_tokens() as u64);
-        }
+        thinking_budget = Some(eff.budget_tokens() as u64);
     }
 
     if let Some(budget) = thinking_budget {

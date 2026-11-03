@@ -286,8 +286,22 @@ async fn execute_chat_request(
 ) -> (Response, bool) {
     let is_streaming = payload.stream;
 
-    // Parse model name for reasoning suffixes or native reasoning_effort
-    let (base_clean, reasoning_effort) = parse_model_and_reasoning(requested_model, payload.reasoning_effort.as_deref());
+    // Parse model name for reasoning suffixes or native reasoning_effort / thinking config
+    let native_effort = payload.reasoning_effort.as_deref().or_else(|| {
+        payload.extra.get("reasoning").and_then(|r| {
+            if let Some(s) = r.as_str() {
+                Some(s)
+            } else {
+                r.get("effort").and_then(|e| e.as_str())
+            }
+        })
+    }).or_else(|| {
+        payload.extra.get("thinking").and_then(|t| {
+            t.get("type").and_then(|typ| typ.as_str())
+        })
+    });
+
+    let (base_clean, reasoning_effort) = parse_model_and_reasoning(requested_model, native_effort);
     let target_model = resolve_model(&base_clean, account);
 
     // If upstream is Antigravity (Google Cloud Code Pa), convert and forward

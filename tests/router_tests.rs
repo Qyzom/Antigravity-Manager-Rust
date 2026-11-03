@@ -91,6 +91,7 @@ mod tests {
         cfg.group_reasoning_clones = true;
         let grouped = cfg.get_broadcast_models();
         assert!(grouped.iter().any(|m| m["id"] == "claude-sonnet-4-6"));
+        assert!(grouped.iter().any(|m| m["id"] == "claude-sonnet-4-6" && m["reasoning"]["supported_efforts"].is_array()));
         assert!(!grouped.iter().any(|m| m["id"] == "claude-sonnet-4-6 (low)"));
     }
 

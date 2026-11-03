@@ -301,7 +301,7 @@ impl Default for AppConfig {
             language: "en".to_string(),
             log_enabled: true,
             max_log_entries: 100,
-            group_reasoning_clones: false,
+            group_reasoning_clones: true,
             routing_strategy: RoutingStrategy::QuotaAware,
             cache_affinity_mode: CacheAffinityMode::Balanced,
             session_sticky_ttl_secs: 900,
@@ -667,15 +667,43 @@ impl AppConfig {
             if !m.is_enabled {
                 continue;
             }
-            // Base model
-            list.push(serde_json::json!({
+            // Base model enriched with reasoning and capability metadata
+            let mut model_json = serde_json::json!({
                 "id": m.id,
                 "object": "model",
                 "created": 1700000000,
                 "owned_by": m.provider,
                 "display_name": m.display_name,
-                "tier": m.tier
-            }));
+                "tier": m.tier,
+                "context_window": 1000000,
+                "max_tokens": 65536,
+                "input_modalities": ["text", "image"],
+                "capabilities": {
+                    "chat_completions": true,
+                    "reasoning": m.supports_thinking,
+                    "thinking": m.supports_thinking,
+                    "images": true
+                },
+                "supported_parameters": [
+                    "reasoning_effort",
+                    "temperature",
+                    "max_tokens",
+                    "max_completion_tokens",
+                    "thinking",
+                    "tools"
+                ]
+            });
+
+            if m.supports_thinking {
+                model_json["reasoning"] = serde_json::json!({
+                    "mandatory": false,
+                    "default_enabled": true,
+                    "default_effort": "medium",
+                    "supported_efforts": ["high", "medium", "low", "none"]
+                });
+            }
+
+            list.push(model_json);
 
             // If reasoning clones are NOT grouped into base models, expose clones
             if !self.group_reasoning_clones && self.expose_reasoning_variants && m.supports_thinking {

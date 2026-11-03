@@ -83,10 +83,10 @@ pub fn parse_model_and_reasoning(
 
     let resolved_effort = suffix_effort.or_else(|| {
         native_effort.and_then(|eff| match eff.to_lowercase().as_str() {
-            "low" => Some(ReasoningEffort::Low),
-            "medium" => Some(ReasoningEffort::Medium),
-            "high" => Some(ReasoningEffort::High),
-            "off" | "none" => Some(ReasoningEffort::Off),
+            "low" | "minimal" => Some(ReasoningEffort::Low),
+            "medium" | "default" => Some(ReasoningEffort::Medium),
+            "high" | "xhigh" | "max" => Some(ReasoningEffort::High),
+            "off" | "none" | "disabled" => Some(ReasoningEffort::Off),
             _ => None,
         })
     });

@@ -107,6 +107,8 @@ pub struct OpenAIStreamDelta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub refusal: Option<Value>,
 }
 
@@ -129,6 +131,7 @@ pub fn create_stream_chunk(
                 role: if content.is_some() || reasoning.is_some() { None } else { Some("assistant".to_string()) },
                 content: content.map(|s| s.to_string()),
                 reasoning_content: reasoning.map(|s| s.to_string()),
+                reasoning: reasoning.map(|s| s.to_string()),
                 refusal: None,
             },
             logprobs: None,
