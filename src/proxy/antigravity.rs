@@ -58,10 +58,42 @@ pub const FETCH_MODELS_ENDPOINTS: [&str; 2] = [
     "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
 ];
 
-pub const STREAM_ENDPOINTS: [&str; 2] = [
+pub const STREAM_ENDPOINTS: [&str; 3] = [
     "https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
     "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+    "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse",
 ];
+
+pub fn normalize_antigravity_upstream_model(requested: &str) -> &'static str {
+    let lower = requested.to_lowercase();
+    let clean = lower
+        .trim_end_matches("-low")
+        .trim_end_matches("-medium")
+        .trim_end_matches("-high")
+        .trim_end_matches("-no-thinking")
+        .trim_end_matches(" (low)")
+        .trim_end_matches(" (medium)")
+        .trim_end_matches(" (high)")
+        .trim_end_matches(" (no-thinking)");
+
+    if clean.contains("opus") {
+        "claude-opus-4-6-thinking"
+    } else if clean.contains("claude") || clean.contains("sonnet") {
+        "claude-sonnet-4-6"
+    } else if clean.contains("3.8") || clean.contains("tiered") {
+        "gemini-3.8-flash-tiered"
+    } else if clean.contains("pro") {
+        "gemini-2.5-pro"
+    } else if clean.contains("argon") || clean.contains("gemini-3") {
+        "gemini-3-flash"
+    } else if clean.contains("thinking") {
+        "gemini-2.5-flash-thinking"
+    } else if clean.contains("lite") {
+        "gemini-2.5-flash-lite"
+    } else {
+        "gemini-2.5-flash"
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub struct GoogleTokenResponse {
@@ -589,6 +621,7 @@ pub fn build_antigravity_payload(
     project_id: Option<&str>,
     reasoning_effort: Option<ReasoningEffort>,
 ) -> Value {
+    let upstream_model = normalize_antigravity_upstream_model(target_model);
     let mut contents = Vec::new();
     let mut system_parts = Vec::new();
 
@@ -605,14 +638,42 @@ pub fn build_antigravity_payload(
                         if let Some(t) = item.get("text").and_then(|t| t.as_str()) {
                             msg_parts.push(serde_json::json!({ "text": t }));
                         }
-                    } else if item_type == "image_url" {
-                        if let Some(img_url) = item.get("image_url").and_then(|u| u.get("url").and_then(|s| s.as_str())) {
+                    } else if item_type == "image_url" || item_type == "image" {
+                        let mut found_img = false;
+                        // Format A: OpenAI image_url object or string
+                        let url_str = item.get("image_url").and_then(|u| {
+                            if let Some(s) = u.as_str() {
+                                Some(s)
+                            } else {
+                                u.get("url").and_then(|s| s.as_str())
+                            }
+                        });
+
+                        if let Some(img_url) = url_str {
                             if let Some(rest) = img_url.strip_prefix("data:") {
                                 if let Some((mime, b64)) = rest.split_once(";base64,") {
+                                    let clean_b64 = b64.replace(['\r', '\n', ' '], "");
                                     msg_parts.push(serde_json::json!({
                                         "inlineData": {
-                                            "mimeType": mime,
-                                            "data": b64
+                                            "mimeType": mime.trim(),
+                                            "data": clean_b64
+                                        }
+                                    }));
+                                    found_img = true;
+                                }
+                            }
+                        }
+
+                        // Format B: Claude source block inside OpenAI
+                        if !found_img {
+                            if let Some(source) = item.get("source") {
+                                let media_type = source.get("media_type").and_then(|m| m.as_str()).unwrap_or("image/png");
+                                if let Some(b64) = source.get("data").and_then(|d| d.as_str()) {
+                                    let clean_b64 = b64.replace(['\r', '\n', ' '], "");
+                                    msg_parts.push(serde_json::json!({
+                                        "inlineData": {
+                                            "mimeType": media_type,
+                                            "data": clean_b64
                                         }
                                     }));
                                 }
@@ -630,6 +691,9 @@ pub fn build_antigravity_payload(
             system_parts.extend(msg_parts);
         } else {
             let role = if msg.role == "assistant" { "model" } else { "user" };
+            if msg_parts.is_empty() {
+                msg_parts.push(serde_json::json!({ "text": " " }));
+            }
             contents.push(serde_json::json!({
                 "role": role,
                 "parts": msg_parts
@@ -755,7 +819,7 @@ pub fn build_antigravity_payload(
     let pid = project_id.unwrap_or("aicode-consumers");
     serde_json::json!({
         "project": pid,
-        "model": target_model,
+        "model": upstream_model,
         "request": inner_request,
         "userAgent": "antigravity",
         "requestId": format!("req-{}", uuid::Uuid::new_v4().simple())
@@ -768,6 +832,7 @@ pub fn build_antigravity_payload_from_claude(
     project_id: Option<&str>,
     reasoning_effort: Option<ReasoningEffort>,
 ) -> Value {
+    let upstream_model = normalize_antigravity_upstream_model(target_model);
     let mut contents = Vec::new();
     let mut system_parts = Vec::new();
 
@@ -940,7 +1005,7 @@ pub fn build_antigravity_payload_from_claude(
     let pid = project_id.unwrap_or("aicode-consumers");
     serde_json::json!({
         "project": pid,
-        "model": target_model,
+        "model": upstream_model,
         "request": inner_request,
         "userAgent": "antigravity",
         "requestId": format!("req-{}", uuid::Uuid::new_v4().simple())

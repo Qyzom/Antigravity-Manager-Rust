@@ -7,15 +7,15 @@ cargo build --release --bin aroxy
 APPDIR="target/AppDir"
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin"
-mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
-mkdir -p "$APPDIR/usr/share/icons/hicolor/32x32/apps"
+for sz in 16 32 48 64 128 256 512; do
+  mkdir -p "$APPDIR/usr/share/icons/hicolor/${sz}x${sz}/apps"
+  cp "assets/icons/logo_${sz}.png" "$APPDIR/usr/share/icons/hicolor/${sz}x${sz}/apps/aroxy.png" 2>/dev/null || true
+done
 mkdir -p "$APPDIR/usr/share/applications"
 
 cp target/release/aroxy "$APPDIR/usr/bin/"
 cp packaging/linux/aroxy.desktop "$APPDIR/usr/share/applications/"
 cp packaging/linux/aroxy.desktop "$APPDIR/"
-cp assets/icons/logo_256.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/aroxy.png"
-cp assets/icons/logo_32.png "$APPDIR/usr/share/icons/hicolor/32x32/apps/aroxy.png"
 cp assets/icons/logo_256.png "$APPDIR/aroxy.png"
 cp assets/icons/logo_256.png "$APPDIR/.DirIcon"
 

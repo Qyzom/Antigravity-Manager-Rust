@@ -194,7 +194,10 @@ impl LoadBalancer {
                 ModelFamily::ClaudeOrGpt => {
                     a.claude_gpt_percent > 0 && a.claude_gpt_weekly_percent > 0
                 }
-                ModelFamily::Gemini => a.gemini_percent > 0 && a.gemini_weekly_percent > 0,
+                ModelFamily::Gemini => {
+                    (a.gemini_percent > 0 && a.gemini_weekly_percent > 0)
+                        || (a.claude_gpt_percent > 0 && a.claude_gpt_weekly_percent > 0)
+                }
             })
             .cloned()
             .collect();
@@ -224,13 +227,13 @@ impl LoadBalancer {
             };
         }
 
-        // 2. Filter healthy accounts (not in cooldown, active, not in ERROR)
+        // 2. Filter healthy accounts (not in cooldown, active)
         let mut healthy_accounts: Vec<UpstreamAccount> = {
             let cds = self.account_cooldowns.read();
             quota_eligible
                 .iter()
                 .filter(|a| {
-                    if !a.status.eq_ignore_ascii_case("ACTIVE") || !a.is_active {
+                    if !a.is_active {
                         return false;
                     }
                     if let Some(exp) = cds.get(&a.id) {

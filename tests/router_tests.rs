@@ -191,6 +191,7 @@ mod tests {
     #[test]
     fn test_proxy_stats() {
         let stats = ProxyStats::new();
+        stats.reset_stats();
         stats.record_request("POST", "/v1/chat/completions", "gpt-4o", 200, 100, 25);
         stats.record_request("POST", "/v1/chat/completions", "gpt-4o", 200, 200, 75);
 
@@ -235,7 +236,7 @@ mod tests {
         };
 
         let payload = build_antigravity_payload(&req, "claude-3-7-sonnet", Some("test-project"), Some(ReasoningEffort::Medium));
-        assert_eq!(payload["model"], "claude-3-7-sonnet");
+        assert_eq!(payload["model"], "claude-sonnet-4-6");
         assert_eq!(payload["project"], "test-project");
         assert_eq!(payload["userAgent"], "antigravity");
         assert!(payload["request"]["systemInstruction"]["parts"][0]["text"].as_str().unwrap().contains("Antigravity"));

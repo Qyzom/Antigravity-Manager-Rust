@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/icons/logo_256.png" alt="Aroxy Logo" width="100" />
+
 # Aroxy
 
 **Ultra-lightweight high-performance AI API proxy, protocol emulator & quota dispatcher.**  

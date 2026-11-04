@@ -218,6 +218,28 @@ export struct I18nData {
     lbl_copied: string,
     lbl_inbound_reqs: string,
     lbl_process_ram: string,
+    strat_quota_aware: string,
+    strat_round_robin: string,
+    strat_failover: string,
+    strat_quota_aware_desc: string,
+    strat_round_robin_desc: string,
+    strat_failover_desc: string,
+    btn_cache_priority: string,
+    btn_balanced: string,
+    btn_scatter: string,
+    btn_off: string,
+    btn_default: string,
+    opt_percent: string,
+    opt_fraction: string,
+    about_app_desc: string,
+    about_spec_title: string,
+    about_spec_runtime: string,
+    about_spec_transport: string,
+    about_spec_gui: string,
+    about_spec_license: string,
+    btn_check_updates: string,
+    btn_github_releases: string,
+    btn_config_folder: string,
 }
 
 component NavItem inherits Rectangle {
@@ -723,12 +745,6 @@ export component MainWindow inherits Window {
                     padding-left: 8px;
                     spacing: 8px;
                     alignment: start;
-                    Image {
-                        source: @image-url("../assets/icons/logo_32.png");
-                        width: 22px;
-                        height: 22px;
-                        vertical-alignment: center;
-                    }
                     Text {
                         text: "Aroxy";
                         font-size: 16px;
@@ -1521,19 +1537,19 @@ export component MainWindow inherits Window {
                                 HorizontalLayout {
                                     spacing: 10px;
                                     ActionButton {
-                                        text: "Quota-Aware (Smart)";
+                                        text: root.i18n.strat_quota_aware;
                                         is_primary: root.routing_strategy_index == 0;
                                         is_accent: root.routing_strategy_index == 0;
                                         clicked => { root.set_routing_strategy(0); }
                                     }
                                     ActionButton {
-                                        text: "Round-Robin";
+                                        text: root.i18n.strat_round_robin;
                                         is_primary: root.routing_strategy_index == 1;
                                         is_accent: root.routing_strategy_index == 1;
                                         clicked => { root.set_routing_strategy(1); }
                                     }
                                     ActionButton {
-                                        text: "Failover / Priority";
+                                        text: root.i18n.strat_failover;
                                         is_primary: root.routing_strategy_index == 2;
                                         is_accent: root.routing_strategy_index == 2;
                                         clicked => { root.set_routing_strategy(2); }
@@ -1542,10 +1558,10 @@ export component MainWindow inherits Window {
 
                                 Text {
                                     text: root.routing_strategy_index == 0
-                                        ? "• Quota-Aware: Dispatches each incoming request to the healthy account with the highest remaining quota percentage."
+                                        ? root.i18n.strat_quota_aware_desc
                                         : (root.routing_strategy_index == 1
-                                            ? "• Round-Robin: Evenly distributes traffic sequentially across all active connected accounts."
-                                            : "• Failover: Routes solely to the primary account, automatically falling back to secondary on rate-limit (429).");
+                                            ? root.i18n.strat_round_robin_desc
+                                            : root.i18n.strat_failover_desc);
                                     font-size: 11px;
                                     color: #a1a1aa;
                                 }
@@ -1621,13 +1637,13 @@ export component MainWindow inherits Window {
                                 HorizontalLayout {
                                     spacing: 10px;
                                     ActionButton {
-                                        text: "0% (Off)";
+                                        text: root.i18n.btn_off;
                                         is_primary: root.quota_protection_threshold == 0;
                                         is_accent: root.quota_protection_threshold == 0;
                                         clicked => { root.set_quota_protection_threshold(0); }
                                     }
                                     ActionButton {
-                                        text: "5% (Default)";
+                                        text: root.i18n.btn_default;
                                         is_primary: root.quota_protection_threshold == 5;
                                         is_accent: root.quota_protection_threshold == 5;
                                         clicked => { root.set_quota_protection_threshold(5); }
@@ -2332,13 +2348,13 @@ export component MainWindow inherits Window {
                                     HorizontalLayout {
                                         spacing: 6px;
                                         ActionButton {
-                                            text: "Percent (%)";
+                                            text: root.i18n.opt_percent;
                                             is_primary: root.quota_display_mode == "percent";
                                             is_accent: root.quota_display_mode == "percent";
                                             clicked => { root.set_quota_display_mode("percent"); }
                                         }
                                         ActionButton {
-                                            text: "Fraction (0-1)";
+                                            text: root.i18n.opt_fraction;
                                             is_primary: root.quota_display_mode == "fraction";
                                             is_accent: root.quota_display_mode == "fraction";
                                             clicked => { root.set_quota_display_mode("fraction"); }
@@ -2644,7 +2660,7 @@ export component MainWindow inherits Window {
                                         spacing: 3px;
                                         alignment: center;
                                         Text { text: "Aroxy"; font-size: 16px; font-weight: 800; color: #ffffff; }
-                                        Text { text: "Version 0.0.4 · AI Protocol Proxy & Quota Dispatcher"; font-size: 12px; color: #a1a1aa; }
+                                        Text { text: root.i18n.about_app_desc; font-size: 12px; color: #a1a1aa; }
                                     }
                                 }
 
@@ -2652,26 +2668,26 @@ export component MainWindow inherits Window {
 
                                 VerticalLayout {
                                     spacing: 8px;
-                                    Text { text: "SOFTWARE STACK & SPECIFICATIONS"; font-size: 11px; font-weight: 700; color: #71717a; }
+                                    Text { text: root.i18n.about_spec_title; font-size: 11px; font-weight: 700; color: #71717a; }
 
                                     HorizontalLayout {
                                         alignment: space-between;
-                                        Text { text: "Core Proxy Runtime"; font-size: 12px; color: #a1a1aa; }
+                                        Text { text: root.i18n.about_spec_runtime; font-size: 12px; color: #a1a1aa; }
                                         Text { text: "Tokio 1.x (Lock-Free Async Engine)"; font-size: 12px; font-weight: 600; color: #e4e4e7; }
                                     }
                                     HorizontalLayout {
                                         alignment: space-between;
-                                        Text { text: "HTTP Network Transport"; font-size: 12px; color: #a1a1aa; }
+                                        Text { text: root.i18n.about_spec_transport; font-size: 12px; color: #a1a1aa; }
                                         Text { text: "Axum 0.7 & Reqwest 0.12 (Hyper / Rustls)"; font-size: 12px; font-weight: 600; color: #e4e4e7; }
                                     }
                                     HorizontalLayout {
                                         alignment: space-between;
-                                        Text { text: "GUI Framework"; font-size: 12px; color: #a1a1aa; }
+                                        Text { text: root.i18n.about_spec_gui; font-size: 12px; color: #a1a1aa; }
                                         Text { text: "Slint 1.9 (backend-winit, renderer-femtovg)"; font-size: 12px; font-weight: 600; color: #e4e4e7; }
                                     }
                                     HorizontalLayout {
                                         alignment: space-between;
-                                        Text { text: "License"; font-size: 12px; color: #a1a1aa; }
+                                        Text { text: root.i18n.about_spec_license; font-size: 12px; color: #a1a1aa; }
                                         Text { text: "MIT License (Open Source)"; font-size: 12px; font-weight: 600; color: #e4e4e7; }
                                     }
                                 }
@@ -2688,12 +2704,12 @@ export component MainWindow inherits Window {
                                         clicked => { root.check_github_updates(); }
                                     }
                                     ActionButton {
-                                        text: "GitHub Releases";
+                                        text: root.i18n.btn_github_releases;
                                         is_primary: false;
                                         clicked => { root.open_github_releases(); }
                                     }
                                     ActionButton {
-                                        text: "Config Folder";
+                                        text: root.i18n.btn_config_folder;
                                         is_primary: false;
                                         clicked => { root.open_config_folder(); }
                                     }
@@ -3158,8 +3174,8 @@ export component MainWindow inherits Window {
         }
 
         modal_card3 := Rectangle {
-            width: 760px;
-            height: 520px;
+            width: 860px;
+            height: 560px;
             background: #141416;
             border-radius: 12px;
             border-width: 1px;

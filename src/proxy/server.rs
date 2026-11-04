@@ -71,6 +71,7 @@ pub fn create_proxy_router(state: AppState) -> Router {
         .route("/v1/messages/", post(claude_messages))
         .route("/oauth/callback", get(oauth_callback))
         .layer(CorsLayer::permissive())
+        .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
         .with_state(state)
 }
 
@@ -370,12 +371,9 @@ async fn execute_chat_request(
                 if s.is_success() {
                     res_opt = Some(r);
                     break;
-                } else if s == StatusCode::UNAUTHORIZED || s == StatusCode::FORBIDDEN || s == StatusCode::NOT_FOUND {
-                    res_opt = Some(r);
-                    continue; // Try next endpoint
                 } else {
                     res_opt = Some(r);
-                    break;
+                    continue; // Try next endpoint on any non-success (e.g. 429, 404, 503)
                 }
             }
         }
@@ -969,12 +967,9 @@ async fn execute_claude_request(
                 if s.is_success() {
                     res_opt = Some(r);
                     break;
-                } else if s == StatusCode::UNAUTHORIZED || s == StatusCode::FORBIDDEN || s == StatusCode::NOT_FOUND {
-                    res_opt = Some(r);
-                    continue;
                 } else {
                     res_opt = Some(r);
-                    break;
+                    continue; // Try next endpoint on any non-success (e.g. 429, 404, 503)
                 }
             }
         }

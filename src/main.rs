@@ -260,14 +260,104 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_copied: t.lbl_copied.into(),
         lbl_inbound_reqs: t.lbl_inbound_reqs.into(),
         lbl_process_ram: t.lbl_process_ram.into(),
+        strat_quota_aware: t.strat_quota_aware.into(),
+        strat_round_robin: t.strat_round_robin.into(),
+        strat_failover: t.strat_failover.into(),
+        strat_quota_aware_desc: t.strat_quota_aware_desc.into(),
+        strat_round_robin_desc: t.strat_round_robin_desc.into(),
+        strat_failover_desc: t.strat_failover_desc.into(),
+        btn_cache_priority: t.btn_cache_priority.into(),
+        btn_balanced: t.btn_balanced.into(),
+        btn_scatter: t.btn_scatter.into(),
+        btn_off: t.btn_off.into(),
+        btn_default: t.btn_default.into(),
+        opt_percent: t.opt_percent.into(),
+        opt_fraction: t.opt_fraction.into(),
+        about_app_desc: t.about_app_desc.into(),
+        about_spec_title: t.about_spec_title.into(),
+        about_spec_runtime: t.about_spec_runtime.into(),
+        about_spec_transport: t.about_spec_transport.into(),
+        about_spec_gui: t.about_spec_gui.into(),
+        about_spec_license: t.about_spec_license.into(),
+        btn_check_updates: t.btn_check_updates.into(),
+        btn_github_releases: t.btn_github_releases.into(),
+        btn_config_folder: t.btn_config_folder.into(),
     };
     ui.set_i18n(i18n_struct);
     ui.set_current_language(lang.to_index());
 }
 
+#[cfg(target_os = "linux")]
+fn setup_linux_desktop_integration() {
+    if let Some(home) = dirs::home_dir() {
+        let app_dir = home.join(".local/share/applications");
+        let icons_base = home.join(".local/share/icons/hicolor");
+        let pixmaps_dir = home.join(".local/share/pixmaps");
+
+        let _ = std::fs::create_dir_all(&app_dir);
+        let _ = std::fs::create_dir_all(&pixmaps_dir);
+
+        let icon_sizes: [(u32, &[u8]); 7] = [
+            (16, include_bytes!("../assets/icons/logo_16.png").as_slice()),
+            (32, include_bytes!("../assets/icons/logo_32.png").as_slice()),
+            (48, include_bytes!("../assets/icons/logo_48.png").as_slice()),
+            (64, include_bytes!("../assets/icons/logo_64.png").as_slice()),
+            (128, include_bytes!("../assets/icons/logo_128.png").as_slice()),
+            (256, include_bytes!("../assets/icons/logo_256.png").as_slice()),
+            (512, include_bytes!("../assets/icons/logo_512.png").as_slice()),
+        ];
+
+        for (sz, bytes) in icon_sizes {
+            let sz_dir = icons_base.join(format!("{}x{}/apps", sz, sz));
+            let _ = std::fs::create_dir_all(&sz_dir);
+            let _ = std::fs::write(sz_dir.join("aroxy.png"), bytes);
+        }
+
+        let _ = std::fs::write(pixmaps_dir.join("aroxy.png"), include_bytes!("../assets/icons/logo_256.png"));
+
+        let exec_path = if let Ok(appimage) = std::env::var("APPIMAGE") {
+            appimage
+        } else if let Ok(exe) = std::env::current_exe() {
+            exe.to_string_lossy().to_string()
+        } else {
+            "aroxy".to_string()
+        };
+
+        let desktop_content = format!(
+            "[Desktop Entry]\n\
+            Name=Aroxy\n\
+            Comment=Ultra-lightweight AI Protocol Proxy & Quota Dispatcher\n\
+            Exec=\"{}\"\n\
+            Icon=aroxy\n\
+            Terminal=false\n\
+            Type=Application\n\
+            Categories=Development;Network;Utility;\n\
+            StartupNotify=false\n\
+            StartupWMClass=aroxy\n\
+            Keywords=ai;proxy;openai;claude;gemini;antigravity;\n",
+            exec_path
+        );
+
+        let desktop_file = app_dir.join("aroxy.desktop");
+        let _ = std::fs::write(&desktop_file, desktop_content);
+
+        let _ = std::process::Command::new("update-desktop-database")
+            .arg(&app_dir)
+            .output();
+        let _ = std::process::Command::new("gtk-update-icon-cache")
+            .arg("-f")
+            .arg("-t")
+            .arg(&icons_base)
+            .output();
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
+    #[cfg(target_os = "linux")]
+    setup_linux_desktop_integration();
 
     let args = CliArgs::parse();
     let mut config = AppConfig::load();
