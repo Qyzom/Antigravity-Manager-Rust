@@ -552,7 +552,7 @@ pub async fn fetch_models_and_quota(
                             "claude-sonnet-5-5-high" | "claude-sonnet-5-5" => "claude-sonnet-5-5".to_string(),
                             "claude-opus-5-5-high" | "claude-opus-5-5" => "claude-opus-5-5".to_string(),
                             "claude-sonnet-4-6" => "claude-sonnet-4-6".to_string(),
-                            "claude-opus-4-6-thinking" => "claude-opus-4-6-thinking".to_string(),
+                            "claude-opus-4-6-thinking" | "claude-opus-4-6" => "claude-opus-4-6".to_string(),
                             "claude-3-7-sonnet" => "claude-sonnet-5-5".to_string(),
                             "gemini-3.8-flash-high" | "gemini-3.8-flash-tiered" => "gemini-3.8-flash".to_string(),
                             "gemini-2.5-flash-thinking" | "gemini-2.5-flash" => "gemini-3.8-flash".to_string(),
@@ -564,7 +564,7 @@ pub async fn fetch_models_and_quota(
                             "claude-sonnet-5-5" => "Claude Sonnet 5.5".to_string(),
                             "claude-opus-5-5" => "Claude Opus 5.5".to_string(),
                             "claude-sonnet-4-6" => "Claude Sonnet 4.6".to_string(),
-                            "claude-opus-4-6-thinking" => "Claude Opus 4.6 Thinking".to_string(),
+                            "claude-opus-4-6" => "Claude Opus 4.6".to_string(),
                             "gemini-3.8-flash" => "Gemini 3.8 Flash".to_string(),
                             "gemini-4-argon" => "Gemini 4 Argon".to_string(),
                             _ => entry.display_name.clone().unwrap_or_else(|| clean_id.clone()),
@@ -578,7 +578,7 @@ pub async fn fetch_models_and_quota(
                             "openai".to_string()
                         };
 
-                        let supports_thinking = true;
+                        let supports_thinking = !clean_id.contains("opus");
 
                         let tier = "PRO".to_string();
 

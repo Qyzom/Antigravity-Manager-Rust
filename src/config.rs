@@ -401,7 +401,7 @@ impl Default for AppConfig {
                     provider: "anthropic".to_string(),
                     tier: "PRO".to_string(),
                     is_enabled: true,
-                    supports_thinking: true,
+                    supports_thinking: false,
                 },
                 ModelCatalogItem {
                     id: "claude-sonnet-4-6".to_string(),
@@ -412,12 +412,12 @@ impl Default for AppConfig {
                     supports_thinking: true,
                 },
                 ModelCatalogItem {
-                    id: "claude-opus-4-6-thinking".to_string(),
-                    display_name: "Claude Opus 4.6 Thinking".to_string(),
+                    id: "claude-opus-4-6".to_string(),
+                    display_name: "Claude Opus 4.6".to_string(),
                     provider: "anthropic".to_string(),
                     tier: "PRO".to_string(),
                     is_enabled: true,
-                    supports_thinking: true,
+                    supports_thinking: false,
                 },
                 ModelCatalogItem {
                     id: "gemini-4-argon".to_string(),
@@ -487,26 +487,32 @@ impl AppConfig {
                 m.id = "claude-sonnet-5-5".to_string();
                 m.display_name = "Claude Sonnet 5.5".to_string();
                 m.provider = "anthropic".to_string();
+                m.supports_thinking = true;
             } else if m.id == "claude-opus-5-5-high" || m.id == "claude-opus-5-5" {
                 m.id = "claude-opus-5-5".to_string();
                 m.display_name = "Claude Opus 5.5".to_string();
                 m.provider = "anthropic".to_string();
+                m.supports_thinking = false;
             } else if m.id == "claude-sonnet-4-6" {
                 m.display_name = "Claude Sonnet 4.6".to_string();
                 m.provider = "anthropic".to_string();
-            } else if m.id == "claude-opus-4-6-thinking" {
-                m.display_name = "Claude Opus 4.6 Thinking".to_string();
+                m.supports_thinking = true;
+            } else if m.id == "claude-opus-4-6-thinking" || m.id == "claude-opus-4-6" {
+                m.id = "claude-opus-4-6".to_string();
+                m.display_name = "Claude Opus 4.6".to_string();
                 m.provider = "anthropic".to_string();
+                m.supports_thinking = false;
             } else if m.id == "gemini-3.8-flash-high" || m.id == "gemini-3.8-flash-tiered" || m.id == "gemini-2.5-flash-thinking" || m.id == "gemini-2.5-flash" || m.id == "gemini-3.8-flash" {
                 m.id = "gemini-3.8-flash".to_string();
                 m.display_name = "Gemini 3.8 Flash".to_string();
                 m.provider = "gemini".to_string();
+                m.supports_thinking = true;
             } else if m.id == "gemini-2.5-pro" || m.id == "gemini-4-argon" {
                 m.id = "gemini-4-argon".to_string();
                 m.display_name = "Gemini 4 Argon".to_string();
                 m.provider = "gemini".to_string();
+                m.supports_thinking = true;
             }
-            m.supports_thinking = true;
         }
 
         // Always ensure all 6 flagship models are present

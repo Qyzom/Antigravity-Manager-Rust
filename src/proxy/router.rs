@@ -130,15 +130,9 @@ pub fn resolve_model_with_effort(
         "antigravity" => {
             if lower.contains("opus") {
                 if lower.contains("4-6") || lower.contains("4.6") {
-                    ("claude-opus-4-6-thinking".to_string(), effective_effort.or(Some(ReasoningEffort::High)))
+                    ("claude-opus-4-6-thinking".to_string(), None)
                 } else {
-                    match effective_effort {
-                        Some(ReasoningEffort::Low) => ("claude-opus-5-5-low".to_string(), Some(ReasoningEffort::Low)),
-                        Some(ReasoningEffort::Medium) => ("claude-opus-5-5-medium".to_string(), Some(ReasoningEffort::Medium)),
-                        Some(ReasoningEffort::High) => ("claude-opus-5-5-high".to_string(), Some(ReasoningEffort::High)),
-                        Some(ReasoningEffort::Off) => ("claude-opus-5-5".to_string(), Some(ReasoningEffort::Off)),
-                        None => ("claude-opus-5-5-high".to_string(), Some(ReasoningEffort::High)),
-                    }
+                    ("claude-opus-5-5-high".to_string(), None)
                 }
             } else if lower.contains("claude") || lower.contains("sonnet") {
                 if lower.contains("4-6") || lower.contains("4.6") {
