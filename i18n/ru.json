@@ -178,5 +178,14 @@
   "about_spec_license": "Лицензия",
   "btn_check_updates": "Проверить обновления",
   "btn_github_releases": "Релизы GitHub",
-  "btn_config_folder": "Папка конфигурации"
+  "btn_config_folder": "Папка конфигурации",
+  "lbl_rolling_5h": "Плавающая квота 5ч:",
+  "lbl_rolling_weekly": "Недельная квота:",
+  "lbl_proxy_engine_active": "Активен (Слушает порт)",
+  "lbl_proxy_engine_standby": "Остановлен (Ожидание)",
+  "lbl_stat_success": "Успешно",
+  "lbl_stat_error": "Ошибка",
+  "lbl_checking_updates": "Проверка обновлений...",
+  "lbl_update_available": "Доступно обновление",
+  "lbl_latest_version": "Актуальная версия"
 }

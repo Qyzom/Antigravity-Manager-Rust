@@ -84,18 +84,18 @@ mod tests {
         cfg.expose_reasoning_variants = true;
 
         let broadcasted = cfg.get_broadcast_models();
-        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-5-5"));
-        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-5-5 (low)"));
-        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-5-5 (medium)"));
-        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-5-5 (high)"));
-        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-5-5 (no-thinking)"));
+        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6"));
+        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6 (low)"));
+        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6 (medium)"));
+        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6 (high)"));
+        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6 (no-thinking)"));
 
         // When group_reasoning_clones is enabled, clones should NOT be present
         cfg.group_reasoning_clones = true;
         let grouped = cfg.get_broadcast_models();
-        assert!(grouped.iter().any(|m| m["id"] == "claude-sonnet-5-5"));
-        assert!(grouped.iter().any(|m| m["id"] == "claude-sonnet-5-5" && m["reasoning"]["supported_efforts"].is_array()));
-        assert!(!grouped.iter().any(|m| m["id"] == "claude-sonnet-5-5 (low)"));
+        assert!(grouped.iter().any(|m| m["id"] == "claude-sonnet-4-6"));
+        assert!(grouped.iter().any(|m| m["id"] == "claude-sonnet-4-6" && m["reasoning"]["supported_efforts"].is_array()));
+        assert!(!grouped.iter().any(|m| m["id"] == "claude-sonnet-4-6 (low)"));
     }
 
     #[test]

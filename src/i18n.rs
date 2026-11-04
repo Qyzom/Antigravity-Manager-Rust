@@ -228,6 +228,15 @@ pub struct TranslationBundle {
     pub btn_check_updates: String,
     pub btn_github_releases: String,
     pub btn_config_folder: String,
+    pub lbl_rolling_5h: String,
+    pub lbl_rolling_weekly: String,
+    pub lbl_proxy_engine_active: String,
+    pub lbl_proxy_engine_standby: String,
+    pub lbl_stat_success: String,
+    pub lbl_stat_error: String,
+    pub lbl_checking_updates: String,
+    pub lbl_update_available: String,
+    pub lbl_latest_version: String,
 }
 
 pub fn get_translations(lang: Language) -> TranslationBundle {

@@ -282,6 +282,15 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         btn_check_updates: t.btn_check_updates.into(),
         btn_github_releases: t.btn_github_releases.into(),
         btn_config_folder: t.btn_config_folder.into(),
+        lbl_rolling_5h: t.lbl_rolling_5h.into(),
+        lbl_rolling_weekly: t.lbl_rolling_weekly.into(),
+        lbl_proxy_engine_active: t.lbl_proxy_engine_active.into(),
+        lbl_proxy_engine_standby: t.lbl_proxy_engine_standby.into(),
+        lbl_stat_success: t.lbl_stat_success.into(),
+        lbl_stat_error: t.lbl_stat_error.into(),
+        lbl_checking_updates: t.lbl_checking_updates.into(),
+        lbl_update_available: t.lbl_update_available.into(),
+        lbl_latest_version: t.lbl_latest_version.into(),
     };
     ui.set_i18n(i18n_struct);
     ui.set_current_language(lang.to_index());
@@ -1281,13 +1290,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // GitHub Update Check Callback
     let h_gh = window_handle.clone();
+    let c_gh_lang = Arc::clone(&config_arc);
     main_window.on_check_github_updates(move || {
+        let lang_code = c_gh_lang.read().language.clone();
+        let t_init = aroxy::i18n::get_translations(aroxy::i18n::Language::from_str_code(&lang_code));
         if let Some(h) = h_gh.upgrade() {
             h.set_github_checking_update(true);
-            h.set_github_update_status("Checking GitHub...".into());
+            h.set_github_update_status(t_init.lbl_checking_updates.into());
         }
         let h_res = h_gh.clone();
         let h_gh_reset = h_gh.clone();
+        let lang_for_async = lang_code.clone();
         tokio::spawn(async move {
             let client = reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(5))
@@ -1299,24 +1312,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .send()
                 .await;
 
+            let t = aroxy::i18n::get_translations(aroxy::i18n::Language::from_str_code(&lang_for_async));
             let current_ver = concat!("v", env!("CARGO_PKG_VERSION"));
             let status_str = match res {
                 Ok(resp) if resp.status().is_success() => {
                     if let Ok(json) = resp.json::<serde_json::Value>().await {
                         if let Some(tag) = json.get("tag_name").and_then(|v| v.as_str()) {
                             if tag == current_ver || tag.trim_start_matches('v') == env!("CARGO_PKG_VERSION") {
-                                format!("{} (Latest)", current_ver)
+                                format!("{} ({})", current_ver, t.lbl_latest_version)
                             } else {
-                                format!("Update Available ({})", tag)
+                                format!("{} ({})", t.lbl_update_available, tag)
                             }
                         } else {
-                            format!("{} (Latest)", current_ver)
+                            format!("{} ({})", current_ver, t.lbl_latest_version)
                         }
                     } else {
-                        format!("{} (Latest)", current_ver)
+                        format!("{} ({})", current_ver, t.lbl_latest_version)
                     }
                 }
-                _ => format!("{} (Latest)", current_ver),
+                _ => format!("{} ({})", current_ver, t.lbl_latest_version),
             };
 
             let _ = slint::invoke_from_event_loop(move || {
@@ -1330,7 +1344,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(h) = h_gh_reset.upgrade() {
-                    h.set_github_update_status("Check for Updates".into());
+                    let t_rev = aroxy::i18n::get_translations(aroxy::i18n::Language::from_str_code(&lang_for_async));
+                    h.set_github_update_status(t_rev.btn_check_updates.into());
                 }
             });
         });
@@ -1427,7 +1442,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             return;
                         }
 
-                        let (content_text, tokens) = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&body_text) {
+                        let (content_text, tokens) = if is_stream {
+                            // Parse SSE stream chunks data: {...}
+                            let mut full_text = String::new();
+                            let mut total_tok: u64 = 0;
+                            for line in body_text.lines() {
+                                let trimmed = line.trim();
+                                if let Some(rest) = trimmed.strip_prefix("data:") {
+                                    let json_part = rest.trim();
+                                    if json_part == "[DONE]" {
+                                        continue;
+                                    }
+                                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_part) {
+                                        if let Some(delta) = val.pointer("/choices/0/delta/content").and_then(|c| c.as_str()) {
+                                            full_text.push_str(delta);
+                                        }
+                                        if let Some(usage_tok) = val.pointer("/usage/total_tokens").and_then(|t| t.as_u64()) {
+                                            total_tok = usage_tok;
+                                        }
+                                    }
+                                }
+                            }
+                            if full_text.is_empty() {
+                                if status_code.is_success() {
+                                    ("(stream completed with no text delta)".to_string(), 0)
+                                } else {
+                                    (format!("Error ({}): {}", status_code.as_u16(), body_text), 0)
+                                }
+                            } else {
+                                if total_tok == 0 {
+                                    total_tok = (full_text.split_whitespace().count() as u64).max(1);
+                                }
+                                (full_text, total_tok)
+                            }
+                        } else if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&body_text) {
                             if status_code.is_success() {
                                 let text = parsed["choices"][0]["message"]["content"].as_str().unwrap_or(&body_text).to_string();
                                 let tok = parsed["usage"]["total_tokens"].as_u64().unwrap_or(45);

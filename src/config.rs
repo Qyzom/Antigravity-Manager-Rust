@@ -388,18 +388,18 @@ impl Default for AppConfig {
             active_account_id: None,
             models: vec![
                 ModelCatalogItem {
-                    id: "claude-sonnet-5-5".to_string(),
-                    display_name: "Claude Sonnet 5.5".to_string(),
+                    id: "claude-sonnet-4-6".to_string(),
+                    display_name: "Claude Sonnet 4.6 / 3.7".to_string(),
                     provider: "anthropic".to_string(),
-                    tier: "Pro".to_string(),
+                    tier: "PRO".to_string(),
                     is_enabled: true,
                     supports_thinking: true,
                 },
                 ModelCatalogItem {
-                    id: "claude-opus-5-5".to_string(),
-                    display_name: "Claude Opus 5.5".to_string(),
+                    id: "claude-opus-4-6-thinking".to_string(),
+                    display_name: "Claude Opus 4.6 Thinking".to_string(),
                     provider: "anthropic".to_string(),
-                    tier: "Pro".to_string(),
+                    tier: "PRO".to_string(),
                     is_enabled: true,
                     supports_thinking: true,
                 },
@@ -407,7 +407,7 @@ impl Default for AppConfig {
                     id: "gemini-4-argon".to_string(),
                     display_name: "Gemini 4 Argon".to_string(),
                     provider: "gemini".to_string(),
-                    tier: "Pro".to_string(),
+                    tier: "PRO".to_string(),
                     is_enabled: true,
                     supports_thinking: true,
                 },
@@ -415,7 +415,23 @@ impl Default for AppConfig {
                     id: "gemini-3.8-flash".to_string(),
                     display_name: "Gemini 3.8 Flash".to_string(),
                     provider: "gemini".to_string(),
-                    tier: "Pro".to_string(),
+                    tier: "PRO".to_string(),
+                    is_enabled: true,
+                    supports_thinking: true,
+                },
+                ModelCatalogItem {
+                    id: "gemini-2.5-pro".to_string(),
+                    display_name: "Gemini 2.5 Pro".to_string(),
+                    provider: "gemini".to_string(),
+                    tier: "PRO".to_string(),
+                    is_enabled: true,
+                    supports_thinking: true,
+                },
+                ModelCatalogItem {
+                    id: "gemini-2.5-flash".to_string(),
+                    display_name: "Gemini 2.5 Flash".to_string(),
+                    provider: "gemini".to_string(),
+                    tier: "PRO".to_string(),
                     is_enabled: true,
                     supports_thinking: true,
                 },
@@ -448,12 +464,14 @@ impl AppConfig {
                     // Remove any internal test models or obsolete junk
                     cfg.models.retain(|m| {
                         !m.id.starts_with("chat_")
+                            && !m.id.starts_with("tab_")
                             && !m.id.contains("gemini-3.5")
                             && !m.id.contains("gemini-3-flash")
                             && !m.id.contains("gemini-3.7")
                             && !m.id.contains("gemini-3.6")
                             && !m.id.contains("gemini-3.1")
-                            && !m.id.contains("4-6")
+                            && !m.id.contains("flash-lite")
+                            && !m.id.contains("lite")
                             && !m.id.contains("gpt-oss")
                             && m.id != "gemini-3.9-flash"
                             && m.id != "o1"
@@ -461,24 +479,23 @@ impl AppConfig {
                             && m.id != "gpt-4o-mini"
                             && m.id != "o3-mini"
                             && m.id != "claude-3-5-sonnet"
-                            && m.id != "claude-3-7-sonnet"
-                            && m.id != "gemini-2.5-flash"
-                            && m.id != "gemini-2.5-pro"
                     });
 
-                    // Normalize any leftover -high / -medium suffix models to clean base models
+                    // Normalize any legacy or cloned model IDs to clean standard catalog IDs
                     for m in &mut cfg.models {
-                        if m.id == "claude-sonnet-5-5-high" {
-                            m.id = "claude-sonnet-5-5".to_string();
-                            m.display_name = "Claude Sonnet 5.5".to_string();
-                        } else if m.id == "claude-opus-5-5-high" {
-                            m.id = "claude-opus-5-5".to_string();
-                            m.display_name = "Claude Opus 5.5".to_string();
-                        } else if m.id == "gemini-3.8-flash-high" {
+                        if m.id == "claude-sonnet-5-5-high" || m.id == "claude-sonnet-5-5" || m.id == "claude-3-7-sonnet" {
+                            m.id = "claude-sonnet-4-6".to_string();
+                            m.display_name = "Claude Sonnet 4.6 / 3.7".to_string();
+                        } else if m.id == "claude-opus-5-5-high" || m.id == "claude-opus-5-5" {
+                            m.id = "claude-opus-4-6-thinking".to_string();
+                            m.display_name = "Claude Opus 4.6 Thinking".to_string();
+                        } else if m.id == "gemini-3.8-flash-high" || m.id == "gemini-3.8-flash-tiered" {
                             m.id = "gemini-3.8-flash".to_string();
                             m.display_name = "Gemini 3.8 Flash".to_string();
+                        } else if m.id == "gemini-2.5-flash-thinking" {
+                            m.id = "gemini-2.5-flash".to_string();
+                            m.display_name = "Gemini 2.5 Flash".to_string();
                         }
-                        // Ensure all models have thinking enabled
                         m.supports_thinking = true;
                     }
 

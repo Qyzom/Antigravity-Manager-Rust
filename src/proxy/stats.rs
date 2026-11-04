@@ -97,7 +97,7 @@ impl ProxyStats {
 
     pub fn logs_file_path() -> PathBuf {
         let cfg_path = crate::config::AppConfig::config_path();
-        cfg_path.parent().unwrap_or(&cfg_path).join("traffic.jsonl")
+        cfg_path.parent().unwrap_or(&cfg_path).join("logs.jsonl")
     }
 
     pub fn logs_folder_path() -> PathBuf {
@@ -231,7 +231,7 @@ impl ProxyStats {
                 error_msg: error_msg.map(|s| s.to_string()),
             };
 
-            // Write to disk traffic.jsonl
+            // Write to disk logs.jsonl
             let log_path = Self::logs_file_path();
             if let Some(parent) = log_path.parent() {
                 let _ = std::fs::create_dir_all(parent);

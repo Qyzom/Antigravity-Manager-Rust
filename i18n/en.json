@@ -178,5 +178,14 @@
   "about_spec_license": "License",
   "btn_check_updates": "Check for Updates",
   "btn_github_releases": "GitHub Releases",
-  "btn_config_folder": "Config Folder"
+  "btn_config_folder": "Config Folder",
+  "lbl_rolling_5h": "5-Hour Rolling:",
+  "lbl_rolling_weekly": "Weekly Quota:",
+  "lbl_proxy_engine_active": "Active (Listening)",
+  "lbl_proxy_engine_standby": "Standby (Stopped)",
+  "lbl_stat_success": "Success",
+  "lbl_stat_error": "Error",
+  "lbl_checking_updates": "Checking updates...",
+  "lbl_update_available": "Update Available",
+  "lbl_latest_version": "Latest Version"
 }
