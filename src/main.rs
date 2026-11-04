@@ -1233,13 +1233,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let c_mkey = Arc::clone(&config_arc);
     let h_mkey = window_handle.clone();
     main_window.on_copy_master_key(move || {
-        let key = {
+        let (key, lang) = {
             let cfg = c_mkey.read();
-            cfg.master_api_key.clone()
+            (cfg.master_api_key.clone(), cfg.language.clone())
         };
         let _ = arboard::Clipboard::new().and_then(|mut cb| cb.set_text(key));
         if let Some(h) = h_mkey.upgrade() {
-            h.set_master_key_status_text("✓".into());
+            let t = aroxy::i18n::get_translations(aroxy::i18n::Language::from_str_code(&lang));
+            h.set_master_key_status_text(t.lbl_copied.into());
         }
         let h_timer = h_mkey.clone();
         tokio::spawn(async move {
@@ -1256,14 +1257,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let h_regen = window_handle.clone();
     main_window.on_regenerate_master_key(move || {
         let new_key = format!("sk-aroxy-{}", &uuid::Uuid::new_v4().simple().to_string()[..16]);
-        {
+        let lang = {
             let mut cfg = c_regen.write();
             cfg.master_api_key = new_key.clone();
             let _ = cfg.save();
-        }
+            cfg.language.clone()
+        };
         if let Some(h) = h_regen.upgrade() {
+            let t = aroxy::i18n::get_translations(aroxy::i18n::Language::from_str_code(&lang));
             h.set_master_api_key(new_key.into());
-            h.set_master_key_status_text("✓".into());
+            h.set_master_key_status_text(t.lbl_updated.into());
         }
         let h_timer = h_regen.clone();
         tokio::spawn(async move {

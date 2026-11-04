@@ -295,7 +295,8 @@ component ActionButton inherits Rectangle {
                     : (touch.pressed ? #121214 : (touch.has-hover ? #202023 : #18181b)))));
     border-width: 1px;
     border-color: root.is_disabled ? #27272a : (root.is_danger ? #991b1b : (root.is_accent ? #ffffff : #3f3f46));
-    animate background { duration: 100ms; }
+    animate background { duration: 140ms; easing: ease-out; }
+    animate border-color { duration: 140ms; easing: ease-out; }
 
     HorizontalLayout {
         padding-left: 10px;
@@ -308,6 +309,7 @@ component ActionButton inherits Rectangle {
             color: root.is_disabled ? #52525b : (root.is_danger ? #fca5a5 : (root.is_accent ? #09090b : #fafafa));
             vertical-alignment: center;
             horizontal-alignment: center;
+            animate color { duration: 140ms; easing: ease-out; }
         }
     }
 
@@ -405,6 +407,10 @@ component CircularChart inherits Rectangle {
     height: root.chart_size;
 
     Path {
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 96;
+        viewbox-height: 96;
         width: parent.width;
         height: parent.height;
         commands: root.path_bg;
@@ -414,6 +420,10 @@ component CircularChart inherits Rectangle {
     }
 
     if root.path_seg1 != "": Path {
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 96;
+        viewbox-height: 96;
         width: parent.width;
         height: parent.height;
         commands: root.path_seg1;
@@ -423,6 +433,10 @@ component CircularChart inherits Rectangle {
     }
 
     if root.path_seg2 != "": Path {
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 96;
+        viewbox-height: 96;
         width: parent.width;
         height: parent.height;
         commands: root.path_seg2;
@@ -432,6 +446,10 @@ component CircularChart inherits Rectangle {
     }
 
     if root.path_seg3 != "": Path {
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 96;
+        viewbox-height: 96;
         width: parent.width;
         height: parent.height;
         commands: root.path_seg3;
@@ -1200,7 +1218,7 @@ export component MainWindow inherits Window {
                                         spacing: 8px;
                                         alignment: center;
                                         ActionButton {
-                                            text: acc.is_updating ? "Updating..." : (acc.update_status_text != "" ? acc.update_status_text : root.i18n.btn_update);
+                                            text: acc.is_updating ? root.i18n.lbl_updating : (acc.update_status_text != "" ? acc.update_status_text : root.i18n.btn_update);
                                             is_primary: false;
                                             is_accent: acc.is_updating;
                                             is_disabled: acc.is_updating;
@@ -1462,308 +1480,310 @@ export component MainWindow inherits Window {
                     // ==========================================
                     // TAB 3: PROXY LAYER ("Прослойка")
                     // ==========================================
-                    if root.active_tab == 3: VerticalLayout {
-                        alignment: start;
-                        spacing: 14px;
+                    if root.active_tab == 3: ScrollView {
+                        VerticalLayout {
+                            alignment: start;
+                            spacing: 8px;
 
-                        // Network Ports & Protocol Tuning
-                        Rectangle {
-                            background: #18181b;
-                            border-radius: 8px;
-                            border-width: 1px;
-                            border-color: #27272a;
+                            // Network Ports & Protocol Tuning
+                            Rectangle {
+                                background: #18181b;
+                                border-radius: 8px;
+                                border-width: 1px;
+                                border-color: #27272a;
 
-                            VerticalLayout {
-                                padding: 16px;
-                                spacing: 12px;
-
-                                Text { text: root.i18n.sec_network; font-size: 13px; font-weight: 700; color: #ffffff; }
-
-                                HorizontalLayout {
-                                    spacing: 12px;
-                                    VerticalLayout {
-                                        spacing: 4px;
-                                        Text { text: root.i18n.lbl_port; font-size: 11px; font-weight: 600; color: #a1a1aa; }
-                                        LineEdit {
-                                            text <=> root.proxy_port_input;
-                                            accepted => { root.set_proxy_port_str(self.text); }
-                                            edited => { root.set_proxy_port_str(self.text); }
-                                        }
-                                    }
-                                    VerticalLayout {
-                                        spacing: 4px;
-                                        Text { text: root.i18n.lbl_host; font-size: 11px; font-weight: 600; color: #a1a1aa; }
-                                        LineEdit {
-                                            text <=> root.proxy_host_input;
-                                            accepted => { root.set_proxy_host_str(self.text); }
-                                            edited => { root.set_proxy_host_str(self.text); }
-                                        }
-                                    }
-                                    VerticalLayout {
-                                        spacing: 4px;
-                                        Text { text: root.i18n.lbl_timeout; font-size: 11px; font-weight: 600; color: #a1a1aa; }
-                                        LineEdit {
-                                            text <=> root.setting_timeout_str;
-                                            accepted => { root.set_proxy_timeout_str(self.text); }
-                                            edited => { root.set_proxy_timeout_str(self.text); }
-                                        }
-                                    }
-                                    VerticalLayout {
-                                        spacing: 4px;
-                                        Text { text: root.i18n.lbl_heartbeat; font-size: 11px; font-weight: 600; color: #a1a1aa; }
-                                        LineEdit {
-                                            text <=> root.setting_heartbeat_str;
-                                            accepted => { root.set_proxy_heartbeat_str(self.text); }
-                                            edited => { root.set_proxy_heartbeat_str(self.text); }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Routing Strategy Box
-                        Rectangle {
-                            background: #18181b;
-                            border-radius: 8px;
-                            border-width: 1px;
-                            border-color: #27272a;
-
-                            VerticalLayout {
-                                padding: 16px;
-                                spacing: 12px;
-
-                                Text { text: root.i18n.sec_routing; font-size: 13px; font-weight: 700; color: #ffffff; }
-
-                                HorizontalLayout {
-                                    spacing: 10px;
-                                    ActionButton {
-                                        text: root.i18n.strat_quota_aware;
-                                        is_primary: root.routing_strategy_index == 0;
-                                        is_accent: root.routing_strategy_index == 0;
-                                        clicked => { root.set_routing_strategy(0); }
-                                    }
-                                    ActionButton {
-                                        text: root.i18n.strat_round_robin;
-                                        is_primary: root.routing_strategy_index == 1;
-                                        is_accent: root.routing_strategy_index == 1;
-                                        clicked => { root.set_routing_strategy(1); }
-                                    }
-                                    ActionButton {
-                                        text: root.i18n.strat_failover;
-                                        is_primary: root.routing_strategy_index == 2;
-                                        is_accent: root.routing_strategy_index == 2;
-                                        clicked => { root.set_routing_strategy(2); }
-                                    }
-                                }
-
-                                Text {
-                                    text: root.routing_strategy_index == 0
-                                        ? root.i18n.strat_quota_aware_desc
-                                        : (root.routing_strategy_index == 1
-                                            ? root.i18n.strat_round_robin_desc
-                                            : root.i18n.strat_failover_desc);
-                                    font-size: 11px;
-                                    color: #a1a1aa;
-                                }
-                            }
-                        }
-
-                        // Prompt Cache Affinity Box
-                        Rectangle {
-                            background: #18181b;
-                            border-radius: 8px;
-                            border-width: 1px;
-                            border-color: #27272a;
-
-                            VerticalLayout {
-                                padding: 16px;
-                                spacing: 12px;
-
-                                Text { text: root.i18n.sec_cache; font-size: 13px; font-weight: 700; color: #ffffff; }
-
-                                HorizontalLayout {
-                                    spacing: 10px;
-                                    ActionButton {
-                                        text: root.i18n.opt_cache_first;
-                                        is_primary: root.cache_affinity_mode_index == 0;
-                                        is_accent: root.cache_affinity_mode_index == 0;
-                                        clicked => { root.set_cache_affinity_mode(0); }
-                                    }
-                                    ActionButton {
-                                        text: root.i18n.opt_cache_balanced;
-                                        is_primary: root.cache_affinity_mode_index == 1;
-                                        is_accent: root.cache_affinity_mode_index == 1;
-                                        clicked => { root.set_cache_affinity_mode(1); }
-                                    }
-                                    ActionButton {
-                                        text: root.i18n.opt_cache_spread;
-                                        is_primary: root.cache_affinity_mode_index == 2;
-                                        is_accent: root.cache_affinity_mode_index == 2;
-                                        clicked => { root.set_cache_affinity_mode(2); }
-                                    }
-                                }
-
-                                HorizontalLayout {
-                                    alignment: space-between;
-                                    VerticalLayout {
-                                        spacing: 2px;
-                                        Text { text: root.i18n.lbl_failover; font-size: 12px; font-weight: 600; color: #fafafa; }
-                                        Text { text: root.i18n.lbl_failover_desc; font-size: 11px; color: #71717a; }
-                                    }
-                                    VerticalLayout {
-                                        alignment: center;
-                                        ToggleSwitch {
-                                            checked: root.failover_on_429;
-                                            toggled => { root.toggle_failover_429(); }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Account Quota Protection Threshold Box
-                        Rectangle {
-                            background: #18181b;
-                            border-radius: 8px;
-                            border-width: 1px;
-                            border-color: #27272a;
-
-                            VerticalLayout {
-                                padding: 16px;
-                                spacing: 12px;
-
-                                Text { text: root.i18n.lbl_quota_protection; font-size: 13px; font-weight: 700; color: #ffffff; }
-
-                                HorizontalLayout {
-                                    spacing: 10px;
-                                    ActionButton {
-                                        text: root.i18n.btn_off;
-                                        is_primary: root.quota_protection_threshold == 0;
-                                        is_accent: root.quota_protection_threshold == 0;
-                                        clicked => { root.set_quota_protection_threshold(0); }
-                                    }
-                                    ActionButton {
-                                        text: root.i18n.btn_default;
-                                        is_primary: root.quota_protection_threshold == 5;
-                                        is_accent: root.quota_protection_threshold == 5;
-                                        clicked => { root.set_quota_protection_threshold(5); }
-                                    }
-                                    ActionButton {
-                                        text: "10%";
-                                        is_primary: root.quota_protection_threshold == 10;
-                                        is_accent: root.quota_protection_threshold == 10;
-                                        clicked => { root.set_quota_protection_threshold(10); }
-                                    }
-                                    ActionButton {
-                                        text: "15%";
-                                        is_primary: root.quota_protection_threshold == 15;
-                                        is_accent: root.quota_protection_threshold == 15;
-                                        clicked => { root.set_quota_protection_threshold(15); }
-                                    }
-                                    ActionButton {
-                                        text: "20%";
-                                        is_primary: root.quota_protection_threshold == 20;
-                                        is_accent: root.quota_protection_threshold == 20;
-                                        clicked => { root.set_quota_protection_threshold(20); }
-                                    }
-                                }
-
-                                Text {
-                                    text: root.i18n.lbl_quota_protection_desc;
-                                    font-size: 11px;
-                                    color: #a1a1aa;
-                                }
-                            }
-                        }
-
-                        // Active Endpoints List (Clean Table without fake status badges)
-                        Rectangle {
-                            background: #18181b;
-                            border-radius: 8px;
-                            border-width: 1px;
-                            border-color: #27272a;
-
-                            VerticalLayout {
-                                padding: 16px;
-                                spacing: 8px;
-
-                                Text { text: root.i18n.lbl_endpoints_title; font-size: 13px; font-weight: 700; color: #ffffff; }
-
-                                // Table Header
-                                HorizontalLayout {
-                                    padding-left: 10px;
-                                    padding-right: 10px;
-                                    Text { text: root.i18n.lbl_endpoints_protocol; width: 180px; font-size: 10px; font-weight: 700; color: #71717a; }
-                                    Text { text: root.i18n.lbl_endpoints_path; horizontal-stretch: 1; font-size: 10px; font-weight: 700; color: #71717a; }
-                                }
-
-                                Rectangle {
-                                    height: 36px;
-                                    border-radius: 6px;
-                                    background: #121214;
-                                    HorizontalLayout {
-                                        padding-left: 10px;
-                                        padding-right: 10px;
-                                        Text { text: "OpenAI v1"; width: 180px; font-size: 12px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
-                                        Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/chat/completions"; horizontal-stretch: 1; font-size: 11px; color: #38bdf8; vertical-alignment: center; }
-                                    }
-                                }
-
-                                Rectangle {
-                                    height: 36px;
-                                    border-radius: 6px;
-                                    background: #121214;
-                                    HorizontalLayout {
-                                        padding-left: 10px;
-                                        padding-right: 10px;
-                                        Text { text: "Claude Messages"; width: 180px; font-size: 12px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
-                                        Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/messages"; horizontal-stretch: 1; font-size: 11px; color: #38bdf8; vertical-alignment: center; }
-                                    }
-                                }
-
-                                Rectangle {
-                                    height: 36px;
-                                    border-radius: 6px;
-                                    background: #121214;
-                                    HorizontalLayout {
-                                        padding-left: 10px;
-                                        padding-right: 10px;
-                                        Text { text: root.i18n.lbl_endpoints_models; width: 180px; font-size: 12px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
-                                        Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/models"; horizontal-stretch: 1; font-size: 11px; color: #38bdf8; vertical-alignment: center; }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Master API Key Management Card
-                        Rectangle {
-                            background: #18181b;
-                            border-radius: 8px;
-                            border-width: 1px;
-                            border-color: #27272a;
-
-                            VerticalLayout {
-                                padding: 16px;
-                                spacing: 10px;
-
-                                Text { text: root.i18n.lbl_master_key_title; font-size: 13px; font-weight: 700; color: #ffffff; }
-                                Text { text: root.i18n.lbl_master_key_desc; font-size: 11px; color: #71717a; }
-
-                                HorizontalLayout {
+                                VerticalLayout {
+                                    padding: 10px;
                                     spacing: 8px;
-                                    LineEdit {
-                                        horizontal-stretch: 1;
-                                        text: root.master_api_key;
+
+                                    Text { text: root.i18n.sec_network; font-size: 12px; font-weight: 700; color: #ffffff; }
+
+                                    HorizontalLayout {
+                                        spacing: 10px;
+                                        VerticalLayout {
+                                            spacing: 3px;
+                                            Text { text: root.i18n.lbl_port; font-size: 10px; font-weight: 600; color: #a1a1aa; }
+                                            LineEdit {
+                                                text <=> root.proxy_port_input;
+                                                accepted => { root.set_proxy_port_str(self.text); }
+                                                edited => { root.set_proxy_port_str(self.text); }
+                                            }
+                                        }
+                                        VerticalLayout {
+                                            spacing: 3px;
+                                            Text { text: root.i18n.lbl_host; font-size: 10px; font-weight: 600; color: #a1a1aa; }
+                                            LineEdit {
+                                                text <=> root.proxy_host_input;
+                                                accepted => { root.set_proxy_host_str(self.text); }
+                                                edited => { root.set_proxy_host_str(self.text); }
+                                            }
+                                        }
+                                        VerticalLayout {
+                                            spacing: 3px;
+                                            Text { text: root.i18n.lbl_timeout; font-size: 10px; font-weight: 600; color: #a1a1aa; }
+                                            LineEdit {
+                                                text <=> root.setting_timeout_str;
+                                                accepted => { root.set_proxy_timeout_str(self.text); }
+                                                edited => { root.set_proxy_timeout_str(self.text); }
+                                            }
+                                        }
+                                        VerticalLayout {
+                                            spacing: 3px;
+                                            Text { text: root.i18n.lbl_heartbeat; font-size: 10px; font-weight: 600; color: #a1a1aa; }
+                                            LineEdit {
+                                                text <=> root.setting_heartbeat_str;
+                                                accepted => { root.set_proxy_heartbeat_str(self.text); }
+                                                edited => { root.set_proxy_heartbeat_str(self.text); }
+                                            }
+                                        }
                                     }
-                                    ActionButton {
-                                        text: root.master_key_status_text != "" ? root.master_key_status_text : root.i18n.btn_copy_key;
-                                        is_primary: true;
-                                        clicked => { root.copy_master_key(); }
+                                }
+                            }
+
+                            // Routing Strategy Box
+                            Rectangle {
+                                background: #18181b;
+                                border-radius: 8px;
+                                border-width: 1px;
+                                border-color: #27272a;
+
+                                VerticalLayout {
+                                    padding: 10px;
+                                    spacing: 8px;
+
+                                    Text { text: root.i18n.sec_routing; font-size: 12px; font-weight: 700; color: #ffffff; }
+
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        ActionButton {
+                                            text: root.i18n.strat_quota_aware;
+                                            is_primary: root.routing_strategy_index == 0;
+                                            is_accent: root.routing_strategy_index == 0;
+                                            clicked => { root.set_routing_strategy(0); }
+                                        }
+                                        ActionButton {
+                                            text: root.i18n.strat_round_robin;
+                                            is_primary: root.routing_strategy_index == 1;
+                                            is_accent: root.routing_strategy_index == 1;
+                                            clicked => { root.set_routing_strategy(1); }
+                                        }
+                                        ActionButton {
+                                            text: root.i18n.strat_failover;
+                                            is_primary: root.routing_strategy_index == 2;
+                                            is_accent: root.routing_strategy_index == 2;
+                                            clicked => { root.set_routing_strategy(2); }
+                                        }
                                     }
-                                    ActionButton {
-                                        text: root.i18n.btn_regenerate_key;
-                                        is_danger: true;
-                                        clicked => { root.regenerate_master_key(); }
+
+                                    Text {
+                                        text: root.routing_strategy_index == 0
+                                            ? root.i18n.strat_quota_aware_desc
+                                            : (root.routing_strategy_index == 1
+                                                ? root.i18n.strat_round_robin_desc
+                                                : root.i18n.strat_failover_desc);
+                                        font-size: 10px;
+                                        color: #a1a1aa;
+                                    }
+                                }
+                            }
+
+                            // Prompt Cache Affinity Box
+                            Rectangle {
+                                background: #18181b;
+                                border-radius: 8px;
+                                border-width: 1px;
+                                border-color: #27272a;
+
+                                VerticalLayout {
+                                    padding: 10px;
+                                    spacing: 8px;
+
+                                    Text { text: root.i18n.sec_cache; font-size: 12px; font-weight: 700; color: #ffffff; }
+
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        ActionButton {
+                                            text: root.i18n.opt_cache_first;
+                                            is_primary: root.cache_affinity_mode_index == 0;
+                                            is_accent: root.cache_affinity_mode_index == 0;
+                                            clicked => { root.set_cache_affinity_mode(0); }
+                                        }
+                                        ActionButton {
+                                            text: root.i18n.opt_cache_balanced;
+                                            is_primary: root.cache_affinity_mode_index == 1;
+                                            is_accent: root.cache_affinity_mode_index == 1;
+                                            clicked => { root.set_cache_affinity_mode(1); }
+                                        }
+                                        ActionButton {
+                                            text: root.i18n.opt_cache_spread;
+                                            is_primary: root.cache_affinity_mode_index == 2;
+                                            is_accent: root.cache_affinity_mode_index == 2;
+                                            clicked => { root.set_cache_affinity_mode(2); }
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        alignment: space-between;
+                                        VerticalLayout {
+                                            spacing: 1px;
+                                            Text { text: root.i18n.lbl_failover; font-size: 11px; font-weight: 600; color: #fafafa; }
+                                            Text { text: root.i18n.lbl_failover_desc; font-size: 10px; color: #71717a; }
+                                        }
+                                        VerticalLayout {
+                                            alignment: center;
+                                            ToggleSwitch {
+                                                checked: root.failover_on_429;
+                                                toggled => { root.toggle_failover_429(); }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Account Quota Protection Threshold Box
+                            Rectangle {
+                                background: #18181b;
+                                border-radius: 8px;
+                                border-width: 1px;
+                                border-color: #27272a;
+
+                                VerticalLayout {
+                                    padding: 10px;
+                                    spacing: 8px;
+
+                                    Text { text: root.i18n.lbl_quota_protection; font-size: 12px; font-weight: 700; color: #ffffff; }
+
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        ActionButton {
+                                            text: root.i18n.btn_off;
+                                            is_primary: root.quota_protection_threshold == 0;
+                                            is_accent: root.quota_protection_threshold == 0;
+                                            clicked => { root.set_quota_protection_threshold(0); }
+                                        }
+                                        ActionButton {
+                                            text: root.i18n.btn_default;
+                                            is_primary: root.quota_protection_threshold == 5;
+                                            is_accent: root.quota_protection_threshold == 5;
+                                            clicked => { root.set_quota_protection_threshold(5); }
+                                        }
+                                        ActionButton {
+                                            text: "10%";
+                                            is_primary: root.quota_protection_threshold == 10;
+                                            is_accent: root.quota_protection_threshold == 10;
+                                            clicked => { root.set_quota_protection_threshold(10); }
+                                        }
+                                        ActionButton {
+                                            text: "15%";
+                                            is_primary: root.quota_protection_threshold == 15;
+                                            is_accent: root.quota_protection_threshold == 15;
+                                            clicked => { root.set_quota_protection_threshold(15); }
+                                        }
+                                        ActionButton {
+                                            text: "20%";
+                                            is_primary: root.quota_protection_threshold == 20;
+                                            is_accent: root.quota_protection_threshold == 20;
+                                            clicked => { root.set_quota_protection_threshold(20); }
+                                        }
+                                    }
+
+                                    Text {
+                                        text: root.i18n.lbl_quota_protection_desc;
+                                        font-size: 10px;
+                                        color: #a1a1aa;
+                                    }
+                                }
+                            }
+
+                            // Active Endpoints List
+                            Rectangle {
+                                background: #18181b;
+                                border-radius: 8px;
+                                border-width: 1px;
+                                border-color: #27272a;
+
+                                VerticalLayout {
+                                    padding: 10px;
+                                    spacing: 6px;
+
+                                    Text { text: root.i18n.lbl_endpoints_title; font-size: 12px; font-weight: 700; color: #ffffff; }
+
+                                    // Table Header
+                                    HorizontalLayout {
+                                        padding-left: 8px;
+                                        padding-right: 8px;
+                                        Text { text: root.i18n.lbl_endpoints_protocol; width: 150px; font-size: 10px; font-weight: 700; color: #71717a; }
+                                        Text { text: root.i18n.lbl_endpoints_path; horizontal-stretch: 1; font-size: 10px; font-weight: 700; color: #71717a; }
+                                    }
+
+                                    Rectangle {
+                                        height: 32px;
+                                        border-radius: 6px;
+                                        background: #121214;
+                                        HorizontalLayout {
+                                            padding-left: 8px;
+                                            padding-right: 8px;
+                                            Text { text: "OpenAI v1"; width: 150px; font-size: 11px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
+                                            Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/chat/completions"; horizontal-stretch: 1; font-size: 11px; color: #38bdf8; vertical-alignment: center; }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        height: 32px;
+                                        border-radius: 6px;
+                                        background: #121214;
+                                        HorizontalLayout {
+                                            padding-left: 8px;
+                                            padding-right: 8px;
+                                            Text { text: "Claude Messages"; width: 150px; font-size: 11px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
+                                            Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/messages"; horizontal-stretch: 1; font-size: 11px; color: #38bdf8; vertical-alignment: center; }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        height: 32px;
+                                        border-radius: 6px;
+                                        background: #121214;
+                                        HorizontalLayout {
+                                            padding-left: 8px;
+                                            padding-right: 8px;
+                                            Text { text: root.i18n.lbl_endpoints_models; width: 150px; font-size: 11px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
+                                            Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/models"; horizontal-stretch: 1; font-size: 11px; color: #38bdf8; vertical-alignment: center; }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Master API Key Management Card
+                            Rectangle {
+                                background: #18181b;
+                                border-radius: 8px;
+                                border-width: 1px;
+                                border-color: #27272a;
+
+                                VerticalLayout {
+                                    padding: 10px;
+                                    spacing: 6px;
+
+                                    Text { text: root.i18n.lbl_master_key_title; font-size: 12px; font-weight: 700; color: #ffffff; }
+                                    Text { text: root.i18n.lbl_master_key_desc; font-size: 10px; color: #71717a; }
+
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        LineEdit {
+                                            horizontal-stretch: 1;
+                                            text: root.master_api_key;
+                                        }
+                                        ActionButton {
+                                            text: root.master_key_status_text != "" ? root.master_key_status_text : root.i18n.btn_copy_key;
+                                            is_primary: true;
+                                            clicked => { root.copy_master_key(); }
+                                        }
+                                        ActionButton {
+                                            text: root.i18n.btn_regenerate_key;
+                                            is_danger: true;
+                                            clicked => { root.regenerate_master_key(); }
+                                        }
                                     }
                                 }
                             }
@@ -2079,30 +2099,6 @@ export component MainWindow inherits Window {
                                             }
                                         }
                                     }
-
-                                    // Mini stacked volume bar
-                                    Rectangle {
-                                        height: 5px;
-                                        border-radius: 2px;
-                                        background: #27272a;
-                                        HorizontalLayout {
-                                            Rectangle {
-                                                horizontal-stretch: root.stat_prompt_pct > 0 ? root.stat_prompt_pct : 1;
-                                                background: #3b82f6;
-                                                border-radius: 2px;
-                                            }
-                                            Rectangle {
-                                                horizontal-stretch: root.stat_comp_pct > 0 ? root.stat_comp_pct : 1;
-                                                background: #10b981;
-                                                border-radius: 2px;
-                                            }
-                                            Rectangle {
-                                                horizontal-stretch: root.stat_think_pct > 0 ? root.stat_think_pct : 1;
-                                                background: #f59e0b;
-                                                border-radius: 2px;
-                                            }
-                                        }
-                                    }
                                 }
                             }
 
@@ -2150,31 +2146,6 @@ export component MainWindow inherits Window {
                                                 alignment: space-between;
                                                 Text { text: "429 Failovers"; font-size: 11px; color: #a1a1aa; }
                                                 Text { text: root.stat_error_count; font-size: 11px; font-weight: 700; color: #f59e0b; }
-                                            }
-
-                                            HorizontalLayout {
-                                                alignment: space-between;
-                                                Text { text: "Engine"; font-size: 11px; color: #a1a1aa; }
-                                                Text { text: "Tokio Async"; font-size: 11px; font-weight: 700; color: #fafafa; }
-                                            }
-                                        }
-                                    }
-
-                                    // Mini reliability indicator bar
-                                    Rectangle {
-                                        height: 5px;
-                                        border-radius: 2px;
-                                        background: #27272a;
-                                        HorizontalLayout {
-                                            Rectangle {
-                                                horizontal-stretch: 98;
-                                                background: #10b981;
-                                                border-radius: 2px;
-                                            }
-                                            Rectangle {
-                                                horizontal-stretch: 2;
-                                                background: #ef4444;
-                                                border-radius: 2px;
                                             }
                                         }
                                     }
@@ -2255,32 +2226,31 @@ export component MainWindow inherits Window {
                                         }
                                     }
                                 }
+                            }
+                        }
 
-                                Rectangle { height: 1px; background: #27272a; }
-
-                                HorizontalLayout {
-                                    spacing: 10px;
-                                    StatCard {
-                                        title: "CACHE HIT RATE";
-                                        value: "96.4%";
-                                        subtext: "Prompt prefix match";
-                                    }
-                                    StatCard {
-                                        title: "p50 TTFT";
-                                        value: "18 ms";
-                                        subtext: "Median token latency";
-                                    }
-                                    StatCard {
-                                        title: "p95 LATENCY";
-                                        value: "45 ms";
-                                        subtext: "Stream threshold";
-                                    }
-                                    StatCard {
-                                        title: "p99 LATENCY";
-                                        value: "82 ms";
-                                        subtext: "Max regular latency";
-                                    }
-                                }
+                        // Latency & Cache Direct Stat Cards
+                        HorizontalLayout {
+                            spacing: 10px;
+                            StatCard {
+                                title: "CACHE HIT RATE";
+                                value: "96.4%";
+                                subtext: "Prompt prefix match";
+                            }
+                            StatCard {
+                                title: "p50 TTFT";
+                                value: "18 ms";
+                                subtext: "Median token latency";
+                            }
+                            StatCard {
+                                title: "p95 LATENCY";
+                                value: "45 ms";
+                                subtext: "Stream threshold";
+                            }
+                            StatCard {
+                                title: "p99 LATENCY";
+                                value: "82 ms";
+                                subtext: "Max regular latency";
                             }
                         }
                     }
@@ -2725,8 +2695,12 @@ export component MainWindow inherits Window {
     // ============================================================
     // MODAL 1: ACCOUNT DETAILS DIALOG
     // ============================================================
-    if root.show_account_info: Rectangle {
+    Rectangle {
+        visible: root.show_account_info || self.opacity > 0.01;
+        opacity: root.show_account_info ? 1.0 : 0.0;
         background: #000000aa;
+        animate opacity { duration: 150ms; easing: ease-out; }
+
         TouchArea {
             clicked => { root.show_account_info = false; }
         }
@@ -2739,6 +2713,8 @@ export component MainWindow inherits Window {
             border-width: 1px;
             border-color: #27272a;
             clip: true;
+            y: root.show_account_info ? (parent.height - self.height) / 2 : ((parent.height - self.height) / 2 + 20px);
+            animate y { duration: 150ms; easing: ease-out; }
 
             // Absorb touches inside so clicking inside won't close modal
             TouchArea { clicked => { } }
@@ -3038,8 +3014,12 @@ export component MainWindow inherits Window {
     // ============================================================
     // MODAL 2: TEST MODEL REQUEST DIALOG
     // ============================================================
-    if root.show_test_dialog: Rectangle {
+    Rectangle {
+        visible: root.show_test_dialog || self.opacity > 0.01;
+        opacity: root.show_test_dialog ? 1.0 : 0.0;
         background: #000000aa;
+        animate opacity { duration: 150ms; easing: ease-out; }
+
         TouchArea {
             clicked => { root.show_test_dialog = false; }
         }
@@ -3052,6 +3032,8 @@ export component MainWindow inherits Window {
             border-width: 1px;
             border-color: #27272a;
             clip: true;
+            y: root.show_test_dialog ? (parent.height - self.height) / 2 : ((parent.height - self.height) / 2 + 20px);
+            animate y { duration: 150ms; easing: ease-out; }
 
             // Absorb touches inside so clicking inside won't close modal
             TouchArea { clicked => { } }
@@ -3167,8 +3149,12 @@ export component MainWindow inherits Window {
     // ============================================================
     // MODAL 3: LOG DETAILS INSPECTOR (BROWSER DEVTOOLS STYLE)
     // ============================================================
-    if root.show_log_modal: Rectangle {
+    Rectangle {
+        visible: root.show_log_modal || self.opacity > 0.01;
+        opacity: root.show_log_modal ? 1.0 : 0.0;
         background: #000000bb;
+        animate opacity { duration: 150ms; easing: ease-out; }
+
         TouchArea {
             clicked => { root.show_log_modal = false; }
         }
@@ -3181,6 +3167,8 @@ export component MainWindow inherits Window {
             border-width: 1px;
             border-color: #27272a;
             clip: true;
+            y: root.show_log_modal ? (parent.height - self.height) / 2 : ((parent.height - self.height) / 2 + 20px);
+            animate y { duration: 150ms; easing: ease-out; }
 
             // Absorb touches inside so clicking inside won't close modal
             TouchArea { clicked => { } }
