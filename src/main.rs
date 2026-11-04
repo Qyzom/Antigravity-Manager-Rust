@@ -70,6 +70,26 @@ fn format_elapsed_time(added_at: u64, lang: Language) -> String {
     }
 }
 
+fn arc_svg_path(cx: f64, cy: f64, r: f64, start_deg: f64, end_deg: f64) -> String {
+    let sweep = end_deg - start_deg;
+    if sweep <= 0.5 {
+        return String::new();
+    }
+    let sweep = sweep.clamp(0.5, 359.8);
+    let s_rad = (start_deg - 90.0).to_radians();
+    let e_rad = ((start_deg + sweep) - 90.0).to_radians();
+    let x1 = cx + r * s_rad.cos();
+    let y1 = cy + r * s_rad.sin();
+    let x2 = cx + r * e_rad.cos();
+    let y2 = cy + r * e_rad.sin();
+    let large_arc = if sweep > 180.0 { 1 } else { 0 };
+    format!("M {:.1} {:.1} A {:.1} {:.1} 0 {} 1 {:.1} {:.1}", x1, y1, r, r, large_arc, x2, y2)
+}
+
+fn full_circle_path(cx: f64, cy: f64, r: f64) -> String {
+    format!("M {:.1} {:.1} A {:.1} {:.1} 0 1 1 {:.1} {:.1} A {:.1} {:.1} 0 1 1 {:.1} {:.1}", cx, cy - r, r, r, cx, cy + r, r, r, cx, cy - r)
+}
+
 fn apply_translations(ui: &MainWindow, lang: Language) {
     let t = get_translations(lang);
     let i18n_struct = I18nData {
@@ -1629,18 +1649,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             w.set_stat_thinking_tokens(think_tok.to_string().into());
 
             let total_tok = prompt_tok + comp_tok + think_tok;
-            if total_tok > 0 {
-                let p_pct = ((prompt_tok as f64 / total_tok as f64) * 100.0).round() as i32;
-                let c_pct = ((comp_tok as f64 / total_tok as f64) * 100.0).round() as i32;
-                let t_pct = 100 - p_pct - c_pct;
-                w.set_stat_prompt_pct(p_pct.max(1));
-                w.set_stat_comp_pct(c_pct.max(1));
-                w.set_stat_think_pct(t_pct.max(1));
+            let (p_pct, c_pct, t_pct) = if total_tok > 0 {
+                let p = ((prompt_tok as f64 / total_tok as f64) * 100.0).round() as i32;
+                let c = ((comp_tok as f64 / total_tok as f64) * 100.0).round() as i32;
+                let t = 100 - p - c;
+                (p.max(1), c.max(1), t.max(1))
             } else {
-                w.set_stat_prompt_pct(50);
-                w.set_stat_comp_pct(40);
-                w.set_stat_think_pct(10);
-            }
+                (50, 40, 10)
+            };
+            w.set_stat_prompt_pct(p_pct);
+            w.set_stat_comp_pct(c_pct);
+            w.set_stat_think_pct(t_pct);
 
             let succ_rate = if reqs > 0 {
                 format!("{:.1}%", (succ as f64 / reqs as f64) * 100.0)
@@ -1650,6 +1669,66 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             w.set_stat_success_rate(succ_rate.into());
             w.set_stat_error_count(errs.to_string().into());
             w.set_stat_max_latency(format!("{} ms", max_lat).into());
+
+            // Circular Vector Charts
+            let cx = 48.0;
+            let cy = 48.0;
+            let r = 38.0;
+
+            // Chart 1: Token Composition
+            w.set_stat_chart1_path_bg(full_circle_path(cx, cy, r).into());
+            let p_deg = (p_pct as f64) * 3.6;
+            let c_deg = (c_pct as f64) * 3.6;
+            let t_deg = (t_pct as f64) * 3.6;
+            w.set_stat_chart1_path1(arc_svg_path(cx, cy, r, 0.0, p_deg).into());
+            w.set_stat_chart1_path2(arc_svg_path(cx, cy, r, p_deg, p_deg + c_deg).into());
+            w.set_stat_chart1_path3(arc_svg_path(cx, cy, r, p_deg + c_deg, (p_deg + c_deg + t_deg).min(359.8)).into());
+
+            // Chart 2: Protocol Reliability (QoS)
+            w.set_stat_chart2_path_bg(full_circle_path(cx, cy, r).into());
+            let succ_ratio = if reqs > 0 {
+                (succ as f64 / reqs as f64).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+            let succ_deg = succ_ratio * 359.8;
+            w.set_stat_chart2_path_succ(arc_svg_path(cx, cy, r, 0.0, succ_deg).into());
+            if succ_ratio < 0.999 {
+                w.set_stat_chart2_path_err(arc_svg_path(cx, cy, r, succ_deg, 359.8).into());
+            } else {
+                w.set_stat_chart2_path_err("".into());
+            }
+
+            // Chart 3: Model Traffic Share
+            w.set_stat_chart3_path_bg(full_circle_path(cx, cy, r).into());
+            let (claude_pct, gemini_pct) = {
+                let logs_guard = s_timer.recent_logs.read().ok();
+                if let Some(ref logs) = logs_guard {
+                    let mut cl = 0;
+                    let mut gm = 0;
+                    for l in logs.iter() {
+                        let m = l.model.to_lowercase();
+                        if m.contains("claude") {
+                            cl += 1;
+                        } else if m.contains("gemini") {
+                            gm += 1;
+                        }
+                    }
+                    if cl + gm > 0 {
+                        let cp = ((cl as f64 / (cl + gm) as f64) * 100.0).round() as i32;
+                        (cp, 100 - cp)
+                    } else {
+                        (50, 50)
+                    }
+                } else {
+                    (50, 50)
+                }
+            };
+            w.set_stat_claude_pct(claude_pct);
+            w.set_stat_gemini_pct(gemini_pct);
+            let cl_deg = (claude_pct as f64) * 3.6;
+            w.set_stat_chart3_path1(arc_svg_path(cx, cy, r, 0.0, cl_deg).into());
+            w.set_stat_chart3_path2(arc_svg_path(cx, cy, r, cl_deg, 359.8).into());
 
             // Sync accounts & models if changed
             let current_version = v_timer.load(Ordering::Relaxed);

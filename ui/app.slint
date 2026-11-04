@@ -315,6 +315,74 @@ component StatCard inherits Rectangle {
     }
 }
 
+component CircularChart inherits Rectangle {
+    in property <length> chart_size: 110px;
+    in property <string> path_bg: "";
+    in property <string> path_seg1: "";
+    in property <color> color_seg1: #3b82f6;
+    in property <string> path_seg2: "";
+    in property <color> color_seg2: #10b981;
+    in property <string> path_seg3: "";
+    in property <color> color_seg3: #f59e0b;
+    in property <string> center_title: "0";
+    in property <string> center_subtitle: "TOTAL";
+    in property <length> stroke_w: 8px;
+
+    width: root.chart_size;
+    height: root.chart_size;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        commands: root.path_bg;
+        stroke: #27272a;
+        stroke-width: root.stroke_w;
+    }
+
+    if root.path_seg1 != "": Path {
+        width: parent.width;
+        height: parent.height;
+        commands: root.path_seg1;
+        stroke: root.color_seg1;
+        stroke-width: root.stroke_w;
+    }
+
+    if root.path_seg2 != "": Path {
+        width: parent.width;
+        height: parent.height;
+        commands: root.path_seg2;
+        stroke: root.color_seg2;
+        stroke-width: root.stroke_w;
+    }
+
+    if root.path_seg3 != "": Path {
+        width: parent.width;
+        height: parent.height;
+        commands: root.path_seg3;
+        stroke: root.color_seg3;
+        stroke-width: root.stroke_w;
+    }
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 1px;
+        Text {
+            text: root.center_title;
+            font-size: 13px;
+            font-weight: 800;
+            color: #ffffff;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.center_subtitle;
+            font-size: 8px;
+            font-weight: 700;
+            color: #71717a;
+            horizontal-alignment: center;
+        }
+    }
+}
+
 component Badge inherits Rectangle {
     in property <string> text;
     in property <bool> is_green: false;
@@ -489,6 +557,20 @@ export component MainWindow inherits Window {
     in-out property <string> stat_error_count: "0";
     in-out property <string> stat_max_latency: "0 ms";
     in-out property <string> stat_model_distribution: "Claude: 50% | Gemini: 50%";
+    in-out property <int> stat_claude_pct: 50;
+    in-out property <int> stat_gemini_pct: 50;
+
+    // Circular Chart Vector Paths
+    in-out property <string> stat_chart1_path_bg: "M 55.0 13.0 A 42.0 42.0 0 1 1 55.0 97.0 A 42.0 42.0 0 1 1 55.0 13.0";
+    in-out property <string> stat_chart1_path1: "";
+    in-out property <string> stat_chart1_path2: "";
+    in-out property <string> stat_chart1_path3: "";
+    in-out property <string> stat_chart2_path_bg: "M 55.0 13.0 A 42.0 42.0 0 1 1 55.0 97.0 A 42.0 42.0 0 1 1 55.0 13.0";
+    in-out property <string> stat_chart2_path_succ: "";
+    in-out property <string> stat_chart2_path_err: "";
+    in-out property <string> stat_chart3_path_bg: "M 55.0 13.0 A 42.0 42.0 0 1 1 55.0 97.0 A 42.0 42.0 0 1 1 55.0 13.0";
+    in-out property <string> stat_chart3_path1: "";
+    in-out property <string> stat_chart3_path2: "";
 
     // Preferences & Toggles
     in-out property <bool> show_logs_tab: true;
@@ -638,8 +720,10 @@ export component MainWindow inherits Window {
 
             // Top Header Bar
             HorizontalLayout {
+                padding-right: 18px;
                 alignment: space-between;
                 VerticalLayout {
+                    horizontal-stretch: 1;
                     spacing: 2px;
                     Text {
                         text: root.active_tab == 0 ? root.i18n.dash_title
@@ -665,6 +749,7 @@ export component MainWindow inherits Window {
                             : root.i18n.about_subtitle;
                         font-size: 11px;
                         color: #71717a;
+                        wrap: word-wrap;
                     }
                 }
 
@@ -1620,57 +1705,65 @@ export component MainWindow inherits Window {
 
                                 HorizontalLayout {
                                     alignment: space-between;
+                                    spacing: 16px;
+
                                     HorizontalLayout {
-                                        spacing: 16px;
+                                        spacing: 8px;
                                         alignment: start;
-                                        HorizontalLayout {
-                                            spacing: 8px;
+                                        Text { text: root.i18n.lbl_enable_logging; font-size: 12px; font-weight: 600; color: #ffffff; vertical-alignment: center; }
+                                        VerticalLayout {
                                             alignment: center;
-                                            Text { text: root.i18n.lbl_enable_logging; font-size: 12px; font-weight: 600; color: #ffffff; vertical-alignment: center; }
-                                            VerticalLayout {
-                                                alignment: center;
-                                                ToggleSwitch {
-                                                    checked: root.logging_enabled;
-                                                    toggled => { root.toggle_logging(); }
-                                                }
+                                            ToggleSwitch {
+                                                checked: root.logging_enabled;
+                                                toggled => { root.toggle_logging(); }
                                             }
                                         }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 16px;
+                                        alignment: end;
 
                                         HorizontalLayout {
-                                            spacing: 8px;
+                                            spacing: 6px;
                                             alignment: center;
                                             Text { text: root.i18n.lbl_max_logs + ":"; font-size: 11px; color: #a1a1aa; vertical-alignment: center; }
                                             ActionButton {
                                                 text: "50";
+                                                custom_height: 28px;
                                                 is_primary: root.max_log_capacity == 50;
                                                 is_accent: root.max_log_capacity == 50;
                                                 clicked => { root.set_max_logs(50); }
                                             }
                                             ActionButton {
                                                 text: "100";
+                                                custom_height: 28px;
                                                 is_primary: root.max_log_capacity == 100;
                                                 is_accent: root.max_log_capacity == 100;
                                                 clicked => { root.set_max_logs(100); }
                                             }
                                             ActionButton {
                                                 text: "250";
+                                                custom_height: 28px;
                                                 is_primary: root.max_log_capacity == 250;
                                                 is_accent: root.max_log_capacity == 250;
                                                 clicked => { root.set_max_logs(250); }
                                             }
                                             ActionButton {
                                                 text: "500";
+                                                custom_height: 28px;
                                                 is_primary: root.max_log_capacity == 500;
                                                 is_accent: root.max_log_capacity == 500;
                                                 clicked => { root.set_max_logs(500); }
                                             }
                                         }
-                                    }
 
-                                    ActionButton {
-                                        text: root.i18n.btn_clear_logs;
-                                        is_primary: false;
-                                        clicked => { root.clear_logs(); }
+                                        ActionButton {
+                                            text: root.i18n.btn_clear_logs;
+                                            custom_height: 28px;
+                                            is_primary: false;
+                                            clicked => { root.clear_logs(); }
+                                        }
                                     }
                                 }
                             }
@@ -1820,7 +1913,264 @@ export component MainWindow inherits Window {
                             }
                         }
 
-                        // Token Analytics & Circular Visualizer Card
+                        // Circular Charts Row: 3 High-Performance Analytics Blocks
+                        HorizontalLayout {
+                            spacing: 12px;
+
+                            // Block 1: Token Breakdown Donut
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                background: #18181b;
+                                border-radius: 8px;
+                                border-width: 1px;
+                                border-color: #27272a;
+
+                                VerticalLayout {
+                                    padding: 14px;
+                                    spacing: 10px;
+
+                                    Text { text: "Token Composition"; font-size: 12px; font-weight: 700; color: #ffffff; }
+
+                                    HorizontalLayout {
+                                        spacing: 14px;
+                                        alignment: center;
+
+                                        CircularChart {
+                                            chart_size: 96px;
+                                            path_bg: root.stat_chart1_path_bg;
+                                            path_seg1: root.stat_chart1_path1;
+                                            color_seg1: #3b82f6;
+                                            path_seg2: root.stat_chart1_path2;
+                                            color_seg2: #10b981;
+                                            path_seg3: root.stat_chart1_path3;
+                                            color_seg3: #f59e0b;
+                                            center_title: root.total_tokens;
+                                            center_subtitle: "TOKENS";
+                                        }
+
+                                        VerticalLayout {
+                                            horizontal-stretch: 1;
+                                            spacing: 6px;
+                                            alignment: center;
+
+                                            HorizontalLayout {
+                                                alignment: space-between;
+                                                HorizontalLayout {
+                                                    spacing: 6px;
+                                                    Rectangle { width: 8px; height: 8px; border-radius: 4px; background: #3b82f6; y: 4px; }
+                                                    Text { text: "Prompt"; font-size: 11px; color: #e4e4e7; }
+                                                }
+                                                Text { text: root.stat_prompt_pct + "%"; font-size: 11px; font-weight: 700; color: #3b82f6; }
+                                            }
+
+                                            HorizontalLayout {
+                                                alignment: space-between;
+                                                HorizontalLayout {
+                                                    spacing: 6px;
+                                                    Rectangle { width: 8px; height: 8px; border-radius: 4px; background: #10b981; y: 4px; }
+                                                    Text { text: "Output"; font-size: 11px; color: #e4e4e7; }
+                                                }
+                                                Text { text: root.stat_comp_pct + "%"; font-size: 11px; font-weight: 700; color: #10b981; }
+                                            }
+
+                                            HorizontalLayout {
+                                                alignment: space-between;
+                                                HorizontalLayout {
+                                                    spacing: 6px;
+                                                    Rectangle { width: 8px; height: 8px; border-radius: 4px; background: #f59e0b; y: 4px; }
+                                                    Text { text: "Thinking"; font-size: 11px; color: #e4e4e7; }
+                                                }
+                                                Text { text: root.stat_think_pct + "%"; font-size: 11px; font-weight: 700; color: #f59e0b; }
+                                            }
+                                        }
+                                    }
+
+                                    // Mini stacked volume bar
+                                    Rectangle {
+                                        height: 5px;
+                                        border-radius: 2px;
+                                        background: #27272a;
+                                        HorizontalLayout {
+                                            Rectangle {
+                                                horizontal-stretch: root.stat_prompt_pct > 0 ? root.stat_prompt_pct : 1;
+                                                background: #3b82f6;
+                                                border-radius: 2px;
+                                            }
+                                            Rectangle {
+                                                horizontal-stretch: root.stat_comp_pct > 0 ? root.stat_comp_pct : 1;
+                                                background: #10b981;
+                                                border-radius: 2px;
+                                            }
+                                            Rectangle {
+                                                horizontal-stretch: root.stat_think_pct > 0 ? root.stat_think_pct : 1;
+                                                background: #f59e0b;
+                                                border-radius: 2px;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Block 2: QoS Health & Protocol Reliability Gauge
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                background: #18181b;
+                                border-radius: 8px;
+                                border-width: 1px;
+                                border-color: #27272a;
+
+                                VerticalLayout {
+                                    padding: 14px;
+                                    spacing: 10px;
+
+                                    Text { text: "Protocol Reliability & QoS"; font-size: 12px; font-weight: 700; color: #ffffff; }
+
+                                    HorizontalLayout {
+                                        spacing: 14px;
+                                        alignment: center;
+
+                                        CircularChart {
+                                            chart_size: 96px;
+                                            path_bg: root.stat_chart2_path_bg;
+                                            path_seg1: root.stat_chart2_path_succ;
+                                            color_seg1: #10b981;
+                                            path_seg2: root.stat_chart2_path_err;
+                                            color_seg2: #ef4444;
+                                            center_title: root.stat_success_rate;
+                                            center_subtitle: "SUCCESS";
+                                        }
+
+                                        VerticalLayout {
+                                            horizontal-stretch: 1;
+                                            spacing: 6px;
+                                            alignment: center;
+
+                                            HorizontalLayout {
+                                                alignment: space-between;
+                                                Text { text: "HTTP 2xx Ratio"; font-size: 11px; color: #a1a1aa; }
+                                                Text { text: root.stat_success_rate; font-size: 11px; font-weight: 700; color: #10b981; }
+                                            }
+
+                                            HorizontalLayout {
+                                                alignment: space-between;
+                                                Text { text: "429 Failovers"; font-size: 11px; color: #a1a1aa; }
+                                                Text { text: root.stat_error_count; font-size: 11px; font-weight: 700; color: #f59e0b; }
+                                            }
+
+                                            HorizontalLayout {
+                                                alignment: space-between;
+                                                Text { text: "Engine"; font-size: 11px; color: #a1a1aa; }
+                                                Text { text: "Tokio Async"; font-size: 11px; font-weight: 700; color: #fafafa; }
+                                            }
+                                        }
+                                    }
+
+                                    // Mini reliability indicator bar
+                                    Rectangle {
+                                        height: 5px;
+                                        border-radius: 2px;
+                                        background: #27272a;
+                                        HorizontalLayout {
+                                            Rectangle {
+                                                horizontal-stretch: 98;
+                                                background: #10b981;
+                                                border-radius: 2px;
+                                            }
+                                            Rectangle {
+                                                horizontal-stretch: 2;
+                                                background: #ef4444;
+                                                border-radius: 2px;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Block 3: Model Family Traffic Split
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                background: #18181b;
+                                border-radius: 8px;
+                                border-width: 1px;
+                                border-color: #27272a;
+
+                                VerticalLayout {
+                                    padding: 14px;
+                                    spacing: 10px;
+
+                                    Text { text: "Model Traffic Share"; font-size: 12px; font-weight: 700; color: #ffffff; }
+
+                                    HorizontalLayout {
+                                        spacing: 14px;
+                                        alignment: center;
+
+                                        CircularChart {
+                                            chart_size: 96px;
+                                            path_bg: root.stat_chart3_path_bg;
+                                            path_seg1: root.stat_chart3_path1;
+                                            color_seg1: #a855f7;
+                                            path_seg2: root.stat_chart3_path2;
+                                            color_seg2: #06b6d4;
+                                            center_title: "100%";
+                                            center_subtitle: "ROUTED";
+                                        }
+
+                                        VerticalLayout {
+                                            horizontal-stretch: 1;
+                                            spacing: 6px;
+                                            alignment: center;
+
+                                            HorizontalLayout {
+                                                alignment: space-between;
+                                                HorizontalLayout {
+                                                    spacing: 6px;
+                                                    Rectangle { width: 8px; height: 8px; border-radius: 4px; background: #a855f7; y: 4px; }
+                                                    Text { text: "Claude"; font-size: 11px; color: #e4e4e7; }
+                                                }
+                                                Text { text: root.stat_claude_pct + "%"; font-size: 11px; font-weight: 700; color: #a855f7; }
+                                            }
+
+                                            HorizontalLayout {
+                                                alignment: space-between;
+                                                HorizontalLayout {
+                                                    spacing: 6px;
+                                                    Rectangle { width: 8px; height: 8px; border-radius: 4px; background: #06b6d4; y: 4px; }
+                                                    Text { text: "Gemini"; font-size: 11px; color: #e4e4e7; }
+                                                }
+                                                Text { text: root.stat_gemini_pct + "%"; font-size: 11px; font-weight: 700; color: #06b6d4; }
+                                            }
+
+                                            HorizontalLayout {
+                                                alignment: space-between;
+                                                Text { text: "Strategy"; font-size: 11px; color: #a1a1aa; }
+                                                Text { text: "Quota-Aware"; font-size: 11px; font-weight: 700; color: #fafafa; }
+                                            }
+                                        }
+                                    }
+
+                                    // Mini model distribution bar
+                                    Rectangle {
+                                        height: 5px;
+                                        border-radius: 2px;
+                                        background: #27272a;
+                                        HorizontalLayout {
+                                            Rectangle {
+                                                horizontal-stretch: root.stat_claude_pct > 0 ? root.stat_claude_pct : 1;
+                                                background: #a855f7;
+                                                border-radius: 2px;
+                                            }
+                                            Rectangle {
+                                                horizontal-stretch: root.stat_gemini_pct > 0 ? root.stat_gemini_pct : 1;
+                                                background: #06b6d4;
+                                                border-radius: 2px;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Full-Width Block: Cache Affinity & Latency Percentiles Card
                         Rectangle {
                             background: #18181b;
                             border-radius: 8px;
@@ -1829,137 +2179,13 @@ export component MainWindow inherits Window {
 
                             VerticalLayout {
                                 padding: 14px;
-                                spacing: 12px;
-
-                                Text { text: "Token Volume & Reasoning Ratio"; font-size: 13px; font-weight: 700; color: #ffffff; }
+                                spacing: 10px;
 
                                 HorizontalLayout {
-                                    spacing: 20px;
-                                    alignment: center;
-
-                                    // Circular Donut Gauge representation
-                                    Rectangle {
-                                        width: 108px;
-                                        height: 108px;
-                                        border-radius: 54px;
-                                        background: #27272a;
-                                        border-width: 5px;
-                                        border-color: #3b82f6;
-
-                                        Rectangle {
-                                            width: 92px;
-                                            height: 92px;
-                                            border-radius: 46px;
-                                            background: #18181b;
-                                            border-width: 4px;
-                                            border-color: #10b981;
-
-                                            Rectangle {
-                                                width: 78px;
-                                                height: 78px;
-                                                border-radius: 39px;
-                                                background: #121214;
-                                                border-width: 3px;
-                                                border-color: #f59e0b;
-
-                                                VerticalLayout {
-                                                    alignment: center;
-                                                    spacing: 1px;
-                                                    Text {
-                                                        text: root.total_tokens;
-                                                        font-size: 13px;
-                                                        font-weight: 800;
-                                                        color: #ffffff;
-                                                        horizontal-alignment: center;
-                                                    }
-                                                    Text {
-                                                        text: "TOKENS";
-                                                        font-size: 8px;
-                                                        font-weight: 700;
-                                                        color: #71717a;
-                                                        horizontal-alignment: center;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Breakdown Legend & Stats
-                                    VerticalLayout {
-                                        horizontal-stretch: 1;
-                                        spacing: 6px;
-                                        alignment: center;
-
-                                        HorizontalLayout {
-                                            alignment: space-between;
-                                            HorizontalLayout {
-                                                spacing: 8px;
-                                                Rectangle { width: 10px; height: 10px; border-radius: 5px; background: #3b82f6; y: 3px; }
-                                                Text { text: "Prompt Context"; font-size: 12px; color: #e4e4e7; }
-                                            }
-                                            Text { text: root.stat_prompt_tokens + " (" + root.stat_prompt_pct + "%)"; font-size: 12px; font-weight: 700; color: #3b82f6; }
-                                        }
-
-                                        HorizontalLayout {
-                                            alignment: space-between;
-                                            HorizontalLayout {
-                                                spacing: 8px;
-                                                Rectangle { width: 10px; height: 10px; border-radius: 5px; background: #10b981; y: 3px; }
-                                                Text { text: "Output Completion"; font-size: 12px; color: #e4e4e7; }
-                                            }
-                                            Text { text: root.stat_completion_tokens + " (" + root.stat_comp_pct + "%)"; font-size: 12px; font-weight: 700; color: #10b981; }
-                                        }
-
-                                        HorizontalLayout {
-                                            alignment: space-between;
-                                            HorizontalLayout {
-                                                spacing: 8px;
-                                                Rectangle { width: 10px; height: 10px; border-radius: 5px; background: #f59e0b; y: 3px; }
-                                                Text { text: "Thinking Reasoning"; font-size: 12px; color: #e4e4e7; }
-                                            }
-                                            Text { text: root.stat_thinking_tokens + " (" + root.stat_think_pct + "%)"; font-size: 12px; font-weight: 700; color: #f59e0b; }
-                                        }
-                                    }
+                                    alignment: space-between;
+                                    Text { text: "Cache Affinity & Latency Percentiles"; font-size: 12px; font-weight: 700; color: #ffffff; }
+                                    Text { text: root.stat_model_distribution; font-size: 11px; color: #71717a; }
                                 }
-
-                                // Linear Volume Breakdown Bar
-                                Rectangle {
-                                    height: 8px;
-                                    border-radius: 4px;
-                                    background: #27272a;
-                                    HorizontalLayout {
-                                        Rectangle {
-                                            horizontal-stretch: root.stat_prompt_pct > 0 ? root.stat_prompt_pct : 1;
-                                            background: #3b82f6;
-                                            border-radius: 4px;
-                                        }
-                                        Rectangle {
-                                            horizontal-stretch: root.stat_comp_pct > 0 ? root.stat_comp_pct : 1;
-                                            background: #10b981;
-                                            border-radius: 4px;
-                                        }
-                                        Rectangle {
-                                            horizontal-stretch: root.stat_think_pct > 0 ? root.stat_think_pct : 1;
-                                            background: #f59e0b;
-                                            border-radius: 4px;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Cache Efficiency & Latency Percentiles Card
-                        Rectangle {
-                            background: #18181b;
-                            border-radius: 8px;
-                            border-width: 1px;
-                            border-color: #27272a;
-
-                            VerticalLayout {
-                                padding: 12px;
-                                spacing: 8px;
-
-                                Text { text: "Cache Affinity & Latency Percentiles"; font-size: 12px; font-weight: 700; color: #ffffff; }
 
                                 HorizontalLayout {
                                     spacing: 10px;
@@ -1984,21 +2210,6 @@ export component MainWindow inherits Window {
                                         subtext: "Max regular latency";
                                     }
                                 }
-                            }
-                        }
-
-                        // Model Family Breakdown
-                        Rectangle {
-                            background: #18181b;
-                            border-radius: 8px;
-                            border-width: 1px;
-                            border-color: #27272a;
-
-                            VerticalLayout {
-                                padding: 12px;
-                                spacing: 4px;
-                                Text { text: "Model Traffic Distribution"; font-size: 12px; font-weight: 700; color: #ffffff; }
-                                Text { text: root.stat_model_distribution; font-size: 11px; color: #a1a1aa; }
                             }
                         }
                     }
