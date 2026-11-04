@@ -39,6 +39,10 @@ pub fn parse_model_and_reasoning(
         (raw_model[..raw_model.len() - 6].trim().to_string(), Some(ReasoningEffort::Low))
     } else if lower.ends_with(":low") {
         (raw_model[..raw_model.len() - 4].trim().to_string(), Some(ReasoningEffort::Low))
+    } else if lower.ends_with(" low") {
+        (raw_model[..raw_model.len() - 4].trim().to_string(), Some(ReasoningEffort::Low))
+    } else if lower.ends_with("-low") {
+        (raw_model[..raw_model.len() - 4].trim().to_string(), Some(ReasoningEffort::Low))
     } else if lower.ends_with(" (medium)") {
         (raw_model[..raw_model.len() - 9].trim().to_string(), Some(ReasoningEffort::Medium))
     } else if lower.ends_with(" [medium effort]") {
@@ -48,6 +52,10 @@ pub fn parse_model_and_reasoning(
     } else if lower.ends_with(" [medium]") {
         (raw_model[..raw_model.len() - 9].trim().to_string(), Some(ReasoningEffort::Medium))
     } else if lower.ends_with(":medium") {
+        (raw_model[..raw_model.len() - 7].trim().to_string(), Some(ReasoningEffort::Medium))
+    } else if lower.ends_with(" medium") {
+        (raw_model[..raw_model.len() - 7].trim().to_string(), Some(ReasoningEffort::Medium))
+    } else if lower.ends_with("-medium") {
         (raw_model[..raw_model.len() - 7].trim().to_string(), Some(ReasoningEffort::Medium))
     } else if lower.ends_with(" (high)") {
         (raw_model[..raw_model.len() - 7].trim().to_string(), Some(ReasoningEffort::High))
@@ -59,6 +67,10 @@ pub fn parse_model_and_reasoning(
         (raw_model[..raw_model.len() - 7].trim().to_string(), Some(ReasoningEffort::High))
     } else if lower.ends_with(":high") {
         (raw_model[..raw_model.len() - 5].trim().to_string(), Some(ReasoningEffort::High))
+    } else if lower.ends_with(" high") {
+        (raw_model[..raw_model.len() - 5].trim().to_string(), Some(ReasoningEffort::High))
+    } else if lower.ends_with("-high") {
+        (raw_model[..raw_model.len() - 5].trim().to_string(), Some(ReasoningEffort::High))
     } else if lower.ends_with(" (no-thinking)") {
         (raw_model[..raw_model.len() - 14].trim().to_string(), Some(ReasoningEffort::Off))
     } else if lower.ends_with(" [thinking off]") {
@@ -69,6 +81,16 @@ pub fn parse_model_and_reasoning(
         (raw_model[..raw_model.len() - 14].trim().to_string(), Some(ReasoningEffort::Off))
     } else if lower.ends_with(":off") {
         (raw_model[..raw_model.len() - 4].trim().to_string(), Some(ReasoningEffort::Off))
+    } else if lower.ends_with(" off") {
+        (raw_model[..raw_model.len() - 4].trim().to_string(), Some(ReasoningEffort::Off))
+    } else if lower.ends_with("-off") {
+        (raw_model[..raw_model.len() - 4].trim().to_string(), Some(ReasoningEffort::Off))
+    } else if lower.ends_with(" default") {
+        (raw_model[..raw_model.len() - 8].trim().to_string(), None)
+    } else if lower.ends_with(" (default)") {
+        (raw_model[..raw_model.len() - 10].trim().to_string(), None)
+    } else if lower.ends_with("-default") {
+        (raw_model[..raw_model.len() - 8].trim().to_string(), None)
     } else if lower.ends_with("-thinking-low") {
         (raw_model[..raw_model.len() - 13].trim().to_string(), Some(ReasoningEffort::Low))
     } else if lower.ends_with("-thinking-medium") {
@@ -83,10 +105,11 @@ pub fn parse_model_and_reasoning(
 
     let resolved_effort = suffix_effort.or_else(|| {
         native_effort.and_then(|eff| match eff.to_lowercase().as_str() {
-            "low" | "minimal" => Some(ReasoningEffort::Low),
-            "medium" | "default" => Some(ReasoningEffort::Medium),
-            "high" | "xhigh" | "max" => Some(ReasoningEffort::High),
-            "off" | "none" | "disabled" => Some(ReasoningEffort::Off),
+            "low" | "minimal" | "min" => Some(ReasoningEffort::Low),
+            "medium" | "mid" | "normal" | "standard" => Some(ReasoningEffort::Medium),
+            "high" | "xhigh" | "max" | "extreme" => Some(ReasoningEffort::High),
+            "off" | "none" | "disabled" | "zero" | "false" => Some(ReasoningEffort::Off),
+            "default" => None,
             _ => None,
         })
     });
@@ -94,26 +117,55 @@ pub fn parse_model_and_reasoning(
     (base_clean, resolved_effort)
 }
 
-pub fn resolve_model(requested_model: &str, account: &UpstreamAccount) -> String {
-    let (base, _) = parse_model_and_reasoning(requested_model, None);
+pub fn resolve_model_with_effort(
+    requested_model: &str,
+    account: &UpstreamAccount,
+    effort: Option<ReasoningEffort>,
+) -> (String, Option<ReasoningEffort>) {
+    let (base, parsed_eff) = parse_model_and_reasoning(requested_model, None);
+    let effective_effort = effort.or(parsed_eff);
     let lower = base.to_lowercase();
 
     match account.provider.as_str() {
         "antigravity" => {
             if lower.contains("opus") {
-                "claude-opus-5-5-high".to_string()
+                match effective_effort {
+                    Some(ReasoningEffort::Low) => ("claude-opus-5-5-low".to_string(), Some(ReasoningEffort::Low)),
+                    Some(ReasoningEffort::Medium) => ("claude-opus-5-5-medium".to_string(), Some(ReasoningEffort::Medium)),
+                    Some(ReasoningEffort::High) => ("claude-opus-5-5-high".to_string(), Some(ReasoningEffort::High)),
+                    Some(ReasoningEffort::Off) => ("claude-opus-5-5".to_string(), Some(ReasoningEffort::Off)),
+                    None => ("claude-opus-5-5-high".to_string(), Some(ReasoningEffort::High)),
+                }
             } else if lower.contains("claude") || lower.contains("sonnet") {
-                "claude-sonnet-5-5-high".to_string()
+                match effective_effort {
+                    Some(ReasoningEffort::Low) => ("claude-sonnet-5-5-low".to_string(), Some(ReasoningEffort::Low)),
+                    Some(ReasoningEffort::Medium) => ("claude-sonnet-5-5-medium".to_string(), Some(ReasoningEffort::Medium)),
+                    Some(ReasoningEffort::High) => ("claude-sonnet-5-5-high".to_string(), Some(ReasoningEffort::High)),
+                    Some(ReasoningEffort::Off) => ("claude-sonnet-5-5".to_string(), Some(ReasoningEffort::Off)),
+                    None => ("claude-sonnet-5-5-high".to_string(), Some(ReasoningEffort::High)),
+                }
             } else if lower.contains("argon") {
-                "gemini-4-argon".to_string()
+                match effective_effort {
+                    Some(ReasoningEffort::Low) => ("gemini-4-argon-low".to_string(), Some(ReasoningEffort::Low)),
+                    Some(ReasoningEffort::Medium) => ("gemini-4-argon-medium".to_string(), Some(ReasoningEffort::Medium)),
+                    Some(ReasoningEffort::High) => ("gemini-4-argon-high".to_string(), Some(ReasoningEffort::High)),
+                    Some(ReasoningEffort::Off) => ("gemini-4-argon".to_string(), Some(ReasoningEffort::Off)),
+                    None => ("gemini-4-argon-medium".to_string(), Some(ReasoningEffort::Medium)),
+                }
             } else if lower.contains("gemini") || lower.contains("flash") {
-                "gemini-3.8-flash-high".to_string()
+                match effective_effort {
+                    Some(ReasoningEffort::Low) => ("gemini-3.8-flash-low".to_string(), Some(ReasoningEffort::Low)),
+                    Some(ReasoningEffort::Medium) => ("gemini-3.8-flash-medium".to_string(), Some(ReasoningEffort::Medium)),
+                    Some(ReasoningEffort::High) => ("gemini-3.8-flash-high".to_string(), Some(ReasoningEffort::High)),
+                    Some(ReasoningEffort::Off) => ("gemini-3.8-flash".to_string(), Some(ReasoningEffort::Off)),
+                    None => ("gemini-3.8-flash-medium".to_string(), Some(ReasoningEffort::Medium)),
+                }
             } else {
-                "claude-sonnet-5-5-high".to_string()
+                ("claude-sonnet-5-5-high".to_string(), effective_effort.or(Some(ReasoningEffort::High)))
             }
         }
         "anthropic" => {
-            if lower.contains("claude-3-7") || lower.contains("sonnet-3.7") {
+            let m = if lower.contains("claude-3-7") || lower.contains("sonnet-3.7") {
                 "claude-3-7-sonnet-20250219".to_string()
             } else if lower.contains("claude-3-5-sonnet") || lower.contains("sonnet") {
                 "claude-3-5-sonnet-20241022".to_string()
@@ -123,10 +175,11 @@ pub fn resolve_model(requested_model: &str, account: &UpstreamAccount) -> String
                 "claude-3-opus-20240229".to_string()
             } else {
                 base
-            }
+            };
+            (m, effective_effort)
         }
         "openai" => {
-            if lower.contains("gpt-4o-mini") {
+            let m = if lower.contains("gpt-4o-mini") {
                 "gpt-4o-mini".to_string()
             } else if lower.contains("gpt-4o") {
                 "gpt-4o".to_string()
@@ -136,17 +189,16 @@ pub fn resolve_model(requested_model: &str, account: &UpstreamAccount) -> String
                 "o1-preview".to_string()
             } else {
                 base
-            }
+            };
+            (m, effective_effort)
         }
-        "gemini" => {
-            if lower.contains("flash") {
-                "gemini-2.0-flash".to_string()
-            } else {
-                "gemini-1.5-pro".to_string()
-            }
-        }
-        _ => base,
+        _ => (base, effective_effort),
     }
+}
+
+pub fn resolve_model(requested_model: &str, account: &UpstreamAccount) -> String {
+    let (m, _) = resolve_model_with_effort(requested_model, account, None);
+    m
 }
 
 pub fn convert_openai_to_claude(

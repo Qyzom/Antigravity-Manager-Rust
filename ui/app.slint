@@ -192,6 +192,32 @@ export struct I18nData {
     btn_save_proxy: string,
     btn_regenerate_fp: string,
     lbl_direct_proxy: string,
+    lbl_language_desc: string,
+    lbl_quota_mode_desc: string,
+    lbl_quota_view_mode_desc: string,
+    lbl_hide_brand_desc: string,
+    lbl_show_logs_desc: string,
+    lbl_show_stats_desc: string,
+    lbl_tray_desc: string,
+    lbl_autostart_desc: string,
+    lbl_portable_desc: string,
+    lbl_check_updates_desc: string,
+    lbl_clear_logs_exit_desc: string,
+    lbl_logs_folder: string,
+    btn_open_logs_folder: string,
+    btn_reset_stats: string,
+    lbl_time_range: string,
+    lbl_stat_composition: string,
+    lbl_stat_reliability: string,
+    lbl_stat_model_share: string,
+    lbl_inspector_title: string,
+    lbl_inspector_req_body: string,
+    lbl_inspector_resp_body: string,
+    lbl_inspector_headers: string,
+    btn_copy: string,
+    lbl_copied: string,
+    lbl_inbound_reqs: string,
+    lbl_process_ram: string,
 }
 
 component NavItem inherits Rectangle {
@@ -362,6 +388,7 @@ component CircularChart inherits Rectangle {
         commands: root.path_bg;
         stroke: #27272a;
         stroke-width: root.stroke_w;
+        fill: transparent;
     }
 
     if root.path_seg1 != "": Path {
@@ -370,6 +397,7 @@ component CircularChart inherits Rectangle {
         commands: root.path_seg1;
         stroke: root.color_seg1;
         stroke-width: root.stroke_w;
+        fill: transparent;
     }
 
     if root.path_seg2 != "": Path {
@@ -378,6 +406,7 @@ component CircularChart inherits Rectangle {
         commands: root.path_seg2;
         stroke: root.color_seg2;
         stroke-width: root.stroke_w;
+        fill: transparent;
     }
 
     if root.path_seg3 != "": Path {
@@ -386,6 +415,7 @@ component CircularChart inherits Rectangle {
         commands: root.path_seg3;
         stroke: root.color_seg3;
         stroke-width: root.stroke_w;
+        fill: transparent;
     }
 
     VerticalLayout {
@@ -440,6 +470,7 @@ component Badge inherits Rectangle {
 
 export component MainWindow inherits Window {
     title: "Aroxy";
+    icon: @image-url("../assets/icons/logo_256.png");
     default-font-family: "Unbounded";
     min-width: 1080px;
     min-height: 720px;
@@ -555,6 +586,12 @@ export component MainWindow inherits Window {
     in-out property <string> modal_log_status: "";
     in-out property <string> modal_log_tokens: "";
     in-out property <string> modal_log_latency: "";
+    in-out property <string> modal_log_account: "";
+    in-out property <string> modal_log_headers: "";
+    in-out property <string> modal_log_req_body: "";
+    in-out property <string> modal_log_resp_body: "";
+    in-out property <string> modal_log_error: "";
+    in-out property <int> modal_inspector_tab: 0; // 0: Req Body, 1: Resp Body, 2: Headers & Meta
 
     // Proxy Layer Settings
     in-out property <int> routing_strategy_index: 0;
@@ -665,6 +702,9 @@ export component MainWindow inherits Window {
     callback check_github_updates();
     callback save_account_proxy(string, string);
     callback regenerate_account_device_fingerprint(string);
+    callback reset_stats();
+    callback open_logs_folder();
+    callback copy_text_to_clipboard(string);
 
     // Main Layout
     HorizontalLayout {
@@ -683,6 +723,12 @@ export component MainWindow inherits Window {
                     padding-left: 8px;
                     spacing: 8px;
                     alignment: start;
+                    Image {
+                        source: @image-url("../assets/icons/logo_32.png");
+                        width: 22px;
+                        height: 22px;
+                        vertical-alignment: center;
+                    }
                     Text {
                         text: "Aroxy";
                         font-size: 16px;
@@ -691,7 +737,7 @@ export component MainWindow inherits Window {
                         vertical-alignment: center;
                     }
                     Text {
-                        text: "v0.0.3";
+                        text: "v0.0.4";
                         font-size: 11px;
                         font-weight: 600;
                         color: #71717a;
@@ -819,36 +865,17 @@ export component MainWindow inherits Window {
                             StatCard {
                                 title: root.i18n.stat_requests;
                                 value: root.total_requests;
-                                subtext: "Inbound requests";
+                                subtext: root.i18n.lbl_inbound_reqs;
                             }
                             StatCard {
                                 title: root.i18n.stat_app_ram;
                                 value: root.app_memory;
-                                subtext: "Process RAM";
+                                subtext: root.i18n.lbl_process_ram;
                             }
                             StatCard {
                                 title: root.i18n.stat_proxy_engine;
                                 value: root.proxy_running ? ("ONLINE (" + root.proxy_port + ")") : "STANDBY";
                                 subtext: root.proxy_engine_status;
-                            }
-                        }
-
-                        HorizontalLayout {
-                            spacing: 12px;
-                            StatCard {
-                                title: "PRIMARY UPSTREAM";
-                                value: root.active_primary_account;
-                                subtext: "Routing target";
-                            }
-                            StatCard {
-                                title: "SESSION AFFINITY";
-                                value: root.active_sessions_count + " Active";
-                                subtext: "Cached sessions";
-                            }
-                            StatCard {
-                                title: "DISPATCH ENGINE";
-                                value: root.routing_strategy_index == 1 ? "Quota-Aware" : (root.routing_strategy_index == 2 ? "Lowest-Latency" : "Round-Robin");
-                                subtext: "Failover 429 active";
                             }
                         }
 
@@ -1875,33 +1902,43 @@ export component MainWindow inherits Window {
                         alignment: start;
                         spacing: 12px;
 
-                        // Time Range Toolbar
+                        // Time Range Toolbar & Reset Stats
                         HorizontalLayout {
                             spacing: 8px;
-                            Text { text: "TIME RANGE:"; font-size: 11px; font-weight: 700; color: #71717a; vertical-alignment: center; }
-                            ActionButton {
-                                text: "Today";
-                                is_primary: root.stat_time_range_index == 0;
-                                is_accent: root.stat_time_range_index == 0;
-                                clicked => { root.stat_time_range_index = 0; }
+                            alignment: space-between;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Text { text: root.i18n.lbl_time_range + ":"; font-size: 11px; font-weight: 700; color: #71717a; vertical-alignment: center; }
+                                ActionButton {
+                                    text: "Today";
+                                    is_primary: root.stat_time_range_index == 0;
+                                    is_accent: root.stat_time_range_index == 0;
+                                    clicked => { root.stat_time_range_index = 0; }
+                                }
+                                ActionButton {
+                                    text: "7 Days";
+                                    is_primary: root.stat_time_range_index == 1;
+                                    is_accent: root.stat_time_range_index == 1;
+                                    clicked => { root.stat_time_range_index = 1; }
+                                }
+                                ActionButton {
+                                    text: "30 Days";
+                                    is_primary: root.stat_time_range_index == 2;
+                                    is_accent: root.stat_time_range_index == 2;
+                                    clicked => { root.stat_time_range_index = 2; }
+                                }
+                                ActionButton {
+                                    text: "All Time";
+                                    is_primary: root.stat_time_range_index == 3;
+                                    is_accent: root.stat_time_range_index == 3;
+                                    clicked => { root.stat_time_range_index = 3; }
+                                }
                             }
                             ActionButton {
-                                text: "7 Days";
-                                is_primary: root.stat_time_range_index == 1;
-                                is_accent: root.stat_time_range_index == 1;
-                                clicked => { root.stat_time_range_index = 1; }
-                            }
-                            ActionButton {
-                                text: "30 Days";
-                                is_primary: root.stat_time_range_index == 2;
-                                is_accent: root.stat_time_range_index == 2;
-                                clicked => { root.stat_time_range_index = 2; }
-                            }
-                            ActionButton {
-                                text: "All Time";
-                                is_primary: root.stat_time_range_index == 3;
-                                is_accent: root.stat_time_range_index == 3;
-                                clicked => { root.stat_time_range_index = 3; }
+                                text: root.i18n.btn_reset_stats;
+                                is_primary: false;
+                                is_danger: true;
+                                clicked => { root.reset_stats(); }
                             }
                         }
 
@@ -1955,7 +1992,7 @@ export component MainWindow inherits Window {
                             }
                         }
 
-                        // Circular Charts Row: 3 High-Performance Analytics Blocks
+                        // Circular Charts Row: 2 Clean Analytics Donut Blocks
                         HorizontalLayout {
                             spacing: 12px;
 
@@ -1971,7 +2008,7 @@ export component MainWindow inherits Window {
                                     padding: 14px;
                                     spacing: 10px;
 
-                                    Text { text: "Token Composition"; font-size: 12px; font-weight: 700; color: #ffffff; }
+                                    Text { text: root.i18n.lbl_stat_composition; font-size: 12px; font-weight: 700; color: #ffffff; }
 
                                     HorizontalLayout {
                                         spacing: 14px;
@@ -2065,7 +2102,7 @@ export component MainWindow inherits Window {
                                     padding: 14px;
                                     spacing: 10px;
 
-                                    Text { text: "Protocol Reliability & QoS"; font-size: 12px; font-weight: 700; color: #ffffff; }
+                                    Text { text: root.i18n.lbl_stat_reliability; font-size: 12px; font-weight: 700; color: #ffffff; }
 
                                     HorizontalLayout {
                                         spacing: 14px;
@@ -2127,92 +2164,9 @@ export component MainWindow inherits Window {
                                     }
                                 }
                             }
-
-                            // Block 3: Model Family Traffic Split
-                            Rectangle {
-                                horizontal-stretch: 1;
-                                background: #18181b;
-                                border-radius: 8px;
-                                border-width: 1px;
-                                border-color: #27272a;
-
-                                VerticalLayout {
-                                    padding: 14px;
-                                    spacing: 10px;
-
-                                    Text { text: "Model Traffic Share"; font-size: 12px; font-weight: 700; color: #ffffff; }
-
-                                    HorizontalLayout {
-                                        spacing: 14px;
-                                        alignment: center;
-
-                                        CircularChart {
-                                            chart_size: 96px;
-                                            path_bg: root.stat_chart3_path_bg;
-                                            path_seg1: root.stat_chart3_path1;
-                                            color_seg1: #a855f7;
-                                            path_seg2: root.stat_chart3_path2;
-                                            color_seg2: #06b6d4;
-                                            center_title: "100%";
-                                            center_subtitle: "ROUTED";
-                                        }
-
-                                        VerticalLayout {
-                                            horizontal-stretch: 1;
-                                            spacing: 6px;
-                                            alignment: center;
-
-                                            HorizontalLayout {
-                                                alignment: space-between;
-                                                HorizontalLayout {
-                                                    spacing: 6px;
-                                                    Rectangle { width: 8px; height: 8px; border-radius: 4px; background: #a855f7; y: 4px; }
-                                                    Text { text: "Claude"; font-size: 11px; color: #e4e4e7; }
-                                                }
-                                                Text { text: root.stat_claude_pct + "%"; font-size: 11px; font-weight: 700; color: #a855f7; }
-                                            }
-
-                                            HorizontalLayout {
-                                                alignment: space-between;
-                                                HorizontalLayout {
-                                                    spacing: 6px;
-                                                    Rectangle { width: 8px; height: 8px; border-radius: 4px; background: #06b6d4; y: 4px; }
-                                                    Text { text: "Gemini"; font-size: 11px; color: #e4e4e7; }
-                                                }
-                                                Text { text: root.stat_gemini_pct + "%"; font-size: 11px; font-weight: 700; color: #06b6d4; }
-                                            }
-
-                                            HorizontalLayout {
-                                                alignment: space-between;
-                                                Text { text: "Strategy"; font-size: 11px; color: #a1a1aa; }
-                                                Text { text: "Quota-Aware"; font-size: 11px; font-weight: 700; color: #fafafa; }
-                                            }
-                                        }
-                                    }
-
-                                    // Mini model distribution bar
-                                    Rectangle {
-                                        height: 5px;
-                                        border-radius: 2px;
-                                        background: #27272a;
-                                        HorizontalLayout {
-                                            Rectangle {
-                                                horizontal-stretch: root.stat_claude_pct > 0 ? root.stat_claude_pct : 1;
-                                                background: #a855f7;
-                                                border-radius: 2px;
-                                            }
-                                            Rectangle {
-                                                horizontal-stretch: root.stat_gemini_pct > 0 ? root.stat_gemini_pct : 1;
-                                                background: #06b6d4;
-                                                border-radius: 2px;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
                         }
 
-                        // Full-Width Block: Cache Affinity & Latency Percentiles Card
+                        // Full-Width Block: Model Traffic Share & Historical Distribution
                         Rectangle {
                             background: #18181b;
                             border-radius: 8px;
@@ -2221,13 +2175,72 @@ export component MainWindow inherits Window {
 
                             VerticalLayout {
                                 padding: 14px;
-                                spacing: 10px;
+                                spacing: 12px;
 
                                 HorizontalLayout {
                                     alignment: space-between;
-                                    Text { text: "Cache Affinity & Latency Percentiles"; font-size: 12px; font-weight: 700; color: #ffffff; }
-                                    Text { text: root.stat_model_distribution; font-size: 11px; color: #71717a; }
+                                    Text { text: root.i18n.lbl_stat_model_share; font-size: 12px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
+                                    Text { text: root.stat_model_distribution; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
                                 }
+
+                                // Interactive Distribution Bars for Claude & Gemini Models
+                                VerticalLayout {
+                                    spacing: 8px;
+
+                                    VerticalLayout {
+                                        spacing: 3px;
+                                        HorizontalLayout {
+                                            alignment: space-between;
+                                            HorizontalLayout {
+                                                spacing: 6px;
+                                                Rectangle { width: 8px; height: 8px; border-radius: 4px; background: #a855f7; y: 4px; }
+                                                Text { text: "Anthropic Claude (3.7 Sonnet / 3.5 Sonnet / Haiku)"; font-size: 11px; color: #e4e4e7; }
+                                            }
+                                            Text { text: root.stat_claude_pct + "%"; font-size: 11px; font-weight: 700; color: #a855f7; }
+                                        }
+                                        Rectangle {
+                                            height: 6px;
+                                            border-radius: 3px;
+                                            background: #27272a;
+                                            Rectangle {
+                                                x: 0px;
+                                                y: 0px;
+                                                height: 6px;
+                                                border-radius: 3px;
+                                                width: parent.width * (root.stat_claude_pct / 100.0);
+                                                background: #a855f7;
+                                            }
+                                        }
+                                    }
+
+                                    VerticalLayout {
+                                        spacing: 3px;
+                                        HorizontalLayout {
+                                            alignment: space-between;
+                                            HorizontalLayout {
+                                                spacing: 6px;
+                                                Rectangle { width: 8px; height: 8px; border-radius: 4px; background: #06b6d4; y: 4px; }
+                                                Text { text: "Google Gemini (2.5 Pro / 2.5 Flash / 3.8 Flash)"; font-size: 11px; color: #e4e4e7; }
+                                            }
+                                            Text { text: root.stat_gemini_pct + "%"; font-size: 11px; font-weight: 700; color: #06b6d4; }
+                                        }
+                                        Rectangle {
+                                            height: 6px;
+                                            border-radius: 3px;
+                                            background: #27272a;
+                                            Rectangle {
+                                                x: 0px;
+                                                y: 0px;
+                                                height: 6px;
+                                                border-radius: 3px;
+                                                width: parent.width * (root.stat_gemini_pct / 100.0);
+                                                background: #06b6d4;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Rectangle { height: 1px; background: #27272a; }
 
                                 HorizontalLayout {
                                     spacing: 10px;
@@ -2282,7 +2295,7 @@ export component MainWindow inherits Window {
                                     VerticalLayout {
                                         spacing: 2px;
                                         Text { text: root.i18n.lbl_language; font-size: 12px; color: #e4e4e7; }
-                                        Text { text: "Select application interface language"; font-size: 11px; color: #71717a; }
+                                        Text { text: root.i18n.lbl_language_desc; font-size: 11px; color: #71717a; }
                                     }
                                     HorizontalLayout {
                                         spacing: 6px;
@@ -2314,7 +2327,7 @@ export component MainWindow inherits Window {
                                         horizontal-stretch: 1;
                                         spacing: 2px;
                                         Text { text: root.i18n.lbl_quota_mode; font-size: 12px; color: #e4e4e7; }
-                                        Text { text: "Choose gauge format"; font-size: 11px; color: #71717a; }
+                                        Text { text: root.i18n.lbl_quota_mode_desc; font-size: 11px; color: #71717a; }
                                     }
                                     HorizontalLayout {
                                         spacing: 6px;
@@ -2340,7 +2353,7 @@ export component MainWindow inherits Window {
                                         horizontal-stretch: 1;
                                         spacing: 2px;
                                         Text { text: root.i18n.lbl_quota_view_mode; font-size: 12px; color: #e4e4e7; }
-                                        Text { text: "Select which quota windows to monitor on Dashboard and Accounts"; font-size: 11px; color: #71717a; }
+                                        Text { text: root.i18n.lbl_quota_view_mode_desc; font-size: 11px; color: #71717a; }
                                     }
                                     HorizontalLayout {
                                         spacing: 6px;
@@ -2372,7 +2385,7 @@ export component MainWindow inherits Window {
                                         horizontal-stretch: 1;
                                         spacing: 2px;
                                         Text { text: root.i18n.lbl_hide_brand; font-size: 12px; color: #e4e4e7; }
-                                        Text { text: "Collapses Aroxy brand header in sidebar"; font-size: 11px; color: #71717a; }
+                                        Text { text: root.i18n.lbl_hide_brand_desc; font-size: 11px; color: #71717a; }
                                     }
                                     VerticalLayout {
                                         alignment: center;
@@ -2393,7 +2406,7 @@ export component MainWindow inherits Window {
                                         horizontal-stretch: 1;
                                         spacing: 2px;
                                         Text { text: root.i18n.lbl_show_logs; font-size: 12px; color: #e4e4e7; }
-                                        Text { text: "Display traffic logs tab in sidebar navigation"; font-size: 11px; color: #71717a; }
+                                        Text { text: root.i18n.lbl_show_logs_desc; font-size: 11px; color: #71717a; }
                                     }
                                     VerticalLayout {
                                         alignment: center;
@@ -2414,7 +2427,7 @@ export component MainWindow inherits Window {
                                         horizontal-stretch: 1;
                                         spacing: 2px;
                                         Text { text: root.i18n.lbl_show_stats; font-size: 12px; color: #e4e4e7; }
-                                        Text { text: "Display statistics tab in sidebar navigation"; font-size: 11px; color: #71717a; }
+                                        Text { text: root.i18n.lbl_show_stats_desc; font-size: 11px; color: #71717a; }
                                     }
                                     VerticalLayout {
                                         alignment: center;
@@ -2480,13 +2493,29 @@ export component MainWindow inherits Window {
                                     }
                                 }
 
+                                // Logs Folder Location
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        spacing: 2px;
+                                        Text { text: root.i18n.lbl_logs_folder; font-size: 12px; color: #e4e4e7; }
+                                        Text { text: "traffic.jsonl & stats.json"; font-size: 11px; color: #71717a; }
+                                    }
+                                    ActionButton {
+                                        text: root.i18n.btn_open_logs_folder;
+                                        is_primary: false;
+                                        clicked => { root.open_logs_folder(); }
+                                    }
+                                }
+
                                 HorizontalLayout {
                                     alignment: space-between;
                                     VerticalLayout {
                                         horizontal-stretch: 1;
                                         spacing: 2px;
                                         Text { text: root.i18n.lbl_tray; font-size: 12px; color: #e4e4e7; }
-                                        Text { text: "Keeps the proxy daemon serving API requests in the background"; font-size: 11px; color: #71717a; }
+                                        Text { text: root.i18n.lbl_tray_desc; font-size: 11px; color: #71717a; }
                                     }
                                     VerticalLayout {
                                         alignment: center;
@@ -2506,7 +2535,7 @@ export component MainWindow inherits Window {
                                         horizontal-stretch: 1;
                                         spacing: 2px;
                                         Text { text: root.i18n.lbl_autostart; font-size: 12px; color: #e4e4e7; }
-                                        Text { text: "Launches Aroxy daemon automatically on system login"; font-size: 11px; color: #71717a; }
+                                        Text { text: root.i18n.lbl_autostart_desc; font-size: 11px; color: #71717a; }
                                     }
                                     VerticalLayout {
                                         alignment: center;
@@ -2526,7 +2555,7 @@ export component MainWindow inherits Window {
                                         horizontal-stretch: 1;
                                         spacing: 2px;
                                         Text { text: root.i18n.lbl_portable; font-size: 12px; color: #e4e4e7; }
-                                        Text { text: "Store configuration in aroxy.json next to binary"; font-size: 11px; color: #71717a; }
+                                        Text { text: root.i18n.lbl_portable_desc; font-size: 11px; color: #71717a; }
                                     }
                                     VerticalLayout {
                                         alignment: center;
@@ -2546,7 +2575,7 @@ export component MainWindow inherits Window {
                                         horizontal-stretch: 1;
                                         spacing: 2px;
                                         Text { text: root.i18n.lbl_check_updates; font-size: 12px; color: #e4e4e7; }
-                                        Text { text: "Silently check for new versions on GitHub releases"; font-size: 11px; color: #71717a; }
+                                        Text { text: root.i18n.lbl_check_updates_desc; font-size: 11px; color: #71717a; }
                                     }
                                     VerticalLayout {
                                         alignment: center;
@@ -2566,7 +2595,7 @@ export component MainWindow inherits Window {
                                         horizontal-stretch: 1;
                                         spacing: 2px;
                                         Text { text: root.i18n.lbl_clear_logs_exit; font-size: 12px; color: #e4e4e7; }
-                                        Text { text: "Purge memory logs when application process terminates"; font-size: 11px; color: #71717a; }
+                                        Text { text: root.i18n.lbl_clear_logs_exit_desc; font-size: 11px; color: #71717a; }
                                     }
                                     VerticalLayout {
                                         alignment: center;
@@ -2605,20 +2634,17 @@ export component MainWindow inherits Window {
                                 HorizontalLayout {
                                     spacing: 14px;
                                     alignment: start;
-                                    Rectangle {
+                                    Image {
+                                        source: @image-url("../assets/icons/logo_128.png");
                                         width: 48px;
                                         height: 48px;
-                                        border-radius: 8px;
-                                        background: #27272a;
-                                        border-width: 1px;
-                                        border-color: #3f3f46;
-                                        Text { text: "A"; font-size: 22px; font-weight: 900; color: #ffffff; horizontal-alignment: center; vertical-alignment: center; }
+                                        vertical-alignment: center;
                                     }
                                     VerticalLayout {
                                         spacing: 3px;
                                         alignment: center;
                                         Text { text: "Aroxy"; font-size: 16px; font-weight: 800; color: #ffffff; }
-                                        Text { text: "Version 0.0.3 · AI Protocol Proxy & Quota Dispatcher"; font-size: 12px; color: #a1a1aa; }
+                                        Text { text: "Version 0.0.4 · AI Protocol Proxy & Quota Dispatcher"; font-size: 12px; color: #a1a1aa; }
                                     }
                                 }
 
@@ -3123,17 +3149,17 @@ export component MainWindow inherits Window {
     }
 
     // ============================================================
-    // MODAL 3: LOG DETAILS INSPECTOR
+    // MODAL 3: LOG DETAILS INSPECTOR (BROWSER DEVTOOLS STYLE)
     // ============================================================
     if root.show_log_modal: Rectangle {
-        background: #000000aa;
+        background: #000000bb;
         TouchArea {
             clicked => { root.show_log_modal = false; }
         }
 
         modal_card3 := Rectangle {
-            width: 480px;
-            height: modal_inner3.min-height;
+            width: 760px;
+            height: 520px;
             background: #141416;
             border-radius: 12px;
             border-width: 1px;
@@ -3144,12 +3170,17 @@ export component MainWindow inherits Window {
             TouchArea { clicked => { } }
 
             modal_inner3 := VerticalLayout {
-                padding: 14px;
-                spacing: 8px;
+                padding: 16px;
+                spacing: 12px;
 
+                // Top Header Row
                 HorizontalLayout {
                     alignment: space-between;
-                    Text { text: "HTTP Request Inspector"; font-size: 13px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: root.i18n.lbl_inspector_title; font-size: 14px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
+                        Badge { text: root.modal_log_account; is_green: false; }
+                    }
                     ActionButton {
                         text: root.i18n.btn_close;
                         is_primary: false;
@@ -3157,21 +3188,101 @@ export component MainWindow inherits Window {
                     }
                 }
 
-                Rectangle { height: 1px; background: #27272a; }
-
+                // Request Summary Row
                 HorizontalLayout {
                     spacing: 8px;
                     Badge { text: root.modal_log_method; is_green: true; }
                     Text { text: root.modal_log_path; font-size: 12px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
                     Badge { text: root.modal_log_status; is_green: root.modal_log_status == "200 OK"; is_danger: root.modal_log_status != "200 OK"; }
+                    Badge { text: root.modal_log_model; is_amber: false; }
+                    Badge { text: root.modal_log_tokens + " tok"; }
+                    Badge { text: root.modal_log_latency; }
                 }
 
-                VerticalLayout {
-                    spacing: 5px;
-                    Text { text: "Timestamp: " + root.modal_log_time; font-size: 11px; color: #a1a1aa; }
-                    Text { text: "Dispatched Model: " + root.modal_log_model; font-size: 11px; color: #a1a1aa; }
-                    Text { text: "Processed Tokens: " + root.modal_log_tokens; font-size: 11px; color: #a1a1aa; }
-                    Text { text: "Response Latency: " + root.modal_log_latency; font-size: 11px; color: #a1a1aa; }
+                Rectangle { height: 1px; background: #27272a; }
+
+                // Tabs Toolbar & Copy Button
+                HorizontalLayout {
+                    alignment: space-between;
+                    HorizontalLayout {
+                        spacing: 6px;
+                        ActionButton {
+                            text: root.i18n.lbl_inspector_req_body;
+                            is_primary: root.modal_inspector_tab == 0;
+                            is_accent: root.modal_inspector_tab == 0;
+                            clicked => { root.modal_inspector_tab = 0; }
+                        }
+                        ActionButton {
+                            text: root.i18n.lbl_inspector_resp_body;
+                            is_primary: root.modal_inspector_tab == 1;
+                            is_accent: root.modal_inspector_tab == 1;
+                            clicked => { root.modal_inspector_tab = 1; }
+                        }
+                        ActionButton {
+                            text: root.i18n.lbl_inspector_headers;
+                            is_primary: root.modal_inspector_tab == 2;
+                            is_accent: root.modal_inspector_tab == 2;
+                            clicked => { root.modal_inspector_tab = 2; }
+                        }
+                    }
+
+                    ActionButton {
+                        text: root.i18n.btn_copy;
+                        is_primary: false;
+                        clicked => {
+                            if root.modal_inspector_tab == 0 {
+                                root.copy_text_to_clipboard(root.modal_log_req_body);
+                            } else if root.modal_inspector_tab == 1 {
+                                root.copy_text_to_clipboard(root.modal_log_resp_body);
+                            } else {
+                                root.copy_text_to_clipboard(root.modal_log_headers);
+                            }
+                        }
+                    }
+                }
+
+                // Inspector Body Area
+                Rectangle {
+                    vertical-stretch: 1;
+                    background: #09090b;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: #27272a;
+                    clip: true;
+
+                    ScrollView {
+                        VerticalLayout {
+                            padding: 12px;
+                            alignment: start;
+
+                            if root.modal_inspector_tab == 0: Text {
+                                text: root.modal_log_req_body != "" ? root.modal_log_req_body : "{}";
+                                font-size: 11px;
+                                color: #38bdf8;
+                                wrap: word-wrap;
+                            }
+
+                            if root.modal_inspector_tab == 1: Text {
+                                text: root.modal_log_resp_body != "" ? root.modal_log_resp_body : "(empty response)";
+                                font-size: 11px;
+                                color: root.modal_log_error != "" ? #f87171 : #4ade80;
+                                wrap: word-wrap;
+                            }
+
+                            if root.modal_inspector_tab == 2: VerticalLayout {
+                                spacing: 6px;
+                                Text { text: "Dispatched Account: " + root.modal_log_account; font-size: 11px; font-weight: 700; color: #ffffff; }
+                                Text { text: "Timestamp: " + root.modal_log_time; font-size: 11px; color: #a1a1aa; }
+                                Text { text: "Target Model: " + root.modal_log_model; font-size: 11px; color: #a1a1aa; }
+                                Text { text: "Total Tokens: " + root.modal_log_tokens; font-size: 11px; color: #a1a1aa; }
+                                Text { text: "Turnaround Latency: " + root.modal_log_latency; font-size: 11px; color: #a1a1aa; }
+                                if root.modal_log_error != "": Text { text: "Error Details: " + root.modal_log_error; font-size: 11px; font-weight: 700; color: #f87171; }
+                                Rectangle { height: 1px; background: #27272a; }
+                                Text { text: "HTTP Request Headers:"; font-size: 11px; font-weight: 700; color: #71717a; }
+                                Text { text: root.modal_log_headers != "" ? root.modal_log_headers : "Content-Type: application/json"; font-size: 11px; color: #94a3b8; wrap: word-wrap; }
+                            }
+                        }
+                    }
                 }
             }
         }

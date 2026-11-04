@@ -234,6 +234,32 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         btn_save_proxy: t.btn_save_proxy.into(),
         btn_regenerate_fp: t.btn_regenerate_fp.into(),
         lbl_direct_proxy: t.lbl_direct_proxy.into(),
+        lbl_language_desc: t.lbl_language_desc.into(),
+        lbl_quota_mode_desc: t.lbl_quota_mode_desc.into(),
+        lbl_quota_view_mode_desc: t.lbl_quota_view_mode_desc.into(),
+        lbl_hide_brand_desc: t.lbl_hide_brand_desc.into(),
+        lbl_show_logs_desc: t.lbl_show_logs_desc.into(),
+        lbl_show_stats_desc: t.lbl_show_stats_desc.into(),
+        lbl_tray_desc: t.lbl_tray_desc.into(),
+        lbl_autostart_desc: t.lbl_autostart_desc.into(),
+        lbl_portable_desc: t.lbl_portable_desc.into(),
+        lbl_check_updates_desc: t.lbl_check_updates_desc.into(),
+        lbl_clear_logs_exit_desc: t.lbl_clear_logs_exit_desc.into(),
+        lbl_logs_folder: t.lbl_logs_folder.into(),
+        btn_open_logs_folder: t.btn_open_logs_folder.into(),
+        btn_reset_stats: t.btn_reset_stats.into(),
+        lbl_time_range: t.lbl_time_range.into(),
+        lbl_stat_composition: t.lbl_stat_composition.into(),
+        lbl_stat_reliability: t.lbl_stat_reliability.into(),
+        lbl_stat_model_share: t.lbl_stat_model_share.into(),
+        lbl_inspector_title: t.lbl_inspector_title.into(),
+        lbl_inspector_req_body: t.lbl_inspector_req_body.into(),
+        lbl_inspector_resp_body: t.lbl_inspector_resp_body.into(),
+        lbl_inspector_headers: t.lbl_inspector_headers.into(),
+        btn_copy: t.btn_copy.into(),
+        lbl_copied: t.lbl_copied.into(),
+        lbl_inbound_reqs: t.lbl_inbound_reqs.into(),
+        lbl_process_ram: t.lbl_process_ram.into(),
     };
     ui.set_i18n(i18n_struct);
     ui.set_current_language(lang.to_index());
@@ -1361,6 +1387,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     h.set_modal_log_status(if item.status == 200 { "200 OK".into() } else { format!("{} Error", item.status).into() });
                     h.set_modal_log_tokens(item.tokens.to_string().into());
                     h.set_modal_log_latency(format!("{} ms", item.latency_ms).into());
+                    h.set_modal_log_account(item.account.clone().into());
+                    h.set_modal_log_headers(item.request_headers.clone().into());
+                    h.set_modal_log_req_body(if item.request_body.is_empty() { "{}".into() } else { item.request_body.clone().into() });
+                    h.set_modal_log_resp_body(if item.response_body.is_empty() {
+                        if let Some(ref err) = item.error_msg {
+                            err.clone().into()
+                        } else {
+                            "(empty or streaming response)".into()
+                        }
+                    } else {
+                        item.response_body.clone().into()
+                    });
+                    h.set_modal_log_error(item.error_msg.clone().unwrap_or_default().into());
+                    h.set_modal_inspector_tab(0);
                     h.set_show_log_modal(true);
                 }
             }
@@ -1618,6 +1658,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     main_window.on_open_config_folder(move || {
         let (p, _) = AppConfig::config_folder_info();
         open_in_system(&p.to_string_lossy());
+    });
+
+    main_window.on_open_logs_folder(move || {
+        let p = aroxy::proxy::stats::ProxyStats::logs_folder_path();
+        open_in_system(&p.to_string_lossy());
+    });
+
+    let s_reset = Arc::clone(&stats_arc);
+    let h_reset = window_handle.clone();
+    main_window.on_reset_stats(move || {
+        s_reset.reset_stats();
+        if let Some(h) = h_reset.upgrade() {
+            h.set_stat_prompt_tokens("0".into());
+            h.set_stat_completion_tokens("0".into());
+            h.set_stat_thinking_tokens("0".into());
+            h.set_total_tokens("0".into());
+            h.set_total_requests("0".into());
+            h.set_avg_latency("0 ms".into());
+            h.set_stat_success_rate("100%".into());
+            h.set_stat_error_count("0".into());
+            h.set_stat_max_latency("0 ms".into());
+            h.set_stat_prompt_pct(0);
+            h.set_stat_comp_pct(0);
+            h.set_stat_think_pct(0);
+            h.set_stat_claude_pct(0);
+            h.set_stat_gemini_pct(0);
+            h.set_stat_chart1_path1("".into());
+            h.set_stat_chart1_path2("".into());
+            h.set_stat_chart1_path3("".into());
+            h.set_stat_chart2_path_succ("".into());
+            h.set_stat_chart2_path_err("".into());
+            h.set_stat_chart3_path1("".into());
+            h.set_stat_chart3_path2("".into());
+        }
+    });
+
+    main_window.on_copy_text_to_clipboard(move |text_slint| {
+        let text = text_slint.to_string();
+        let _ = arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text));
     });
 
     main_window.on_open_github_repo(move || {

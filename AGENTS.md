@@ -21,8 +21,8 @@ Aroxy is an ultra-lightweight, high-performance cross-platform AI protocol proxy
 
 ## Release Packaging & Artifacts
 The release workflow (`.github/workflows/release.yml`) builds exactly two standalone release artifacts:
-- `Aroxy-0.0.3-x86_64.AppImage` (Linux)
-- `Aroxy-0.0.3-x86_64.exe` (Windows)
+- `Aroxy-0.0.4-x86_64.AppImage` (Linux)
+- `Aroxy-0.0.4-x86_64.exe` (Windows)
 
 Do not add unnecessary packaging formats or complex installer wrappers.
 

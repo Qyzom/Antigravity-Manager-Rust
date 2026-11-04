@@ -335,7 +335,7 @@ async fn execute_chat_request(
     });
 
     let (base_clean, reasoning_effort) = parse_model_and_reasoning(requested_model, native_effort);
-    let target_model = resolve_model(&base_clean, account);
+    let (target_model, effective_effort) = crate::proxy::router::resolve_model_with_effort(&base_clean, account, reasoning_effort);
 
     // If upstream is Antigravity (Google Cloud Code Pa), convert and forward
     if account.provider == "antigravity" {
@@ -343,7 +343,7 @@ async fn execute_chat_request(
             payload,
             &target_model,
             account.project_id.as_deref(),
-            reasoning_effort,
+            effective_effort,
         );
 
         let client = state.get_client_for_account(account);
@@ -433,13 +433,27 @@ async fn execute_chat_request(
         if !status.is_success() {
             let err_text = res.text().await.unwrap_or_default();
             let lat = start_time.elapsed().as_millis() as u64;
-            state.stats.record_request("POST", "/v1/chat/completions", requested_model, status.as_u16(), 0, lat);
 
             let error_msg = if let Ok(parsed) = serde_json::from_str::<Value>(&err_text) {
                 parsed.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).unwrap_or(&err_text).to_string()
             } else {
                 err_text.clone()
             };
+
+            let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
+            state.stats.record_detailed_request(
+                "POST",
+                "/v1/chat/completions",
+                requested_model,
+                status.as_u16(),
+                0,
+                lat,
+                &account.name,
+                "Content-Type: application/json",
+                &req_body_str,
+                &err_text,
+                Some(&error_msg),
+            );
 
             if is_auth_error || error_msg.contains("invalid_grant") || error_msg.contains("PERMISSION_DENIED") {
                 log::warn!("Upstream account auth failed for {}: {}", account.name, error_msg);
@@ -496,7 +510,20 @@ async fn execute_chat_request(
             let stream_id = format!("chatcmpl-{}", uuid::Uuid::new_v4().simple());
             let mapped_stream = crate::proxy::stream::process_antigravity_to_openai_stream(Box::pin(res.bytes_stream()), stream_id, target_model);
             let lat = start_time.elapsed().as_millis() as u64;
-            state.stats.record_request("POST", "/v1/chat/completions (stream)", requested_model, 200, 150, lat);
+            let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
+            state.stats.record_detailed_request(
+                "POST",
+                "/v1/chat/completions (stream)",
+                requested_model,
+                200,
+                150,
+                lat,
+                &account.name,
+                "Content-Type: application/json; Accept: text/event-stream",
+                &req_body_str,
+                "[Server-Sent Events Stream Established]",
+                None,
+            );
 
             let req_id = format!("req_{}", uuid::Uuid::new_v4().simple());
             let r = Response::builder()
@@ -590,7 +617,21 @@ async fn execute_chat_request(
             };
 
             let lat = start_time.elapsed().as_millis() as u64;
-            state.stats.record_request("POST", "/v1/chat/completions", requested_model, 200, in_tok + out_tok, lat);
+            let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
+            let resp_body_str = serde_json::to_string_pretty(&oai_resp).unwrap_or_default();
+            state.stats.record_detailed_request(
+                "POST",
+                "/v1/chat/completions",
+                requested_model,
+                200,
+                in_tok + out_tok,
+                lat,
+                &account.name,
+                "Content-Type: application/json",
+                &req_body_str,
+                &resp_body_str,
+                None,
+            );
 
             let req_id = format!("req_{}", uuid::Uuid::new_v4().simple());
             let mut response = Json(oai_resp).into_response();
@@ -623,13 +664,27 @@ async fn execute_chat_request(
         if !status.is_success() {
             let err_text = res.text().await.unwrap_or_default();
             let lat = start_time.elapsed().as_millis() as u64;
-            state.stats.record_request("POST", "/v1/chat/completions", requested_model, status.as_u16(), 0, lat);
 
             let error_msg = if let Ok(parsed) = serde_json::from_str::<Value>(&err_text) {
                 parsed.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).unwrap_or(&err_text).to_string()
             } else {
                 err_text.clone()
             };
+
+            let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
+            state.stats.record_detailed_request(
+                "POST",
+                "/v1/chat/completions",
+                requested_model,
+                status.as_u16(),
+                0,
+                lat,
+                &account.name,
+                "Content-Type: application/json",
+                &req_body_str,
+                &err_text,
+                Some(&error_msg),
+            );
 
             if is_auth_error || error_msg.contains("invalid_grant") || error_msg.contains("PERMISSION_DENIED") {
                 log::warn!("Upstream account auth failed for {}: {}", account.name, error_msg);
@@ -682,7 +737,20 @@ async fn execute_chat_request(
             let stream_id = format!("chatcmpl-{}", uuid::Uuid::new_v4().simple());
             let mapped_stream = process_claude_to_openai_stream(Box::pin(res.bytes_stream()), stream_id, target_model);
             let lat = start_time.elapsed().as_millis() as u64;
-            state.stats.record_request("POST", "/v1/chat/completions (stream)", requested_model, 200, 150, lat);
+            let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
+            state.stats.record_detailed_request(
+                "POST",
+                "/v1/chat/completions (stream)",
+                requested_model,
+                200,
+                150,
+                lat,
+                &account.name,
+                "Content-Type: application/json; Accept: text/event-stream",
+                &req_body_str,
+                "[Server-Sent Events Stream Established]",
+                None,
+            );
 
             let req_id = format!("req_{}", uuid::Uuid::new_v4().simple());
             let r = Response::builder()
@@ -867,14 +935,14 @@ async fn execute_claude_request(
         requested_model,
         payload.get("thinking").and_then(|t| t.get("type")).and_then(|v| v.as_str()),
     );
-    let target_model = resolve_model(&base_clean, account);
+    let (target_model, effective_effort) = crate::proxy::router::resolve_model_with_effort(&base_clean, account, reasoning_effort);
 
     if account.provider == "antigravity" {
         let payload_json = crate::proxy::antigravity::build_antigravity_payload_from_claude(
             payload,
             &target_model,
             account.project_id.as_deref(),
-            reasoning_effort,
+            effective_effort,
         );
 
         let client = state.get_client_for_account(account);
@@ -963,13 +1031,27 @@ async fn execute_claude_request(
         if !status.is_success() {
             let err_text = res.text().await.unwrap_or_default();
             let lat = start_time.elapsed().as_millis() as u64;
-            state.stats.record_request("POST", "/v1/messages", requested_model, status.as_u16(), 0, lat);
 
             let error_msg = if let Ok(parsed) = serde_json::from_str::<Value>(&err_text) {
                 parsed.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).unwrap_or(&err_text).to_string()
             } else {
                 err_text.clone()
             };
+
+            let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
+            state.stats.record_detailed_request(
+                "POST",
+                "/v1/messages",
+                requested_model,
+                status.as_u16(),
+                0,
+                lat,
+                &account.name,
+                "Content-Type: application/json",
+                &req_body_str,
+                &err_text,
+                Some(&error_msg),
+            );
 
             if is_auth_error || error_msg.contains("invalid_grant") || error_msg.contains("PERMISSION_DENIED") {
                 log::warn!("Upstream account auth failed for {}: {}", account.name, error_msg);
@@ -1009,7 +1091,20 @@ async fn execute_claude_request(
                 target_model,
             );
             let lat = start_time.elapsed().as_millis() as u64;
-            state.stats.record_request("POST", "/v1/messages (stream)", requested_model, 200, 150, lat);
+            let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
+            state.stats.record_detailed_request(
+                "POST",
+                "/v1/messages (stream)",
+                requested_model,
+                200,
+                150,
+                lat,
+                &account.name,
+                "Content-Type: application/json",
+                &req_body_str,
+                "(SSE Stream Transferred)",
+                None,
+            );
 
             let r = Response::builder()
                 .header(header::CONTENT_TYPE, "text/event-stream; charset=utf-8")
@@ -1090,7 +1185,21 @@ async fn execute_claude_request(
             });
 
             let lat = start_time.elapsed().as_millis() as u64;
-            state.stats.record_request("POST", "/v1/messages", requested_model, 200, out_tok, lat);
+            let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
+            let resp_body_str = serde_json::to_string_pretty(&claude_resp).unwrap_or_default();
+            state.stats.record_detailed_request(
+                "POST",
+                "/v1/messages",
+                requested_model,
+                200,
+                out_tok,
+                lat,
+                &account.name,
+                "Content-Type: application/json",
+                &req_body_str,
+                &resp_body_str,
+                None,
+            );
 
             let mut response = Json(claude_resp).into_response();
             response.headers_mut().insert("anthropic-version", "2023-06-01".parse().unwrap());
@@ -1118,7 +1227,20 @@ async fn execute_claude_request(
         if is_streaming && status.is_success() {
             let stream = pass_through_stream(Box::pin(res.bytes_stream()));
             let lat = start_time.elapsed().as_millis() as u64;
-            state.stats.record_request("POST", "/v1/messages (stream)", requested_model, 200, 150, lat);
+            let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
+            state.stats.record_detailed_request(
+                "POST",
+                "/v1/messages (stream)",
+                requested_model,
+                200,
+                150,
+                lat,
+                &account.name,
+                "Content-Type: application/json",
+                &req_body_str,
+                "(SSE Stream Transferred)",
+                None,
+            );
 
             let r = Response::builder()
                 .header(header::CONTENT_TYPE, "text/event-stream; charset=utf-8")
