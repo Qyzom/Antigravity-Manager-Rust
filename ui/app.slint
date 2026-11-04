@@ -38,6 +38,7 @@ export struct AccountData {
     is_updating: bool,
     update_status_text: string,
     added_at_text: string,
+    proxy_url: string,
 }
 
 export struct ModelItemData {
@@ -184,6 +185,13 @@ export struct I18nData {
     lbl_update_failed: string,
     lbl_active_refresh_desc: string,
     lbl_pool_refresh_desc: string,
+    lbl_modal_machine_id: string,
+    lbl_modal_device_id: string,
+    lbl_modal_proxy_url: string,
+    lbl_modal_proxy_placeholder: string,
+    btn_save_proxy: string,
+    btn_regenerate_fp: string,
+    lbl_direct_proxy: string,
 }
 
 component NavItem inherits Rectangle {
@@ -492,9 +500,11 @@ export component MainWindow inherits Window {
 
     // Account Form
     in-out property <string> new_acc_token: "";
+    in-out property <string> new_acc_proxy: "";
 
     // Modal 1: Account Info Modal
     in-out property <bool> show_account_info: false;
+    in-out property <string> info_account_id: "";
     in-out property <string> info_account_name: "";
     in-out property <string> info_account_tier: "";
     in-out property <string> info_account_status: "ACTIVE";
@@ -510,6 +520,9 @@ export component MainWindow inherits Window {
     in-out property <int> info_account_gemini_week_pct: 100;
     in-out property <string> info_account_gemini_week_reset: "";
     in-out property <string> info_account_fingerprint: "";
+    in-out property <string> info_account_machine_id: "";
+    in-out property <string> info_account_device_id: "";
+    in-out property <string> info_account_proxy_url: "";
 
     // Master API Key & Extra Dashboard Metrics
     in-out property <string> master_api_key: "sk-aroxy-v1-master-key";
@@ -650,6 +663,8 @@ export component MainWindow inherits Window {
     callback copy_master_key();
     callback regenerate_master_key();
     callback check_github_updates();
+    callback save_account_proxy(string, string);
+    callback regenerate_account_device_fingerprint(string);
 
     // Main Layout
     HorizontalLayout {
@@ -1010,8 +1025,8 @@ export component MainWindow inherits Window {
                                     alignment: space-between;
                                     VerticalLayout {
                                         spacing: 2px;
-                                        Text { text: "Add Antigravity Account"; font-size: 13px; font-weight: 700; color: #ffffff; }
-                                        Text { text: "Connect via browser OAuth or paste session token (email & quota are auto-parsed)"; font-size: 11px; color: #71717a; }
+                                        Text { text: root.i18n.acc_title; font-size: 13px; font-weight: 700; color: #ffffff; }
+                                        Text { text: root.i18n.acc_subtitle; font-size: 11px; color: #71717a; }
                                     }
                                     ActionButton {
                                         text: root.i18n.btn_login_oauth;
@@ -1025,7 +1040,12 @@ export component MainWindow inherits Window {
                                     LineEdit {
                                         placeholder-text: root.i18n.acc_placeholder;
                                         text <=> root.new_acc_token;
-                                        horizontal-stretch: 1;
+                                        horizontal-stretch: 3;
+                                    }
+                                    LineEdit {
+                                        placeholder-text: root.i18n.lbl_modal_proxy_placeholder;
+                                        text <=> root.new_acc_proxy;
+                                        horizontal-stretch: 2;
                                     }
                                     ActionButton {
                                         text: root.i18n.btn_add_token;
@@ -1122,6 +1142,13 @@ export component MainWindow inherits Window {
                                                 text: acc.status == "ACTIVE" ? root.i18n.lbl_status_active : (acc.status == "ERROR" ? root.i18n.lbl_status_error : root.i18n.lbl_status_disabled);
                                                 is_green: acc.status == "ACTIVE";
                                                 is_danger: acc.status == "ERROR";
+                                            }
+                                        }
+                                        if acc.proxy_url != "": VerticalLayout {
+                                            alignment: center;
+                                            Badge {
+                                                text: "Proxy: " + acc.proxy_url;
+                                                is_amber: true;
                                             }
                                         }
                                     }
@@ -2859,7 +2886,7 @@ export component MainWindow inherits Window {
                     }
                 }
 
-                // Upstream Metadata & Session Identity Card
+                // Upstream Metadata & Session Identity Card (Hardware Isolation)
                 Rectangle {
                     background: #1a1a1e;
                     border-radius: 8px;
@@ -2867,13 +2894,19 @@ export component MainWindow inherits Window {
                     border-color: #27272a;
 
                     VerticalLayout {
-                        padding: 8px;
-                        spacing: 4px;
+                        padding: 10px;
+                        spacing: 6px;
 
                         HorizontalLayout {
                             alignment: space-between;
-                            Text { text: root.i18n.lbl_modal_fingerprint; font-size: 10px; color: #a1a1aa; }
-                            Text { text: root.info_account_fingerprint != "" ? root.info_account_fingerprint : "Google Antigravity Client (1.107.0)"; font-size: 10px; color: #e4e4e7; }
+                            Text { text: root.i18n.lbl_modal_device_id; font-size: 10px; color: #a1a1aa; }
+                            Text { text: root.info_account_device_id != "" ? root.info_account_device_id : "Auto-Generated Device ID"; font-size: 10px; color: #e4e4e7; }
+                        }
+
+                        HorizontalLayout {
+                            alignment: space-between;
+                            Text { text: root.i18n.lbl_modal_machine_id; font-size: 10px; color: #a1a1aa; }
+                            Text { text: root.info_account_machine_id != "" ? root.info_account_machine_id : "auth0|user_..."; font-size: 10px; color: #e4e4e7; }
                         }
 
                         HorizontalLayout {
@@ -2886,6 +2919,48 @@ export component MainWindow inherits Window {
                             alignment: space-between;
                             Text { text: root.i18n.lbl_modal_models; font-size: 10px; color: #a1a1aa; }
                             Text { text: root.info_account_models; font-size: 10px; color: #e4e4e7; }
+                        }
+
+                        HorizontalLayout {
+                            alignment: start;
+                            ActionButton {
+                                text: root.i18n.btn_regenerate_fp;
+                                custom_height: 24px;
+                                is_primary: false;
+                                clicked => { root.regenerate_account_device_fingerprint(root.info_account_id); }
+                            }
+                        }
+                    }
+                }
+
+                // Dedicated Account Proxy Card
+                Rectangle {
+                    background: #1a1a1e;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: #27272a;
+
+                    VerticalLayout {
+                        padding: 10px;
+                        spacing: 6px;
+
+                        Text { text: root.i18n.lbl_modal_proxy_url; font-size: 11px; font-weight: 700; color: #ffffff; }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            LineEdit {
+                                placeholder-text: root.i18n.lbl_modal_proxy_placeholder;
+                                text <=> root.info_account_proxy_url;
+                                horizontal-stretch: 1;
+                            }
+                            ActionButton {
+                                text: root.i18n.btn_save_proxy;
+                                is_primary: true;
+                                custom_height: 30px;
+                                clicked => {
+                                    root.save_account_proxy(root.info_account_id, root.info_account_proxy_url);
+                                }
+                            }
                         }
                     }
                 }

@@ -227,6 +227,13 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_update_failed: t.lbl_update_failed.into(),
         lbl_active_refresh_desc: t.lbl_active_refresh_desc.into(),
         lbl_pool_refresh_desc: t.lbl_pool_refresh_desc.into(),
+        lbl_modal_machine_id: t.lbl_modal_machine_id.into(),
+        lbl_modal_device_id: t.lbl_modal_device_id.into(),
+        lbl_modal_proxy_url: t.lbl_modal_proxy_url.into(),
+        lbl_modal_proxy_placeholder: t.lbl_modal_proxy_placeholder.into(),
+        btn_save_proxy: t.btn_save_proxy.into(),
+        btn_regenerate_fp: t.btn_regenerate_fp.into(),
+        lbl_direct_proxy: t.lbl_direct_proxy.into(),
     };
     ui.set_i18n(i18n_struct);
     ui.set_current_language(lang.to_index());
@@ -276,6 +283,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             balancer: s_balancer,
             http_client: client,
             cfg_version: s_ver,
+            proxy_clients: Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new())),
         };
 
         let app = create_proxy_router(state);
@@ -611,6 +619,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 is_updating: false,
                 update_status_text: "".into(),
                 added_at_text: format_elapsed_time(acc.added_at.unwrap_or(0), Language::from_str_code(&cfg.language)).into(),
+                proxy_url: acc.proxy_url.clone().unwrap_or_default().into(),
             });
         }
 
@@ -758,8 +767,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(h) = h_add.upgrade() {
             let token = h.get_new_acc_token().to_string().trim().to_string();
             if token.is_empty() { return; }
+            let proxy_input = h.get_new_acc_proxy().to_string().trim().to_string();
+            let proxy_opt = if proxy_input.is_empty() { None } else { Some(proxy_input) };
 
             h.set_new_acc_token("".into());
+            h.set_new_acc_proxy("".into());
 
             let c_clone = Arc::clone(&c_add);
             let v_clone = Arc::clone(&v_add);
@@ -829,6 +841,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     project_id,
                     is_active: true,
                     added_at: Some(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)),
+                    device_profile: Some(aroxy::config::DeviceProfile::generate()),
+                    proxy_url: proxy_opt,
                 };
 
                 {
@@ -1032,6 +1046,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(h) = h_info.upgrade() {
             let cfg = c_info.read();
             if let Some(acc) = cfg.accounts.iter().find(|a| a.id == id_str) {
+                h.set_info_account_id(acc.id.clone().into());
+                let (dev_id, mach_id) = if let Some(ref dp) = acc.device_profile {
+                    (dp.dev_device_id.clone(), dp.machine_id.clone())
+                } else {
+                    ("dev-device-auto".to_string(), "auth0|user_auto".to_string())
+                };
+                h.set_info_account_device_id(dev_id.into());
+                h.set_info_account_machine_id(mach_id.into());
+                h.set_info_account_proxy_url(acc.proxy_url.clone().unwrap_or_default().into());
                 h.set_info_account_name(acc.name.clone().into());
                 h.set_info_account_tier(acc.tier.clone().into());
                 h.set_info_account_status(acc.status.clone().into());
@@ -1050,6 +1073,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 h.set_show_account_info(true);
             }
         }
+    });
+
+    // Save individual account proxy
+    let c_save_proxy = Arc::clone(&config_arc);
+    let v_save_proxy = Arc::clone(&cfg_version);
+    main_window.on_save_account_proxy(move |id_slint, proxy_slint| {
+        let id_str = id_slint.to_string();
+        let p_str = proxy_slint.to_string().trim().to_string();
+        let p_opt = if p_str.is_empty() { None } else { Some(p_str) };
+        {
+            let mut cfg = c_save_proxy.write();
+            if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id_str) {
+                acc.proxy_url = p_opt;
+            }
+            let _ = cfg.save();
+        }
+        v_save_proxy.fetch_add(1, Ordering::SeqCst);
+    });
+
+    // Regenerate account device fingerprint (isolation on par with Antigravity-Manager)
+    let c_regen_fp = Arc::clone(&config_arc);
+    let v_regen_fp = Arc::clone(&cfg_version);
+    let h_regen_fp = window_handle.clone();
+    main_window.on_regenerate_account_device_fingerprint(move |id_slint| {
+        let id_str = id_slint.to_string();
+        let new_dp = aroxy::config::DeviceProfile::generate();
+        {
+            let mut cfg = c_regen_fp.write();
+            if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id_str) {
+                acc.device_profile = Some(new_dp.clone());
+            }
+            let _ = cfg.save();
+        }
+        if let Some(h) = h_regen_fp.upgrade() {
+            h.set_info_account_device_id(new_dp.dev_device_id.into());
+            h.set_info_account_machine_id(new_dp.machine_id.into());
+        }
+        v_regen_fp.fetch_add(1, Ordering::SeqCst);
     });
 
     // Master API Key Callbacks
@@ -1837,6 +1898,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             is_updating: false,
                             update_status_text: "".into(),
                             added_at_text: format_elapsed_time(acc.added_at.unwrap_or(0), Language::from_str_code(&cfg.language)).into(),
+                            proxy_url: acc.proxy_url.clone().unwrap_or_default().into(),
                         }
                     })
                     .collect();

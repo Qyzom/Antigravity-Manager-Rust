@@ -39,6 +39,8 @@ mod tests {
             project_id: None,
             is_active: true,
             added_at: None,
+            device_profile: None,
+            proxy_url: None,
         };
 
         assert_eq!(resolve_model("claude-3-7-sonnet", &account), "claude-3-7-sonnet-20250219");
@@ -298,6 +300,8 @@ mod tests {
             project_id: None,
             is_active: true,
             added_at: None,
+            device_profile: None,
+            proxy_url: None,
         };
 
         let acc_b = UpstreamAccount {
@@ -325,6 +329,8 @@ mod tests {
             project_id: None,
             is_active: true,
             added_at: None,
+            device_profile: None,
+            proxy_url: None,
         };
 
         cfg.accounts = vec![acc_a.clone(), acc_b.clone()];
@@ -383,6 +389,8 @@ mod tests {
             project_id: None,
             is_active: true,
             added_at: None,
+            device_profile: None,
+            proxy_url: None,
         };
 
         // Account 2: Pro tier, Claude quota 60%, Gemini 90%
@@ -411,6 +419,8 @@ mod tests {
             project_id: None,
             is_active: true,
             added_at: None,
+            device_profile: None,
+            proxy_url: None,
         };
 
         cfg.accounts = vec![acc_free.clone(), acc_pro.clone()];
@@ -621,6 +631,8 @@ mod tests {
             project_id: None,
             is_active: true,
             added_at: None,
+            device_profile: None,
+            proxy_url: None,
         };
 
         let acc_healthy = UpstreamAccount {
@@ -648,6 +660,8 @@ mod tests {
             project_id: None,
             is_active: true,
             added_at: None,
+            device_profile: None,
+            proxy_url: None,
         };
 
         let acc_error = UpstreamAccount {
@@ -675,6 +689,8 @@ mod tests {
             project_id: None,
             is_active: false,
             added_at: None,
+            device_profile: None,
+            proxy_url: None,
         };
 
         cfg.accounts = vec![acc_low.clone(), acc_healthy.clone(), acc_error.clone()];

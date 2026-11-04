@@ -23,6 +23,36 @@ pub struct AppState {
     pub balancer: Arc<crate::proxy::balancer::LoadBalancer>,
     pub http_client: reqwest::Client,
     pub cfg_version: Arc<std::sync::atomic::AtomicU64>,
+    pub proxy_clients: Arc<parking_lot::RwLock<std::collections::HashMap<String, reqwest::Client>>>,
+}
+
+impl AppState {
+    pub fn get_client_for_account(&self, account: &crate::config::UpstreamAccount) -> reqwest::Client {
+        if let Some(ref p_url) = account.proxy_url {
+            let p_trim = p_url.trim();
+            if !p_trim.is_empty() {
+                {
+                    let r = self.proxy_clients.read();
+                    if let Some(c) = r.get(p_trim) {
+                        return c.clone();
+                    }
+                }
+                if let Ok(proxy) = reqwest::Proxy::all(p_trim) {
+                    if let Ok(c) = reqwest::Client::builder()
+                        .proxy(proxy)
+                        .timeout(std::time::Duration::from_secs(120))
+                        .tcp_keepalive(std::time::Duration::from_secs(30))
+                        .build()
+                    {
+                        let mut w = self.proxy_clients.write();
+                        w.insert(p_trim.to_string(), c.clone());
+                        return c;
+                    }
+                }
+            }
+        }
+        self.http_client.clone()
+    }
 }
 
 pub fn create_proxy_router(state: AppState) -> Router {
@@ -154,6 +184,8 @@ async fn oauth_callback(
                 error_message: None,
                 is_active: true,
                 added_at: Some(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)),
+                device_profile: Some(crate::config::DeviceProfile::generate()),
+                proxy_url: None,
             });
             cfg.active_account_id = Some(new_id);
         }
@@ -314,16 +346,26 @@ async fn execute_chat_request(
             reasoning_effort,
         );
 
+        let client = state.get_client_for_account(account);
         let mut res_opt = None;
         let req_token = account.api_key.clone();
+
+        let (client_id, machine_id) = if let Some(ref dp) = account.device_profile {
+            (dp.dev_device_id.clone(), dp.machine_id.clone())
+        } else {
+            (uuid::Uuid::new_v4().to_string(), format!("auth0|user_{}", uuid::Uuid::new_v4().simple()))
+        };
 
         for endpoint_url in crate::proxy::antigravity::STREAM_ENDPOINTS {
             let mut req_headers = reqwest::header::HeaderMap::new();
             req_headers.insert("authorization", format!("Bearer {}", req_token).parse().unwrap());
-            req_headers.insert("User-Agent", crate::proxy::antigravity::OFFICIAL_USER_AGENT.parse().unwrap());
+            req_headers.insert("User-Agent", crate::proxy::antigravity::get_official_hub_user_agent().parse().unwrap());
+            req_headers.insert("X-Client-Id", client_id.parse().unwrap());
+            req_headers.insert("X-Machine-Id", machine_id.parse().unwrap());
+            req_headers.insert("X-Goog-Api-Client", "gl-rust/1.0.0".parse().unwrap());
             req_headers.insert("Content-Type", "application/json".parse().unwrap());
 
-            if let Ok(r) = state.http_client.post(endpoint_url).headers(req_headers).json(&payload_json).send().await {
+            if let Ok(r) = client.post(endpoint_url).headers(req_headers).json(&payload_json).send().await {
                 let s = r.status();
                 if s.is_success() {
                     res_opt = Some(r);
@@ -835,16 +877,26 @@ async fn execute_claude_request(
             reasoning_effort,
         );
 
+        let client = state.get_client_for_account(account);
         let mut res_opt = None;
         let req_token = account.api_key.clone();
+
+        let (client_id, machine_id) = if let Some(ref dp) = account.device_profile {
+            (dp.dev_device_id.clone(), dp.machine_id.clone())
+        } else {
+            (uuid::Uuid::new_v4().to_string(), format!("auth0|user_{}", uuid::Uuid::new_v4().simple()))
+        };
 
         for endpoint_url in crate::proxy::antigravity::STREAM_ENDPOINTS {
             let mut req_headers = reqwest::header::HeaderMap::new();
             req_headers.insert("authorization", format!("Bearer {}", req_token).parse().unwrap());
-            req_headers.insert("User-Agent", crate::proxy::antigravity::OFFICIAL_USER_AGENT.parse().unwrap());
+            req_headers.insert("User-Agent", crate::proxy::antigravity::get_official_hub_user_agent().parse().unwrap());
+            req_headers.insert("X-Client-Id", client_id.parse().unwrap());
+            req_headers.insert("X-Machine-Id", machine_id.parse().unwrap());
+            req_headers.insert("X-Goog-Api-Client", "gl-rust/1.0.0".parse().unwrap());
             req_headers.insert("Content-Type", "application/json".parse().unwrap());
 
-            if let Ok(r) = state.http_client.post(endpoint_url).headers(req_headers).json(&payload_json).send().await {
+            if let Ok(r) = client.post(endpoint_url).headers(req_headers).json(&payload_json).send().await {
                 let s = r.status();
                 if s.is_success() {
                     res_opt = Some(r);

@@ -6,6 +6,27 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
 
+pub const OFFICIAL_HUB_VERSION: &str = "2.23.1";
+pub const OFFICIAL_HUB_CL: &str = "998881661";
+
+pub fn get_official_hub_user_agent() -> String {
+    let os_type = match std::env::consts::OS {
+        "windows" => "windows",
+        "macos" => "darwin",
+        "linux" => "linux",
+        other => other,
+    };
+    let arch = match std::env::consts::ARCH {
+        "x86_64" => "amd64",
+        "aarch64" => "arm64",
+        other => other,
+    };
+    format!(
+        "antigravity/hub/{} (aidev_client; os_type={}; arch={}; cl={})",
+        OFFICIAL_HUB_VERSION, os_type, arch, OFFICIAL_HUB_CL
+    )
+}
+
 pub const OFFICIAL_USER_AGENT: &str =
     "antigravity/hub/2.23.1 (aidev_client; os_type=linux; arch=x86_64; cl=998881661)";
 

@@ -138,6 +138,68 @@ pub struct UpstreamAccount {
     pub project_id: Option<String>,
     #[serde(default)]
     pub added_at: Option<u64>,
+    #[serde(default)]
+    pub device_profile: Option<DeviceProfile>,
+    #[serde(default)]
+    pub proxy_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DeviceProfile {
+    pub machine_id: String,
+    pub mac_machine_id: String,
+    pub dev_device_id: String,
+    pub sqm_id: String,
+}
+
+impl DeviceProfile {
+    pub fn generate() -> Self {
+        let random_hex_32 = uuid::Uuid::new_v4().simple().to_string();
+        let machine_id = format!("auth0|user_{}", random_hex_32);
+        let dev_device_id = uuid::Uuid::new_v4().to_string();
+        let mac_machine_id = uuid::Uuid::new_v4().to_string();
+        let sqm_id = format!("{{{}}}", uuid::Uuid::new_v4().to_string().to_uppercase());
+
+        Self {
+            machine_id,
+            mac_machine_id,
+            dev_device_id,
+            sqm_id,
+        }
+    }
+}
+
+impl Default for UpstreamAccount {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            provider: "antigravity".to_string(),
+            base_url: "https://api.anthropic.com".to_string(),
+            api_key: String::new(),
+            fingerprint: "Google Antigravity Client (1.107.0)".to_string(),
+            tier: "Pro".to_string(),
+            quota_used: 0,
+            quota_limit: 100_000,
+            quota_reset: "in 4h 00m".to_string(),
+            claude_gpt_percent: 100,
+            claude_gpt_reset: "in 4h 00m".to_string(),
+            claude_gpt_weekly_percent: 100,
+            claude_gpt_weekly_reset: "in 7d 00h".to_string(),
+            gemini_percent: 100,
+            gemini_reset: "in 4h 00m".to_string(),
+            gemini_weekly_percent: 100,
+            gemini_weekly_reset: "in 7d 00h".to_string(),
+            status: "ACTIVE".to_string(),
+            is_active: true,
+            error_message: None,
+            refresh_token: None,
+            project_id: None,
+            added_at: None,
+            device_profile: None,
+            proxy_url: None,
+        }
+    }
 }
 
 fn default_weekly_reset() -> String {
@@ -440,6 +502,9 @@ impl AppConfig {
                         }
                         if acc.claude_gpt_percent > 0 || acc.tier.to_lowercase() == "pro" {
                             acc.tier = "PRO".to_string();
+                        }
+                        if acc.device_profile.is_none() {
+                            acc.device_profile = Some(DeviceProfile::generate());
                         }
                     }
 
