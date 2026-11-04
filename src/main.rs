@@ -279,9 +279,67 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         about_spec_transport: t.about_spec_transport.into(),
         about_spec_gui: t.about_spec_gui.into(),
         about_spec_license: t.about_spec_license.into(),
-        btn_check_updates: t.btn_check_updates.into(),
+        btn_check_updates: t.btn_check_updates.clone().into(),
         btn_github_releases: t.btn_github_releases.into(),
         btn_config_folder: t.btn_config_folder.into(),
+        lbl_reset_5h_prefix: t.lbl_reset_5h_prefix.into(),
+        lbl_reset_week_prefix: t.lbl_reset_week_prefix.into(),
+        lbl_remaining: t.lbl_remaining.into(),
+        lbl_available: t.lbl_available.into(),
+        lbl_resets_prefix: t.lbl_resets_prefix.into(),
+        lbl_proxy_prefix: t.lbl_proxy_prefix.into(),
+        btn_time_today: t.btn_time_today.into(),
+        btn_time_7d: t.btn_time_7d.into(),
+        btn_time_30d: t.btn_time_30d.into(),
+        btn_time_all: t.btn_time_all.into(),
+        stat_card_prompt_tok: t.stat_card_prompt_tok.into(),
+        stat_sub_prompt: t.stat_sub_prompt.into(),
+        stat_card_output_tok: t.stat_card_output_tok.into(),
+        stat_sub_output: t.stat_sub_output.into(),
+        stat_card_thinking_tok: t.stat_card_thinking_tok.into(),
+        stat_sub_thinking: t.stat_sub_thinking.into(),
+        stat_card_total_tok: t.stat_card_total_tok.into(),
+        stat_sub_total_tok: t.stat_sub_total_tok.into(),
+        stat_card_avg_lat: t.stat_card_avg_lat.into(),
+        stat_sub_avg_lat: t.stat_sub_avg_lat.into(),
+        stat_card_success_rate: t.stat_card_success_rate.into(),
+        stat_sub_success_rate: t.stat_sub_success_rate.into(),
+        stat_card_failovers: t.stat_card_failovers.into(),
+        stat_sub_failovers: t.stat_sub_failovers.into(),
+        stat_card_peak_lat: t.stat_card_peak_lat.into(),
+        stat_sub_peak_lat: t.stat_sub_peak_lat.into(),
+        stat_card_cache_hit: t.stat_card_cache_hit.into(),
+        stat_sub_cache_match: t.stat_sub_cache_match.into(),
+        stat_card_p50: t.stat_card_p50.into(),
+        stat_sub_median_lat: t.stat_sub_median_lat.into(),
+        stat_card_p95: t.stat_card_p95.into(),
+        stat_sub_stream_lat: t.stat_sub_stream_lat.into(),
+        stat_card_p99: t.stat_card_p99.into(),
+        stat_sub_max_regular_lat: t.stat_sub_max_regular_lat.into(),
+        lbl_donut_prompt: t.lbl_donut_prompt.into(),
+        lbl_donut_output: t.lbl_donut_output.into(),
+        lbl_donut_thinking: t.lbl_donut_thinking.into(),
+        lbl_col_time: t.lbl_col_time.into(),
+        lbl_col_method: t.lbl_col_method.into(),
+        lbl_col_endpoint: t.lbl_col_endpoint.into(),
+        lbl_col_model: t.lbl_col_model.into(),
+        lbl_col_status: t.lbl_col_status.into(),
+        lbl_col_tokens: t.lbl_col_tokens.into(),
+        lbl_col_latency: t.lbl_col_latency.into(),
+        log_detail_account: t.log_detail_account.into(),
+        log_detail_timestamp: t.log_detail_timestamp.into(),
+        log_detail_model: t.log_detail_model.into(),
+        log_detail_tokens: t.log_detail_tokens.into(),
+        log_detail_latency: t.log_detail_latency.into(),
+        log_detail_error: t.log_detail_error.into(),
+        log_detail_headers: t.log_detail_headers.into(),
+        log_detail_payload: t.log_detail_payload.into(),
+        log_detail_response: t.log_detail_response.into(),
+        btn_updating: t.btn_updating.into(),
+        lbl_status_prefix: t.lbl_status_prefix.into(),
+        test_temp_label: t.test_temp_label.into(),
+        test_prompt_placeholder: t.test_prompt_placeholder.into(),
+        lbl_catalog_models_header: t.lbl_catalog_models_header.into(),
         lbl_rolling_5h: t.lbl_rolling_5h.into(),
         lbl_rolling_weekly: t.lbl_rolling_weekly.into(),
         lbl_proxy_engine_active: t.lbl_proxy_engine_active.into(),
@@ -293,6 +351,7 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_latest_version: t.lbl_latest_version.into(),
         lbl_sending: t.lbl_sending.into(),
     };
+    ui.set_github_update_status(t.btn_check_updates.clone().into());
     ui.set_i18n(i18n_struct);
     ui.set_current_language(lang.to_index());
 }
@@ -303,9 +362,11 @@ fn setup_linux_desktop_integration() {
         let app_dir = home.join(".local/share/applications");
         let icons_base = home.join(".local/share/icons/hicolor");
         let pixmaps_dir = home.join(".local/share/pixmaps");
+        let fonts_dir = home.join(".local/share/fonts/aroxy");
 
         let _ = std::fs::create_dir_all(&app_dir);
         let _ = std::fs::create_dir_all(&pixmaps_dir);
+        let _ = std::fs::create_dir_all(&fonts_dir);
 
         let icon_sizes: [(u32, &[u8]); 7] = [
             (16, include_bytes!("../assets/icons/logo_16.png").as_slice()),
@@ -324,6 +385,8 @@ fn setup_linux_desktop_integration() {
         }
 
         let _ = std::fs::write(pixmaps_dir.join("aroxy.png"), include_bytes!("../assets/icons/logo_256.png"));
+        let _ = std::fs::write(home.join(".local/share/icons").join("aroxy.png"), include_bytes!("../assets/icons/logo_256.png"));
+        let _ = std::fs::write(fonts_dir.join("Unbounded.ttf"), include_bytes!("../ui/fonts/Unbounded.ttf"));
 
         let exec_path = if let Ok(appimage) = std::env::var("APPIMAGE") {
             appimage
@@ -358,6 +421,10 @@ fn setup_linux_desktop_integration() {
             .arg("-f")
             .arg("-t")
             .arg(&icons_base)
+            .output();
+        let _ = std::process::Command::new("fc-cache")
+            .arg("-f")
+            .arg(&fonts_dir)
             .output();
     }
 }
@@ -655,6 +722,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    #[cfg(not(windows))]
+    {
+        // Enforce Winit backend with FemtoVG renderer for hardware-accelerated OpenGL and embedded fonts
+        std::env::set_var("SLINT_BACKEND", "winit");
+        // Ensure Wayland / X11 window manager associates window with aroxy.desktop / GNOME dock icon
+        let mut backend_builder = i_slint_backend_winit::Backend::builder();
+        backend_builder = backend_builder.with_window_attributes_hook(|attrs| {
+            #[cfg(target_os = "linux")]
+            {
+                use i_slint_backend_winit::winit::platform::wayland::WindowAttributesExtWayland;
+                use i_slint_backend_winit::winit::platform::x11::WindowAttributesExtX11;
+                let attrs = WindowAttributesExtWayland::with_name(attrs, "aroxy", "aroxy");
+                WindowAttributesExtX11::with_name(attrs, "aroxy", "aroxy")
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                attrs
+            }
+        });
+        if let Ok(backend) = backend_builder.build() {
+            let _ = slint::platform::set_platform(Box::new(backend));
+        }
+    }
+
     // Launch Slint GUI
     let main_window = MainWindow::new()?;
     let window_handle = main_window.as_weak();
@@ -722,6 +813,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         main_window.set_config_folder_size(size_display.into());
 
+        let is_ru = cfg.language.eq_ignore_ascii_case("ru");
+        let is_zh = cfg.language.eq_ignore_ascii_case("zh");
+
         for acc in &cfg.accounts {
             accounts_model.push(AccountData {
                 id: acc.id.clone().into(),
@@ -734,15 +828,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 quota_used: acc.quota_used as i32,
                 quota_limit: acc.quota_limit as i32,
                 quota_percent: acc.claude_gpt_percent,
-                quota_reset: acc.claude_gpt_reset.clone().into(),
+                quota_reset: AppConfig::localize_reset_str(&acc.claude_gpt_reset, is_ru, is_zh).into(),
                 claude_gpt_percent: acc.claude_gpt_percent,
-                claude_gpt_reset: acc.claude_gpt_reset.clone().into(),
+                claude_gpt_reset: AppConfig::localize_reset_str(&acc.claude_gpt_reset, is_ru, is_zh).into(),
                 claude_gpt_weekly_percent: acc.claude_gpt_weekly_percent,
-                claude_gpt_weekly_reset: acc.claude_gpt_weekly_reset.clone().into(),
+                claude_gpt_weekly_reset: AppConfig::localize_reset_str(&acc.claude_gpt_weekly_reset, is_ru, is_zh).into(),
                 gemini_percent: acc.gemini_percent,
-                gemini_reset: acc.gemini_reset.clone().into(),
+                gemini_reset: AppConfig::localize_reset_str(&acc.gemini_reset, is_ru, is_zh).into(),
                 gemini_weekly_percent: acc.gemini_weekly_percent,
-                gemini_weekly_reset: acc.gemini_weekly_reset.clone().into(),
+                gemini_weekly_reset: AppConfig::localize_reset_str(&acc.gemini_weekly_reset, is_ru, is_zh).into(),
                 status: acc.status.clone().into(),
                 is_active: acc.is_active,
                 error_message: acc.error_message.clone().unwrap_or_default().into(),
@@ -2098,6 +2192,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 last_seen_version = current_version;
                 let cfg = c_timer.read();
 
+                let is_ru = cfg.language.eq_ignore_ascii_case("ru");
+                let is_zh = cfg.language.eq_ignore_ascii_case("zh");
+
                 let new_acc_data: Vec<AccountData> = cfg.accounts
                     .iter()
                     .map(|acc| {
@@ -2112,15 +2209,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             quota_used: acc.quota_used as i32,
                             quota_limit: acc.quota_limit as i32,
                             quota_percent: acc.claude_gpt_percent,
-                            quota_reset: acc.claude_gpt_reset.clone().into(),
+                            quota_reset: AppConfig::localize_reset_str(&acc.claude_gpt_reset, is_ru, is_zh).into(),
                             claude_gpt_percent: acc.claude_gpt_percent,
-                            claude_gpt_reset: acc.claude_gpt_reset.clone().into(),
+                            claude_gpt_reset: AppConfig::localize_reset_str(&acc.claude_gpt_reset, is_ru, is_zh).into(),
                             claude_gpt_weekly_percent: acc.claude_gpt_weekly_percent,
-                            claude_gpt_weekly_reset: acc.claude_gpt_weekly_reset.clone().into(),
+                            claude_gpt_weekly_reset: AppConfig::localize_reset_str(&acc.claude_gpt_weekly_reset, is_ru, is_zh).into(),
                             gemini_percent: acc.gemini_percent,
-                            gemini_reset: acc.gemini_reset.clone().into(),
+                            gemini_reset: AppConfig::localize_reset_str(&acc.gemini_reset, is_ru, is_zh).into(),
                             gemini_weekly_percent: acc.gemini_weekly_percent,
-                            gemini_weekly_reset: acc.gemini_weekly_reset.clone().into(),
+                            gemini_weekly_reset: AppConfig::localize_reset_str(&acc.gemini_weekly_reset, is_ru, is_zh).into(),
                             status: acc.status.clone().into(),
                             is_active: acc.is_active,
                             error_message: acc.error_message.clone().unwrap_or_default().into(),

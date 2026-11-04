@@ -598,40 +598,57 @@ impl AppConfig {
         (folder, total_size)
     }
 
-    pub fn format_claude_quota(&self) -> String {
-        let pct = self.aggregate_claude_gpt_percent();
-        if self.quota_display_mode == "fraction" {
-            format!("{:.2} Remaining", (pct as f64) / 100.0)
+    pub fn localize_reset_str(raw: &str, is_ru: bool, is_zh: bool) -> String {
+        let clean = raw.trim()
+            .trim_start_matches("in ")
+            .trim_start_matches("через ")
+            .trim_start_matches("约 ");
+        if is_ru {
+            clean.replace('d', "д").replace('h', "ч").replace('m', "м")
+        } else if is_zh {
+            clean.replace('d', "天").replace('h', "小时").replace('m', "分")
         } else {
-            format!("{}% Available", pct)
+            clean.to_string()
         }
+    }
+
+    pub fn format_quota_label(&self, pct: i32) -> String {
+        let is_ru = self.language.eq_ignore_ascii_case("ru");
+        let is_zh = self.language.eq_ignore_ascii_case("zh");
+        if self.quota_display_mode == "fraction" {
+            let frac = (pct as f64) / 100.0;
+            if is_ru {
+                format!("{:.2} Осталось", frac)
+            } else if is_zh {
+                format!("{:.2} 剩余", frac)
+            } else {
+                format!("{:.2} Remaining", frac)
+            }
+        } else {
+            if is_ru {
+                format!("{}% Доступно", pct)
+            } else if is_zh {
+                format!("{}% 可用", pct)
+            } else {
+                format!("{}% Available", pct)
+            }
+        }
+    }
+
+    pub fn format_claude_quota(&self) -> String {
+        self.format_quota_label(self.aggregate_claude_gpt_percent())
     }
 
     pub fn format_gemini_quota(&self) -> String {
-        let pct = self.aggregate_gemini_percent();
-        if self.quota_display_mode == "fraction" {
-            format!("{:.2} Remaining", (pct as f64) / 100.0)
-        } else {
-            format!("{}% Available", pct)
-        }
+        self.format_quota_label(self.aggregate_gemini_percent())
     }
 
     pub fn format_claude_weekly_quota(&self) -> String {
-        let pct = self.aggregate_claude_gpt_weekly_percent();
-        if self.quota_display_mode == "fraction" {
-            format!("{:.2} Remaining", (pct as f64) / 100.0)
-        } else {
-            format!("{}% Available", pct)
-        }
+        self.format_quota_label(self.aggregate_claude_gpt_weekly_percent())
     }
 
     pub fn format_gemini_weekly_quota(&self) -> String {
-        let pct = self.aggregate_gemini_weekly_percent();
-        if self.quota_display_mode == "fraction" {
-            format!("{:.2} Remaining", (pct as f64) / 100.0)
-        } else {
-            format!("{}% Available", pct)
-        }
+        self.format_quota_label(self.aggregate_gemini_weekly_percent())
     }
 
     pub fn aggregate_claude_gpt_percent(&self) -> i32 {
@@ -671,39 +688,79 @@ impl AppConfig {
     }
 
     pub fn nearest_claude_reset(&self) -> String {
+        let is_ru = self.language.eq_ignore_ascii_case("ru");
+        let is_zh = self.language.eq_ignore_ascii_case("zh");
         self.accounts
             .iter()
             .filter(|a| a.is_active)
-            .map(|a| a.claude_gpt_reset.clone())
+            .map(|a| Self::localize_reset_str(&a.claude_gpt_reset, is_ru, is_zh))
             .next()
-            .unwrap_or_else(|| "in 4h 00m".to_string())
+            .unwrap_or_else(|| {
+                if is_ru {
+                    "4ч 00м".to_string()
+                } else if is_zh {
+                    "4小时00分".to_string()
+                } else {
+                    "4h 00m".to_string()
+                }
+            })
     }
 
     pub fn nearest_claude_weekly_reset(&self) -> String {
+        let is_ru = self.language.eq_ignore_ascii_case("ru");
+        let is_zh = self.language.eq_ignore_ascii_case("zh");
         self.accounts
             .iter()
             .filter(|a| a.is_active)
-            .map(|a| a.claude_gpt_weekly_reset.clone())
+            .map(|a| Self::localize_reset_str(&a.claude_gpt_weekly_reset, is_ru, is_zh))
             .next()
-            .unwrap_or_else(|| "in 7d 00h".to_string())
+            .unwrap_or_else(|| {
+                if is_ru {
+                    "5д 17ч".to_string()
+                } else if is_zh {
+                    "5天17小时".to_string()
+                } else {
+                    "5d 17h".to_string()
+                }
+            })
     }
 
     pub fn nearest_gemini_reset(&self) -> String {
+        let is_ru = self.language.eq_ignore_ascii_case("ru");
+        let is_zh = self.language.eq_ignore_ascii_case("zh");
         self.accounts
             .iter()
             .filter(|a| a.is_active)
-            .map(|a| a.gemini_reset.clone())
+            .map(|a| Self::localize_reset_str(&a.gemini_reset, is_ru, is_zh))
             .next()
-            .unwrap_or_else(|| "in 4h 00m".to_string())
+            .unwrap_or_else(|| {
+                if is_ru {
+                    "4ч 00м".to_string()
+                } else if is_zh {
+                    "4小时00分".to_string()
+                } else {
+                    "4h 00m".to_string()
+                }
+            })
     }
 
     pub fn nearest_gemini_weekly_reset(&self) -> String {
+        let is_ru = self.language.eq_ignore_ascii_case("ru");
+        let is_zh = self.language.eq_ignore_ascii_case("zh");
         self.accounts
             .iter()
             .filter(|a| a.is_active)
-            .map(|a| a.gemini_weekly_reset.clone())
+            .map(|a| Self::localize_reset_str(&a.gemini_weekly_reset, is_ru, is_zh))
             .next()
-            .unwrap_or_else(|| "in 7d 00h".to_string())
+            .unwrap_or_else(|| {
+                if is_ru {
+                    "5д 17ч".to_string()
+                } else if is_zh {
+                    "5天17小时".to_string()
+                } else {
+                    "5d 17h".to_string()
+                }
+            })
     }
 
     pub fn save(&self) -> std::io::Result<()> {

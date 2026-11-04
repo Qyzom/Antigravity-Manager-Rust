@@ -240,6 +240,64 @@ export struct I18nData {
     btn_check_updates: string,
     btn_github_releases: string,
     btn_config_folder: string,
+    lbl_reset_5h_prefix: string,
+    lbl_reset_week_prefix: string,
+    lbl_remaining: string,
+    lbl_available: string,
+    lbl_resets_prefix: string,
+    lbl_proxy_prefix: string,
+    btn_time_today: string,
+    btn_time_7d: string,
+    btn_time_30d: string,
+    btn_time_all: string,
+    stat_card_prompt_tok: string,
+    stat_sub_prompt: string,
+    stat_card_output_tok: string,
+    stat_sub_output: string,
+    stat_card_thinking_tok: string,
+    stat_sub_thinking: string,
+    stat_card_total_tok: string,
+    stat_sub_total_tok: string,
+    stat_card_avg_lat: string,
+    stat_sub_avg_lat: string,
+    stat_card_success_rate: string,
+    stat_sub_success_rate: string,
+    stat_card_failovers: string,
+    stat_sub_failovers: string,
+    stat_card_peak_lat: string,
+    stat_sub_peak_lat: string,
+    stat_card_cache_hit: string,
+    stat_sub_cache_match: string,
+    stat_card_p50: string,
+    stat_sub_median_lat: string,
+    stat_card_p95: string,
+    stat_sub_stream_lat: string,
+    stat_card_p99: string,
+    stat_sub_max_regular_lat: string,
+    lbl_donut_prompt: string,
+    lbl_donut_output: string,
+    lbl_donut_thinking: string,
+    lbl_col_time: string,
+    lbl_col_method: string,
+    lbl_col_endpoint: string,
+    lbl_col_model: string,
+    lbl_col_status: string,
+    lbl_col_tokens: string,
+    lbl_col_latency: string,
+    log_detail_account: string,
+    log_detail_timestamp: string,
+    log_detail_model: string,
+    log_detail_tokens: string,
+    log_detail_latency: string,
+    log_detail_error: string,
+    log_detail_headers: string,
+    log_detail_payload: string,
+    log_detail_response: string,
+    btn_updating: string,
+    lbl_status_prefix: string,
+    test_temp_label: string,
+    test_prompt_placeholder: string,
+    lbl_catalog_models_header: string,
     lbl_rolling_5h: string,
     lbl_rolling_weekly: string,
     lbl_proxy_engine_active: string,
@@ -775,6 +833,7 @@ export component MainWindow inherits Window {
                     alignment: start;
                     Text {
                         text: "Aroxy";
+                        font-family: "Unbounded";
                         font-size: 16px;
                         font-weight: 800;
                         color: #ffffff;
@@ -940,13 +999,13 @@ export component MainWindow inherits Window {
                                     HorizontalLayout {
                                         spacing: 6px;
                                         if root.quota_view_mode != "weekly": Badge {
-                                            text: "5h Reset: " + root.global_claude_reset;
+                                            text: root.i18n.lbl_reset_5h_prefix + root.global_claude_reset;
                                             is_green: root.global_claude_percent > 20;
                                             is_amber: root.global_claude_percent > 0 && root.global_claude_percent <= 20;
                                             is_danger: root.global_claude_percent <= 0;
                                         }
                                         if root.quota_view_mode != "5hour": Badge {
-                                            text: "Week Reset: " + root.global_claude_weekly_reset;
+                                            text: root.i18n.lbl_reset_week_prefix + root.global_claude_weekly_reset;
                                             is_green: root.global_claude_weekly_percent > 20;
                                             is_amber: root.global_claude_weekly_percent > 0 && root.global_claude_weekly_percent <= 20;
                                             is_danger: root.global_claude_weekly_percent <= 0;
@@ -1015,13 +1074,13 @@ export component MainWindow inherits Window {
                                     HorizontalLayout {
                                         spacing: 6px;
                                         if root.quota_view_mode != "weekly": Badge {
-                                            text: "5h Reset: " + root.global_gemini_reset;
+                                            text: root.i18n.lbl_reset_5h_prefix + root.global_gemini_reset;
                                             is_green: root.global_gemini_percent > 20;
                                             is_amber: root.global_gemini_percent > 0 && root.global_gemini_percent <= 20;
                                             is_danger: root.global_gemini_percent <= 0;
                                         }
                                         if root.quota_view_mode != "5hour": Badge {
-                                            text: "Week Reset: " + root.global_gemini_weekly_reset;
+                                            text: root.i18n.lbl_reset_week_prefix + root.global_gemini_weekly_reset;
                                             is_green: root.global_gemini_weekly_percent > 20;
                                             is_amber: root.global_gemini_weekly_percent > 0 && root.global_gemini_weekly_percent <= 20;
                                             is_danger: root.global_gemini_weekly_percent <= 0;
@@ -1111,16 +1170,20 @@ export component MainWindow inherits Window {
                                     LineEdit {
                                         placeholder-text: root.i18n.acc_placeholder;
                                         text <=> root.new_acc_token;
-                                        horizontal-stretch: 3;
+                                        horizontal-stretch: 5;
+                                        min-width: 140px;
                                     }
                                     LineEdit {
                                         placeholder-text: root.i18n.lbl_modal_proxy_placeholder;
                                         text <=> root.new_acc_proxy;
-                                        horizontal-stretch: 2;
+                                        horizontal-stretch: 3;
+                                        min-width: 120px;
                                     }
                                     ActionButton {
                                         text: root.i18n.btn_add_token;
                                         is_primary: true;
+                                        min-width: 100px;
+                                        horizontal-stretch: 0;
                                         clicked => { root.add_account(); }
                                     }
                                 }
@@ -1218,7 +1281,7 @@ export component MainWindow inherits Window {
                                         if acc.proxy_url != "": VerticalLayout {
                                             alignment: center;
                                             Badge {
-                                                text: "Proxy: " + acc.proxy_url;
+                                                text: root.i18n.lbl_proxy_prefix + acc.proxy_url;
                                                 is_amber: true;
                                             }
                                         }
@@ -1260,14 +1323,14 @@ export component MainWindow inherits Window {
                                         alignment: space-between;
                                         Text {
                                             text: root.quota_display_mode == "fraction" 
-                                                ? "Claude 5h: " + ((acc.claude_gpt_percent / 100.0) + "") + " Remaining"
-                                                : "Claude 5h: " + acc.claude_gpt_percent + "% Available";
+                                                ? "Claude 5h: " + ((acc.claude_gpt_percent / 100.0) + "") + " " + root.i18n.lbl_remaining
+                                                : "Claude 5h: " + acc.claude_gpt_percent + "% " + root.i18n.lbl_available;
                                             font-size: 11px;
                                             font-weight: 700;
                                             color: acc.claude_gpt_percent <= 0 ? #f87171 : (acc.claude_gpt_percent <= 20 ? #fbbf24 : #4ade80);
                                         }
                                         Text {
-                                            text: "Resets " + acc.claude_gpt_reset;
+                                            text: root.i18n.lbl_resets_prefix + acc.claude_gpt_reset;
                                             font-size: 10px;
                                             color: #71717a;
                                         }
@@ -1294,14 +1357,14 @@ export component MainWindow inherits Window {
                                         alignment: space-between;
                                         Text {
                                             text: root.quota_display_mode == "fraction" 
-                                                ? "Claude Week: " + ((acc.claude_gpt_weekly_percent / 100.0) + "") + " Remaining"
-                                                : "Claude Week: " + acc.claude_gpt_weekly_percent + "% Available";
+                                                ? "Claude Week: " + ((acc.claude_gpt_weekly_percent / 100.0) + "") + " " + root.i18n.lbl_remaining
+                                                : "Claude Week: " + acc.claude_gpt_weekly_percent + "% " + root.i18n.lbl_available;
                                             font-size: 11px;
                                             font-weight: 700;
                                             color: acc.claude_gpt_weekly_percent <= 0 ? #f87171 : (acc.claude_gpt_weekly_percent <= 20 ? #fbbf24 : #4ade80);
                                         }
                                         Text {
-                                            text: "Resets " + acc.claude_gpt_weekly_reset;
+                                            text: root.i18n.lbl_resets_prefix + acc.claude_gpt_weekly_reset;
                                             font-size: 10px;
                                             color: #71717a;
                                         }
@@ -1328,14 +1391,14 @@ export component MainWindow inherits Window {
                                         alignment: space-between;
                                         Text {
                                             text: root.quota_display_mode == "fraction" 
-                                                ? "Gemini 5h: " + ((acc.gemini_percent / 100.0) + "") + " Remaining"
-                                                : "Gemini 5h: " + acc.gemini_percent + "% Available";
+                                                ? "Gemini 5h: " + ((acc.gemini_percent / 100.0) + "") + " " + root.i18n.lbl_remaining
+                                                : "Gemini 5h: " + acc.gemini_percent + "% " + root.i18n.lbl_available;
                                             font-size: 11px;
                                             font-weight: 700;
                                             color: acc.gemini_percent <= 0 ? #f87171 : (acc.gemini_percent <= 20 ? #fbbf24 : #4ade80);
                                         }
                                         Text {
-                                            text: "Resets " + acc.gemini_reset;
+                                            text: root.i18n.lbl_resets_prefix + acc.gemini_reset;
                                             font-size: 10px;
                                             color: #71717a;
                                         }
@@ -1362,14 +1425,14 @@ export component MainWindow inherits Window {
                                         alignment: space-between;
                                         Text {
                                             text: root.quota_display_mode == "fraction" 
-                                                ? "Gemini Week: " + ((acc.gemini_weekly_percent / 100.0) + "") + " Remaining"
-                                                : "Gemini Week: " + acc.gemini_weekly_percent + "% Available";
+                                                ? "Gemini Week: " + ((acc.gemini_weekly_percent / 100.0) + "") + " " + root.i18n.lbl_remaining
+                                                : "Gemini Week: " + acc.gemini_weekly_percent + "% " + root.i18n.lbl_available;
                                             font-size: 11px;
                                             font-weight: 700;
                                             color: acc.gemini_weekly_percent <= 0 ? #f87171 : (acc.gemini_weekly_percent <= 20 ? #fbbf24 : #4ade80);
                                         }
                                         Text {
-                                            text: "Resets " + acc.gemini_weekly_reset;
+                                            text: root.i18n.lbl_resets_prefix + acc.gemini_weekly_reset;
                                             font-size: 10px;
                                             color: #71717a;
                                         }
@@ -1424,7 +1487,7 @@ export component MainWindow inherits Window {
                             }
                         }
 
-                        Text { text: "CATALOG MODELS & BROADCAST PERMISSIONS"; font-size: 11px; font-weight: 700; color: #71717a; }
+                        Text { text: root.i18n.lbl_catalog_models_header; font-size: 11px; font-weight: 700; color: #71717a; }
 
                         // Model Cards
                         for model in root.models: Rectangle {
@@ -1549,107 +1612,100 @@ export component MainWindow inherits Window {
                                 }
                             }
 
-                            // Strategy & Cache Affinity Row (Side-by-Side)
-                            HorizontalLayout {
-                                spacing: 8px;
+                            // Routing Strategy Box
+                            Rectangle {
+                                background: #18181b;
+                                border-radius: 8px;
+                                border-width: 1px;
+                                border-color: #27272a;
 
-                                // Routing Strategy Box
-                                Rectangle {
-                                    horizontal-stretch: 1;
-                                    background: #18181b;
-                                    border-radius: 8px;
-                                    border-width: 1px;
-                                    border-color: #27272a;
+                                VerticalLayout {
+                                    padding: 10px;
+                                    spacing: 6px;
 
-                                    VerticalLayout {
-                                        padding: 8px;
-                                        spacing: 5px;
+                                    Text { text: root.i18n.sec_routing; font-size: 11px; font-weight: 700; color: #ffffff; }
 
-                                        Text { text: root.i18n.sec_routing; font-size: 11px; font-weight: 700; color: #ffffff; }
-
-                                        HorizontalLayout {
-                                            spacing: 6px;
-                                            ActionButton {
-                                                text: root.i18n.strat_quota_aware;
-                                                is_primary: root.routing_strategy_index == 0;
-                                                is_accent: root.routing_strategy_index == 0;
-                                                clicked => { root.set_routing_strategy(0); }
-                                            }
-                                            ActionButton {
-                                                text: root.i18n.strat_round_robin;
-                                                is_primary: root.routing_strategy_index == 1;
-                                                is_accent: root.routing_strategy_index == 1;
-                                                clicked => { root.set_routing_strategy(1); }
-                                            }
-                                            ActionButton {
-                                                text: root.i18n.strat_failover;
-                                                is_primary: root.routing_strategy_index == 2;
-                                                is_accent: root.routing_strategy_index == 2;
-                                                clicked => { root.set_routing_strategy(2); }
-                                            }
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        ActionButton {
+                                            text: root.i18n.strat_quota_aware;
+                                            is_primary: root.routing_strategy_index == 0;
+                                            is_accent: root.routing_strategy_index == 0;
+                                            clicked => { root.set_routing_strategy(0); }
                                         }
-
-                                        Text {
-                                            text: root.routing_strategy_index == 0
-                                                ? root.i18n.strat_quota_aware_desc
-                                                : (root.routing_strategy_index == 1
-                                                    ? root.i18n.strat_round_robin_desc
-                                                    : root.i18n.strat_failover_desc);
-                                            font-size: 10px;
-                                            color: #a1a1aa;
+                                        ActionButton {
+                                            text: root.i18n.strat_round_robin;
+                                            is_primary: root.routing_strategy_index == 1;
+                                            is_accent: root.routing_strategy_index == 1;
+                                            clicked => { root.set_routing_strategy(1); }
+                                        }
+                                        ActionButton {
+                                            text: root.i18n.strat_failover;
+                                            is_primary: root.routing_strategy_index == 2;
+                                            is_accent: root.routing_strategy_index == 2;
+                                            clicked => { root.set_routing_strategy(2); }
                                         }
                                     }
+
+                                    Text {
+                                        text: root.routing_strategy_index == 0
+                                            ? root.i18n.strat_quota_aware_desc
+                                            : (root.routing_strategy_index == 1
+                                                ? root.i18n.strat_round_robin_desc
+                                                : root.i18n.strat_failover_desc);
+                                        font-size: 10px;
+                                        color: #a1a1aa;
+                                    }
                                 }
+                            }
 
-                                // Prompt Cache Affinity Box
-                                Rectangle {
-                                    horizontal-stretch: 1;
-                                    background: #18181b;
-                                    border-radius: 8px;
-                                    border-width: 1px;
-                                    border-color: #27272a;
+                            // Prompt Cache Affinity & Zero-Downtime Box
+                            Rectangle {
+                                background: #18181b;
+                                border-radius: 8px;
+                                border-width: 1px;
+                                border-color: #27272a;
 
-                                    VerticalLayout {
-                                        padding: 8px;
-                                        spacing: 5px;
+                                VerticalLayout {
+                                    padding: 10px;
+                                    spacing: 8px;
 
-                                        Text { text: root.i18n.sec_cache; font-size: 11px; font-weight: 700; color: #ffffff; }
+                                    Text { text: root.i18n.sec_cache; font-size: 11px; font-weight: 700; color: #ffffff; }
 
-                                        HorizontalLayout {
-                                            spacing: 6px;
-                                            ActionButton {
-                                                text: root.i18n.opt_cache_first;
-                                                is_primary: root.cache_affinity_mode_index == 0;
-                                                is_accent: root.cache_affinity_mode_index == 0;
-                                                clicked => { root.set_cache_affinity_mode(0); }
-                                            }
-                                            ActionButton {
-                                                text: root.i18n.opt_cache_balanced;
-                                                is_primary: root.cache_affinity_mode_index == 1;
-                                                is_accent: root.cache_affinity_mode_index == 1;
-                                                clicked => { root.set_cache_affinity_mode(1); }
-                                            }
-                                            ActionButton {
-                                                text: root.i18n.opt_cache_spread;
-                                                is_primary: root.cache_affinity_mode_index == 2;
-                                                is_accent: root.cache_affinity_mode_index == 2;
-                                                clicked => { root.set_cache_affinity_mode(2); }
-                                            }
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        ActionButton {
+                                            text: root.i18n.opt_cache_first;
+                                            is_primary: root.cache_affinity_mode_index == 0;
+                                            is_accent: root.cache_affinity_mode_index == 0;
+                                            clicked => { root.set_cache_affinity_mode(0); }
                                         }
+                                        ActionButton {
+                                            text: root.i18n.opt_cache_balanced;
+                                            is_primary: root.cache_affinity_mode_index == 1;
+                                            is_accent: root.cache_affinity_mode_index == 1;
+                                            clicked => { root.set_cache_affinity_mode(1); }
+                                        }
+                                        ActionButton {
+                                            text: root.i18n.opt_cache_spread;
+                                            is_primary: root.cache_affinity_mode_index == 2;
+                                            is_accent: root.cache_affinity_mode_index == 2;
+                                            clicked => { root.set_cache_affinity_mode(2); }
+                                        }
+                                    }
 
-                                        HorizontalLayout {
-                                            alignment: space-between;
-                                            VerticalLayout {
-                                                spacing: 1px;
-                                                Text { text: root.i18n.lbl_failover; font-size: 10px; font-weight: 600; color: #fafafa; }
-                                                Text { text: root.i18n.lbl_failover_desc; font-size: 9px; color: #71717a; }
-                                            }
-                                            VerticalLayout {
-                                                alignment: center;
-                                                ToggleSwitch {
-                                                    checked: root.failover_on_429;
-                                                    toggled => { root.toggle_failover_429(); }
-                                                }
+                                    HorizontalLayout {
+                                        alignment: space-between;
+                                        VerticalLayout {
+                                            spacing: 1px;
+                                            Text { text: root.i18n.lbl_failover; font-size: 11px; font-weight: 600; color: #fafafa; }
+                                            Text { text: root.i18n.lbl_failover_desc; font-size: 10px; color: #71717a; }
+                                        }
+                                        VerticalLayout {
+                                            alignment: center;
+                                            ToggleSwitch {
+                                                checked: root.failover_on_429;
+                                                toggled => { root.toggle_failover_429(); }
                                             }
                                         }
                                     }
@@ -1904,13 +1960,13 @@ export component MainWindow inherits Window {
                                 HorizontalLayout {
                                     padding-left: 8px;
                                     padding-right: 8px;
-                                    Text { text: "TIME"; width: 70px; font-size: 10px; font-weight: 700; color: #71717a; }
-                                    Text { text: "METHOD"; width: 60px; font-size: 10px; font-weight: 700; color: #71717a; }
-                                    Text { text: "ENDPOINT"; horizontal-stretch: 1; font-size: 10px; font-weight: 700; color: #71717a; }
-                                    Text { text: "MODEL"; width: 160px; font-size: 10px; font-weight: 700; color: #71717a; }
-                                    Text { text: "STATUS"; width: 75px; font-size: 10px; font-weight: 700; color: #71717a; }
-                                    Text { text: "TOKENS"; width: 60px; font-size: 10px; font-weight: 700; color: #71717a; }
-                                    Text { text: "LATENCY"; width: 65px; font-size: 10px; font-weight: 700; color: #71717a; }
+                                    Text { text: root.i18n.lbl_col_time; width: 70px; font-size: 10px; font-weight: 700; color: #71717a; }
+                                    Text { text: root.i18n.lbl_col_method; width: 60px; font-size: 10px; font-weight: 700; color: #71717a; }
+                                    Text { text: root.i18n.lbl_col_endpoint; horizontal-stretch: 1; font-size: 10px; font-weight: 700; color: #71717a; }
+                                    Text { text: root.i18n.lbl_col_model; width: 160px; font-size: 10px; font-weight: 700; color: #71717a; }
+                                    Text { text: root.i18n.lbl_col_status; width: 75px; font-size: 10px; font-weight: 700; color: #71717a; }
+                                    Text { text: root.i18n.lbl_col_tokens; width: 60px; font-size: 10px; font-weight: 700; color: #71717a; }
+                                    Text { text: root.i18n.lbl_col_latency; width: 65px; font-size: 10px; font-weight: 700; color: #71717a; }
                                 }
 
                                 for log in root.log_entries: Rectangle {
@@ -1961,25 +2017,25 @@ export component MainWindow inherits Window {
                                 spacing: 8px;
                                 Text { text: root.i18n.lbl_time_range + ":"; font-size: 11px; font-weight: 700; color: #71717a; vertical-alignment: center; }
                                 ActionButton {
-                                    text: "Today";
+                                    text: root.i18n.btn_time_today;
                                     is_primary: root.stat_time_range_index == 0;
                                     is_accent: root.stat_time_range_index == 0;
                                     clicked => { root.stat_time_range_index = 0; }
                                 }
                                 ActionButton {
-                                    text: "7 Days";
+                                    text: root.i18n.btn_time_7d;
                                     is_primary: root.stat_time_range_index == 1;
                                     is_accent: root.stat_time_range_index == 1;
                                     clicked => { root.stat_time_range_index = 1; }
                                 }
                                 ActionButton {
-                                    text: "30 Days";
+                                    text: root.i18n.btn_time_30d;
                                     is_primary: root.stat_time_range_index == 2;
                                     is_accent: root.stat_time_range_index == 2;
                                     clicked => { root.stat_time_range_index = 2; }
                                 }
                                 ActionButton {
-                                    text: "All Time";
+                                    text: root.i18n.btn_time_all;
                                     is_primary: root.stat_time_range_index == 3;
                                     is_accent: root.stat_time_range_index == 3;
                                     clicked => { root.stat_time_range_index = 3; }
@@ -1989,7 +2045,7 @@ export component MainWindow inherits Window {
                                 text: root.i18n.btn_reset_stats;
                                 is_primary: false;
                                 is_danger: false;
-                                is_accent: false;
+                                is_accent: true;
                                 clicked => { root.reset_stats(); }
                             }
                         }
@@ -1998,24 +2054,24 @@ export component MainWindow inherits Window {
                         HorizontalLayout {
                             spacing: 10px;
                             StatCard {
-                                title: "PROMPT TOKENS";
+                                title: root.i18n.stat_card_prompt_tok;
                                 value: root.stat_prompt_tokens;
-                                subtext: "Input instructions";
+                                subtext: root.i18n.stat_sub_prompt;
                             }
                             StatCard {
-                                title: "OUTPUT TOKENS";
+                                title: root.i18n.stat_card_output_tok;
                                 value: root.stat_completion_tokens;
-                                subtext: "Model response";
+                                subtext: root.i18n.stat_sub_output;
                             }
                             StatCard {
-                                title: "THINKING TOKENS";
+                                title: root.i18n.stat_card_thinking_tok;
                                 value: root.stat_thinking_tokens;
-                                subtext: "Reasoning budget";
+                                subtext: root.i18n.stat_sub_thinking;
                             }
                             StatCard {
-                                title: "TOTAL TOKENS";
+                                title: root.i18n.stat_card_total_tok;
                                 value: root.total_tokens;
-                                subtext: "Aggregate volume";
+                                subtext: root.i18n.stat_sub_total_tok;
                             }
                         }
 
@@ -2023,24 +2079,24 @@ export component MainWindow inherits Window {
                         HorizontalLayout {
                             spacing: 10px;
                             StatCard {
-                                title: "AVG LATENCY";
+                                title: root.i18n.stat_card_avg_lat;
                                 value: root.avg_latency;
-                                subtext: "Stream TTFT average";
+                                subtext: root.i18n.stat_sub_avg_lat;
                             }
                             StatCard {
-                                title: "SUCCESS RATE";
+                                title: root.i18n.stat_card_success_rate;
                                 value: root.stat_success_rate;
-                                subtext: "HTTP 2xx ratio";
+                                subtext: root.i18n.stat_sub_success_rate;
                             }
                             StatCard {
-                                title: "FAILOVERS / 429";
+                                title: root.i18n.stat_card_failovers;
                                 value: root.stat_error_count;
-                                subtext: "Automatic retries";
+                                subtext: root.i18n.stat_sub_failovers;
                             }
                             StatCard {
-                                title: "PEAK LATENCY";
+                                title: root.i18n.stat_card_peak_lat;
                                 value: root.stat_max_latency;
-                                subtext: "Max wait time";
+                                subtext: root.i18n.stat_sub_peak_lat;
                             }
                         }
 
@@ -2089,7 +2145,7 @@ export component MainWindow inherits Window {
                                                 HorizontalLayout {
                                                     spacing: 6px;
                                                     Rectangle { width: 8px; height: 8px; border-radius: 4px; background: #3b82f6; y: 4px; }
-                                                    Text { text: "Prompt"; font-size: 11px; color: #e4e4e7; }
+                                                    Text { text: root.i18n.lbl_donut_prompt; font-size: 11px; color: #e4e4e7; }
                                                 }
                                                 Text { text: root.stat_prompt_pct + "%"; font-size: 11px; font-weight: 700; color: #3b82f6; }
                                             }
@@ -2099,7 +2155,7 @@ export component MainWindow inherits Window {
                                                 HorizontalLayout {
                                                     spacing: 6px;
                                                     Rectangle { width: 8px; height: 8px; border-radius: 4px; background: #10b981; y: 4px; }
-                                                    Text { text: "Output"; font-size: 11px; color: #e4e4e7; }
+                                                    Text { text: root.i18n.lbl_donut_output; font-size: 11px; color: #e4e4e7; }
                                                 }
                                                 Text { text: root.stat_comp_pct + "%"; font-size: 11px; font-weight: 700; color: #10b981; }
                                             }
@@ -2109,7 +2165,7 @@ export component MainWindow inherits Window {
                                                 HorizontalLayout {
                                                     spacing: 6px;
                                                     Rectangle { width: 8px; height: 8px; border-radius: 4px; background: #f59e0b; y: 4px; }
-                                                    Text { text: "Thinking "; font-size: 11px; color: #e4e4e7; }
+                                                    Text { text: root.i18n.lbl_donut_thinking; font-size: 11px; color: #e4e4e7; }
                                                 }
                                                 Text { text: root.stat_think_pct + "%"; font-size: 11px; font-weight: 700; color: #f59e0b; }
                                             }
@@ -2149,19 +2205,21 @@ export component MainWindow inherits Window {
 
                                         VerticalLayout {
                                             horizontal-stretch: 1;
-                                            spacing: 6px;
+                                            spacing: 8px;
                                             alignment: center;
 
                                             HorizontalLayout {
+                                                spacing: 12px;
                                                 alignment: space-between;
                                                 Text { text: root.i18n.lbl_stat_success; font-size: 11px; color: #a1a1aa; }
-                                                Text { text: root.stat_success_rate; font-size: 11px; font-weight: 700; color: #10b981; }
+                                                Text { text: " " + root.stat_success_rate; font-size: 11px; font-weight: 700; color: #10b981; }
                                             }
 
                                             HorizontalLayout {
+                                                spacing: 12px;
                                                 alignment: space-between;
                                                 Text { text: root.i18n.lbl_stat_error; font-size: 11px; color: #a1a1aa; }
-                                                Text { text: root.stat_error_count; font-size: 11px; font-weight: 700; color: #f59e0b; }
+                                                Text { text: " " + root.stat_error_count; font-size: 11px; font-weight: 700; color: #f59e0b; }
                                             }
                                         }
                                     }
@@ -2249,24 +2307,24 @@ export component MainWindow inherits Window {
                         HorizontalLayout {
                             spacing: 10px;
                             StatCard {
-                                title: "CACHE HIT RATE";
+                                title: root.i18n.stat_card_cache_hit;
                                 value: "96.4%";
-                                subtext: "Prompt prefix match";
+                                subtext: root.i18n.stat_sub_cache_match;
                             }
                             StatCard {
-                                title: "p50 TTFT";
+                                title: root.i18n.stat_card_p50;
                                 value: "18 ms";
-                                subtext: "Median token latency";
+                                subtext: root.i18n.stat_sub_median_lat;
                             }
                             StatCard {
-                                title: "p95 LATENCY";
+                                title: root.i18n.stat_card_p95;
                                 value: "45 ms";
-                                subtext: "Stream threshold";
+                                subtext: root.i18n.stat_sub_stream_lat;
                             }
                             StatCard {
-                                title: "p99 LATENCY";
+                                title: root.i18n.stat_card_p99;
                                 value: "82 ms";
-                                subtext: "Max regular latency";
+                                subtext: root.i18n.stat_sub_max_regular_lat;
                             }
                         }
                     }
@@ -2479,35 +2537,19 @@ export component MainWindow inherits Window {
 
                                 Text { text: root.i18n.sec_system; font-size: 13px; font-weight: 700; color: #ffffff; }
 
-                                // Config Folder Location
+                                // Config & Data Directory
                                 HorizontalLayout {
                                     alignment: space-between;
                                     VerticalLayout {
                                         horizontal-stretch: 1;
                                         spacing: 2px;
                                         Text { text: root.i18n.lbl_app_folder; font-size: 12px; color: #e4e4e7; }
-                                        Text { text: root.config_folder_path + " (" + root.config_folder_size + ")"; font-size: 11px; color: #71717a; }
+                                        Text { text: root.config_folder_path + " (" + root.config_folder_size + ") • config.json, stats.json, logs.jsonl"; font-size: 11px; color: #71717a; }
                                     }
                                     ActionButton {
                                         text: root.i18n.btn_open_folder;
                                         is_primary: false;
                                         clicked => { root.open_config_folder(); }
-                                    }
-                                }
-
-                                // Logs Folder Location
-                                HorizontalLayout {
-                                    alignment: space-between;
-                                    VerticalLayout {
-                                        horizontal-stretch: 1;
-                                        spacing: 2px;
-                                        Text { text: root.i18n.lbl_logs_folder; font-size: 12px; color: #e4e4e7; }
-                                        Text { text: "traffic.jsonl & stats.json"; font-size: 11px; color: #71717a; }
-                                    }
-                                    ActionButton {
-                                        text: root.i18n.btn_open_logs_folder;
-                                        is_primary: false;
-                                        clicked => { root.open_logs_folder(); }
                                     }
                                 }
 
@@ -2645,7 +2687,7 @@ export component MainWindow inherits Window {
                                     VerticalLayout {
                                         spacing: 3px;
                                         alignment: center;
-                                        Text { text: "Aroxy"; font-size: 16px; font-weight: 800; color: #ffffff; }
+                                        Text { text: "Aroxy"; font-family: "Unbounded"; font-size: 16px; font-weight: 800; color: #ffffff; }
                                         Text { text: root.i18n.about_app_desc; font-size: 12px; color: #a1a1aa; }
                                     }
                                 }
@@ -2715,7 +2757,7 @@ export component MainWindow inherits Window {
         visible: root.show_account_info || self.opacity > 0.01;
         opacity: root.show_account_info ? 1.0 : 0.0;
         background: #000000aa;
-        animate opacity { duration: 150ms; easing: ease-out; }
+        animate opacity { duration: 200ms; easing: ease-in-out; }
 
         TouchArea {
             clicked => { root.show_account_info = false; }
@@ -2730,7 +2772,7 @@ export component MainWindow inherits Window {
             border-color: #27272a;
             clip: true;
             y: root.show_account_info ? (parent.height - self.height) / 2 : ((parent.height - self.height) / 2 + 20px);
-            animate y { duration: 150ms; easing: ease-out; }
+            animate y { duration: 200ms; easing: ease-in-out; }
 
             // Absorb touches inside so clicking inside won't close modal
             TouchArea { clicked => { } }
@@ -3034,7 +3076,7 @@ export component MainWindow inherits Window {
         visible: root.show_test_dialog || self.opacity > 0.01;
         opacity: root.show_test_dialog ? 1.0 : 0.0;
         background: #000000aa;
-        animate opacity { duration: 150ms; easing: ease-out; }
+        animate opacity { duration: 200ms; easing: ease-in-out; }
 
         TouchArea {
             clicked => { root.show_test_dialog = false; }
@@ -3049,7 +3091,7 @@ export component MainWindow inherits Window {
             border-color: #27272a;
             clip: true;
             y: root.show_test_dialog ? (parent.height - self.height) / 2 : ((parent.height - self.height) / 2 + 20px);
-            animate y { duration: 150ms; easing: ease-out; }
+            animate y { duration: 200ms; easing: ease-in-out; }
 
             // Absorb touches inside so clicking inside won't close modal
             TouchArea { clicked => { } }
@@ -3077,7 +3119,7 @@ export component MainWindow inherits Window {
                 // Test Prompt
                 LineEdit {
                     text <=> root.test_prompt;
-                    placeholder-text: "Enter a test prompt to dispatch via Aroxy...";
+                    placeholder-text: root.i18n.test_prompt_placeholder;
                 }
 
                 // Parameters Bar
@@ -3098,7 +3140,7 @@ export component MainWindow inherits Window {
                     VerticalLayout {
                         horizontal-stretch: 1;
                         spacing: 2px;
-                        Text { text: "Temperature"; font-size: 10px; font-weight: 600; color: #71717a; }
+                        Text { text: root.i18n.test_temp_label; font-size: 10px; font-weight: 600; color: #71717a; }
                         LineEdit { text <=> root.test_temperature; }
                     }
                     VerticalLayout {
@@ -3117,7 +3159,7 @@ export component MainWindow inherits Window {
                 HorizontalLayout {
                     alignment: space-between;
                     Text {
-                        text: "Status: " + root.test_status + " | " + root.test_latency + " | " + root.test_tokens + " tok";
+                        text: root.i18n.lbl_status_prefix + root.test_status + " | " + root.test_latency + " | " + root.test_tokens + " tok";
                         font-size: 10px;
                         color: #a1a1aa;
                         vertical-alignment: center;
@@ -3171,7 +3213,7 @@ export component MainWindow inherits Window {
         visible: root.show_log_modal || self.opacity > 0.01;
         opacity: root.show_log_modal ? 1.0 : 0.0;
         background: #000000bb;
-        animate opacity { duration: 150ms; easing: ease-out; }
+        animate opacity { duration: 200ms; easing: ease-in-out; }
 
         TouchArea {
             clicked => { root.show_log_modal = false; }
@@ -3186,7 +3228,7 @@ export component MainWindow inherits Window {
             border-color: #27272a;
             clip: true;
             y: root.show_log_modal ? (parent.height - self.height) / 2 : ((parent.height - self.height) / 2 + 20px);
-            animate y { duration: 150ms; easing: ease-out; }
+            animate y { duration: 200ms; easing: ease-in-out; }
 
             // Absorb touches inside so clicking inside won't close modal
             TouchArea { clicked => { } }
@@ -3293,14 +3335,14 @@ export component MainWindow inherits Window {
 
                             if root.modal_inspector_tab == 2: VerticalLayout {
                                 spacing: 6px;
-                                Text { text: "Dispatched Account: " + root.modal_log_account; font-size: 11px; font-weight: 700; color: #ffffff; }
-                                Text { text: "Timestamp: " + root.modal_log_time; font-size: 11px; color: #a1a1aa; }
-                                Text { text: "Target Model: " + root.modal_log_model; font-size: 11px; color: #a1a1aa; }
-                                Text { text: "Total Tokens: " + root.modal_log_tokens; font-size: 11px; color: #a1a1aa; }
-                                Text { text: "Turnaround Latency: " + root.modal_log_latency; font-size: 11px; color: #a1a1aa; }
-                                if root.modal_log_error != "": Text { text: "Error Details: " + root.modal_log_error; font-size: 11px; font-weight: 700; color: #f87171; }
+                                Text { text: root.i18n.log_detail_account + root.modal_log_account; font-size: 11px; font-weight: 700; color: #ffffff; }
+                                Text { text: root.i18n.log_detail_timestamp + root.modal_log_time; font-size: 11px; color: #a1a1aa; }
+                                Text { text: root.i18n.log_detail_model + root.modal_log_model; font-size: 11px; color: #a1a1aa; }
+                                Text { text: root.i18n.log_detail_tokens + root.modal_log_tokens; font-size: 11px; color: #a1a1aa; }
+                                Text { text: root.i18n.log_detail_latency + root.modal_log_latency; font-size: 11px; color: #a1a1aa; }
+                                if root.modal_log_error != "": Text { text: root.i18n.log_detail_error + root.modal_log_error; font-size: 11px; font-weight: 700; color: #f87171; }
                                 Rectangle { height: 1px; background: #27272a; }
-                                Text { text: "HTTP Request Headers:"; font-size: 11px; font-weight: 700; color: #71717a; }
+                                Text { text: root.i18n.log_detail_headers; font-size: 11px; font-weight: 700; color: #71717a; }
                                 Text { text: root.modal_log_headers != "" ? root.modal_log_headers : "Content-Type: application/json"; font-size: 11px; color: #94a3b8; wrap: word-wrap; }
                             }
                         }

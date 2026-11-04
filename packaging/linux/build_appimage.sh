@@ -22,6 +22,8 @@ cp assets/icons/logo_256.png "$APPDIR/.DirIcon"
 cat << 'EOF' > "$APPDIR/AppRun"
 #!/bin/sh
 HERE="$(dirname "$(readlink -f "${0}")")"
+export XDG_DATA_DIRS="$HERE/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+export APPDIR="$HERE"
 exec "$HERE/usr/bin/aroxy" "$@"
 EOF
 chmod +x "$APPDIR/AppRun"
