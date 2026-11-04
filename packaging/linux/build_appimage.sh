@@ -27,7 +27,7 @@ exec "$HERE/usr/bin/aroxy" "$@"
 EOF
 chmod +x "$APPDIR/AppRun"
 
-VERSION="${1:-0.0.2}"
+VERSION="${1:-0.0.3}"
 echo "==> AppDir structure prepared at $APPDIR"
 if command -v appimagetool &> /dev/null; then
     appimagetool "$APPDIR" "Aroxy-${VERSION}-x86_64.AppImage"

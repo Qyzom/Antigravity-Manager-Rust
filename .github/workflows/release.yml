@@ -31,7 +31,7 @@ jobs:
         shell: bash
         run: |
           RAW_VER="${GITHUB_REF_NAME#v}"
-          VERSION="${RAW_VER:-0.0.2}"
+          VERSION="${RAW_VER:-0.0.3}"
           echo "Packaging Linux AppImage for version $VERSION"
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
           chmod +x appimagetool
@@ -60,7 +60,7 @@ jobs:
         shell: bash
         run: |
           RAW_VER="${GITHUB_REF_NAME#v}"
-          VERSION="${RAW_VER:-0.0.2}"
+          VERSION="${RAW_VER:-0.0.3}"
           echo "Packaging Windows EXE for version $VERSION"
           cp target/release/aroxy.exe "Aroxy-${VERSION}-x86_64.exe"
 
@@ -100,18 +100,19 @@ jobs:
 
             Ultra-lightweight high-performance AI API proxy & emulator for Antigravity supporting OpenAI, Claude & Gemini protocols. Pure Rust + Slint.
 
-            ### What's New in v0.0.2:
-            - **Complete UI Redesign:** Dark minimalist workstation design system with smooth vertical `ScrollView` on all tabs.
-            - **7-Tab Architecture:**
-              - **Dashboard:** Aggregate quota gauge, live status, and 1-click client snippets.
-              - **Accounts:** Browser OAuth loopback callback (`/oauth/callback`) & manual token ingestion with real-time quota telemetry and reset countdowns.
-              - **Models & Playground:** Full Antigravity catalog with `[Free]`, `[Pro]`, `[Thinking]` tiers, broadcast toggles, reasoning clone switches, and live interactive prompt tester with debug telemetry.
-              - **Proxy Layer ("Прослойка"):** Smart Quota-Aware, Round-Robin, and Failover routing strategies with active endpoint monitors.
-              - **Traffic Logs:** Real-time stream and batch inspector with token and latency tracking.
-              - **Statistics:** Granular breakdown of prompt, completion, and reasoning tokens, plus latency percentiles.
-              - **Settings:** Tray daemon toggles, autostart, portable mode (`aroxy.json`), and network timeouts.
-            - **License:** Official permissive MIT License.
+            ### What's New in v0.0.3:
+            - **Google OAuth 2.0 Web Flow & Token Keeper:**
+              - Built-in OAuth 2.0 loopback callback handler (`/oauth/callback`) with official Antigravity Client ID / Secret.
+              - Permanent `refresh_token` storage and automatic token refresh 5 minutes prior to expiration (no more expired token 401s).
+            - **Hardware Fingerprint & Device Isolation:**
+              - Isolated `DeviceProfile` per upstream account (`X-Client-Id`, `X-Machine-Id`, `gl-rust/1.0.0`, Hub UA `antigravity/hub/2.23.1`).
+            - **Per-Account Proxy Support:**
+              - Dynamic connection pool with individual HTTP / HTTPS / SOCKS5 proxy routing per account to avoid IP clustering.
+            - **RustCooling i18n Architecture:**
+              - Modern JSON-based localization (`i18n/ru.json`, `i18n/en.json`, `i18n/zh.json`).
+            - **UI Refinements:**
+              - Account details expanded modal, improved token statistics, zero-bloat.
 
             ### Release Binaries:
-            - **Linux:** `Aroxy-0.0.2-x86_64.AppImage` (Standalone Portable AppImage)
-            - **Windows:** `Aroxy-0.0.2-x86_64.exe` (Standalone Portable Executable)
+            - **Linux:** `Aroxy-0.0.3-x86_64.AppImage` (Standalone Portable AppImage)
+            - **Windows:** `Aroxy-0.0.3-x86_64.exe` (Standalone Portable Executable)

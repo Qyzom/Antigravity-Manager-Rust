@@ -216,7 +216,7 @@ async fn oauth_callback(
                 <h2>Account Connected</h2>
                 <p>Authorized as <strong>{}</strong> (Tier: {})</p>
                 <p>Antigravity quota and active models have been synchronized with Aroxy.<br>You can close this tab and return to the application.</p>
-                <div class="badge">Aroxy v0.0.2</div>
+                <div class="badge">Aroxy v0.0.3</div>
             </div>
         </body>
         </html>
@@ -224,7 +224,7 @@ async fn oauth_callback(
 }
 
 async fn health_check() -> impl IntoResponse {
-    (StatusCode::OK, Json(json!({"status": "ok", "service": "Aroxy", "version": "0.0.2"})))
+    (StatusCode::OK, Json(json!({"status": "ok", "service": "Aroxy", "version": "0.0.3"})))
 }
 
 async fn list_models(State(state): State<AppState>) -> impl IntoResponse {

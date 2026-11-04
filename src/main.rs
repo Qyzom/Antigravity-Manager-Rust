@@ -1180,23 +1180,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .send()
                 .await;
 
+            let current_ver = concat!("v", env!("CARGO_PKG_VERSION"));
             let status_str = match res {
                 Ok(resp) if resp.status().is_success() => {
                     if let Ok(json) = resp.json::<serde_json::Value>().await {
                         if let Some(tag) = json.get("tag_name").and_then(|v| v.as_str()) {
-                            if tag == "v0.0.2" {
-                                "v0.0.2 (Latest)".to_string()
+                            if tag == current_ver || tag.trim_start_matches('v') == env!("CARGO_PKG_VERSION") {
+                                format!("{} (Latest)", current_ver)
                             } else {
                                 format!("Update Available ({})", tag)
                             }
                         } else {
-                            "v0.0.2 (Latest)".to_string()
+                            format!("{} (Latest)", current_ver)
                         }
                     } else {
-                        "v0.0.2 (Latest)".to_string()
+                        format!("{} (Latest)", current_ver)
                     }
                 }
-                _ => "v0.0.2 (Latest)".to_string(),
+                _ => format!("{} (Latest)", current_ver),
             };
 
             let _ = slint::invoke_from_event_loop(move || {
