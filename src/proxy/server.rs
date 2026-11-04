@@ -40,8 +40,11 @@ impl AppState {
                 if let Ok(proxy) = reqwest::Proxy::all(p_trim) {
                     if let Ok(c) = reqwest::Client::builder()
                         .proxy(proxy)
+                        .tcp_nodelay(true)
+                        .tcp_keepalive(Some(std::time::Duration::from_secs(30)))
+                        .pool_idle_timeout(Some(std::time::Duration::from_secs(90)))
+                        .pool_max_idle_per_host(32)
                         .timeout(std::time::Duration::from_secs(120))
-                        .tcp_keepalive(std::time::Duration::from_secs(30))
                         .build()
                     {
                         let mut w = self.proxy_clients.write();
@@ -526,8 +529,9 @@ async fn execute_chat_request(
             let req_id = format!("req_{}", uuid::Uuid::new_v4().simple());
             let r = Response::builder()
                 .header(header::CONTENT_TYPE, "text/event-stream; charset=utf-8")
-                .header(header::CACHE_CONTROL, "no-cache")
+                .header(header::CACHE_CONTROL, "no-cache, no-transform")
                 .header(header::CONNECTION, "keep-alive")
+                .header("x-accel-buffering", "no")
                 .header("x-request-id", req_id)
                 .header("openai-organization", "user-personal")
                 .header("openai-processing-ms", lat.to_string())
@@ -753,8 +757,9 @@ async fn execute_chat_request(
             let req_id = format!("req_{}", uuid::Uuid::new_v4().simple());
             let r = Response::builder()
                 .header(header::CONTENT_TYPE, "text/event-stream; charset=utf-8")
-                .header(header::CACHE_CONTROL, "no-cache")
+                .header(header::CACHE_CONTROL, "no-cache, no-transform")
                 .header(header::CONNECTION, "keep-alive")
+                .header("x-accel-buffering", "no")
                 .header("x-request-id", req_id)
                 .header("openai-organization", "user-personal")
                 .header("openai-processing-ms", lat.to_string())
@@ -819,8 +824,9 @@ async fn execute_chat_request(
 
             let r = Response::builder()
                 .header(header::CONTENT_TYPE, "text/event-stream; charset=utf-8")
-                .header(header::CACHE_CONTROL, "no-cache")
+                .header(header::CACHE_CONTROL, "no-cache, no-transform")
                 .header(header::CONNECTION, "keep-alive")
+                .header("x-accel-buffering", "no")
                 .body(Body::from_stream(stream))
                 .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
             (r, false)
@@ -1103,8 +1109,9 @@ async fn execute_claude_request(
 
             let r = Response::builder()
                 .header(header::CONTENT_TYPE, "text/event-stream; charset=utf-8")
-                .header(header::CACHE_CONTROL, "no-cache")
+                .header(header::CACHE_CONTROL, "no-cache, no-transform")
                 .header(header::CONNECTION, "keep-alive")
+                .header("x-accel-buffering", "no")
                 .header("anthropic-version", "2023-06-01")
                 .body(Body::from_stream(mapped_stream))
                 .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
@@ -1239,8 +1246,9 @@ async fn execute_claude_request(
 
             let r = Response::builder()
                 .header(header::CONTENT_TYPE, "text/event-stream; charset=utf-8")
-                .header(header::CACHE_CONTROL, "no-cache")
+                .header(header::CACHE_CONTROL, "no-cache, no-transform")
                 .header(header::CONNECTION, "keep-alive")
+                .header("x-accel-buffering", "no")
                 .body(Body::from_stream(stream))
                 .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
             (r, false)

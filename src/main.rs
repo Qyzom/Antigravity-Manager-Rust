@@ -291,6 +291,7 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_checking_updates: t.lbl_checking_updates.into(),
         lbl_update_available: t.lbl_update_available.into(),
         lbl_latest_version: t.lbl_latest_version.into(),
+        lbl_sending: t.lbl_sending.into(),
     };
     ui.set_i18n(i18n_struct);
     ui.set_current_language(lang.to_index());
@@ -398,7 +399,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         log::info!("Starting Aroxy core server on http://{}", addr);
 
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(300))
+            .tcp_nodelay(true)
+            .tcp_keepalive(Some(Duration::from_secs(30)))
+            .pool_idle_timeout(Some(Duration::from_secs(90)))
+            .pool_max_idle_per_host(32)
+            .timeout(Duration::from_secs(120))
             .build()
             .unwrap_or_default();
 
@@ -1118,10 +1123,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 acc.tier = "PRO".to_string();
                             }
                         }
-                        let clean_models: Vec<_> = models.into_iter().filter(|x| !x.id.starts_with("chat_") && !x.id.contains("gemini-3.5")).collect();
-                        if !clean_models.is_empty() {
-                            cfg.models = clean_models;
+                        for m in models {
+                            if !cfg.models.iter().any(|existing| existing.id == m.id) {
+                                cfg.models.push(m);
+                            }
                         }
+                        cfg.sanitize_models();
                         let _ = cfg.save();
                     }
                     true
@@ -1415,6 +1422,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tokio::spawn(async move {
                 let start = std::time::Instant::now();
                 let client = reqwest::Client::builder()
+                    .tcp_nodelay(true)
                     .timeout(Duration::from_secs(timeout_val))
                     .build()
                     .unwrap_or_default();

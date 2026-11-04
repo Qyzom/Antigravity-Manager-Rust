@@ -249,6 +249,7 @@ export struct I18nData {
     lbl_checking_updates: string,
     lbl_update_available: string,
     lbl_latest_version: string,
+    lbl_sending: string,
 }
 
 component NavItem inherits Rectangle {
@@ -1491,7 +1492,7 @@ export component MainWindow inherits Window {
                     // ==========================================
                     if root.active_tab == 3: VerticalLayout {
                         alignment: start;
-                        spacing: 8px;
+                        spacing: 6px;
 
                             // Network Ports & Protocol Tuning
                             Rectangle {
@@ -1501,15 +1502,15 @@ export component MainWindow inherits Window {
                                 border-color: #27272a;
 
                                 VerticalLayout {
-                                    padding: 10px;
-                                    spacing: 8px;
+                                    padding: 8px;
+                                    spacing: 5px;
 
-                                    Text { text: root.i18n.sec_network; font-size: 12px; font-weight: 700; color: #ffffff; }
+                                    Text { text: root.i18n.sec_network; font-size: 11px; font-weight: 700; color: #ffffff; }
 
                                     HorizontalLayout {
-                                        spacing: 10px;
+                                        spacing: 8px;
                                         VerticalLayout {
-                                            spacing: 3px;
+                                            spacing: 2px;
                                             Text { text: root.i18n.lbl_port; font-size: 10px; font-weight: 600; color: #a1a1aa; }
                                             LineEdit {
                                                 text <=> root.proxy_port_input;
@@ -1518,7 +1519,7 @@ export component MainWindow inherits Window {
                                             }
                                         }
                                         VerticalLayout {
-                                            spacing: 3px;
+                                            spacing: 2px;
                                             Text { text: root.i18n.lbl_host; font-size: 10px; font-weight: 600; color: #a1a1aa; }
                                             LineEdit {
                                                 text <=> root.proxy_host_input;
@@ -1527,7 +1528,7 @@ export component MainWindow inherits Window {
                                             }
                                         }
                                         VerticalLayout {
-                                            spacing: 3px;
+                                            spacing: 2px;
                                             Text { text: root.i18n.lbl_timeout; font-size: 10px; font-weight: 600; color: #a1a1aa; }
                                             LineEdit {
                                                 text <=> root.setting_timeout_str;
@@ -1536,7 +1537,7 @@ export component MainWindow inherits Window {
                                             }
                                         }
                                         VerticalLayout {
-                                            spacing: 3px;
+                                            spacing: 2px;
                                             Text { text: root.i18n.lbl_heartbeat; font-size: 10px; font-weight: 600; color: #a1a1aa; }
                                             LineEdit {
                                                 text <=> root.setting_heartbeat_str;
@@ -1548,100 +1549,107 @@ export component MainWindow inherits Window {
                                 }
                             }
 
-                            // Routing Strategy Box
-                            Rectangle {
-                                background: #18181b;
-                                border-radius: 8px;
-                                border-width: 1px;
-                                border-color: #27272a;
+                            // Strategy & Cache Affinity Row (Side-by-Side)
+                            HorizontalLayout {
+                                spacing: 8px;
 
-                                VerticalLayout {
-                                    padding: 10px;
-                                    spacing: 8px;
+                                // Routing Strategy Box
+                                Rectangle {
+                                    horizontal-stretch: 1;
+                                    background: #18181b;
+                                    border-radius: 8px;
+                                    border-width: 1px;
+                                    border-color: #27272a;
 
-                                    Text { text: root.i18n.sec_routing; font-size: 12px; font-weight: 700; color: #ffffff; }
+                                    VerticalLayout {
+                                        padding: 8px;
+                                        spacing: 5px;
 
-                                    HorizontalLayout {
-                                        spacing: 8px;
-                                        ActionButton {
-                                            text: root.i18n.strat_quota_aware;
-                                            is_primary: root.routing_strategy_index == 0;
-                                            is_accent: root.routing_strategy_index == 0;
-                                            clicked => { root.set_routing_strategy(0); }
+                                        Text { text: root.i18n.sec_routing; font-size: 11px; font-weight: 700; color: #ffffff; }
+
+                                        HorizontalLayout {
+                                            spacing: 6px;
+                                            ActionButton {
+                                                text: root.i18n.strat_quota_aware;
+                                                is_primary: root.routing_strategy_index == 0;
+                                                is_accent: root.routing_strategy_index == 0;
+                                                clicked => { root.set_routing_strategy(0); }
+                                            }
+                                            ActionButton {
+                                                text: root.i18n.strat_round_robin;
+                                                is_primary: root.routing_strategy_index == 1;
+                                                is_accent: root.routing_strategy_index == 1;
+                                                clicked => { root.set_routing_strategy(1); }
+                                            }
+                                            ActionButton {
+                                                text: root.i18n.strat_failover;
+                                                is_primary: root.routing_strategy_index == 2;
+                                                is_accent: root.routing_strategy_index == 2;
+                                                clicked => { root.set_routing_strategy(2); }
+                                            }
                                         }
-                                        ActionButton {
-                                            text: root.i18n.strat_round_robin;
-                                            is_primary: root.routing_strategy_index == 1;
-                                            is_accent: root.routing_strategy_index == 1;
-                                            clicked => { root.set_routing_strategy(1); }
-                                        }
-                                        ActionButton {
-                                            text: root.i18n.strat_failover;
-                                            is_primary: root.routing_strategy_index == 2;
-                                            is_accent: root.routing_strategy_index == 2;
-                                            clicked => { root.set_routing_strategy(2); }
-                                        }
-                                    }
 
-                                    Text {
-                                        text: root.routing_strategy_index == 0
-                                            ? root.i18n.strat_quota_aware_desc
-                                            : (root.routing_strategy_index == 1
-                                                ? root.i18n.strat_round_robin_desc
-                                                : root.i18n.strat_failover_desc);
-                                        font-size: 10px;
-                                        color: #a1a1aa;
+                                        Text {
+                                            text: root.routing_strategy_index == 0
+                                                ? root.i18n.strat_quota_aware_desc
+                                                : (root.routing_strategy_index == 1
+                                                    ? root.i18n.strat_round_robin_desc
+                                                    : root.i18n.strat_failover_desc);
+                                            font-size: 10px;
+                                            color: #a1a1aa;
+                                        }
                                     }
                                 }
-                            }
 
-                            // Prompt Cache Affinity Box
-                            Rectangle {
-                                background: #18181b;
-                                border-radius: 8px;
-                                border-width: 1px;
-                                border-color: #27272a;
+                                // Prompt Cache Affinity Box
+                                Rectangle {
+                                    horizontal-stretch: 1;
+                                    background: #18181b;
+                                    border-radius: 8px;
+                                    border-width: 1px;
+                                    border-color: #27272a;
 
-                                VerticalLayout {
-                                    padding: 10px;
-                                    spacing: 8px;
+                                    VerticalLayout {
+                                        padding: 8px;
+                                        spacing: 5px;
 
-                                    Text { text: root.i18n.sec_cache; font-size: 12px; font-weight: 700; color: #ffffff; }
+                                        Text { text: root.i18n.sec_cache; font-size: 11px; font-weight: 700; color: #ffffff; }
 
-                                    HorizontalLayout {
-                                        spacing: 8px;
-                                        ActionButton {
-                                            text: root.i18n.opt_cache_first;
-                                            is_primary: root.cache_affinity_mode_index == 0;
-                                            is_accent: root.cache_affinity_mode_index == 0;
-                                            clicked => { root.set_cache_affinity_mode(0); }
+                                        HorizontalLayout {
+                                            spacing: 6px;
+                                            ActionButton {
+                                                text: root.i18n.opt_cache_first;
+                                                is_primary: root.cache_affinity_mode_index == 0;
+                                                is_accent: root.cache_affinity_mode_index == 0;
+                                                clicked => { root.set_cache_affinity_mode(0); }
+                                            }
+                                            ActionButton {
+                                                text: root.i18n.opt_cache_balanced;
+                                                is_primary: root.cache_affinity_mode_index == 1;
+                                                is_accent: root.cache_affinity_mode_index == 1;
+                                                clicked => { root.set_cache_affinity_mode(1); }
+                                            }
+                                            ActionButton {
+                                                text: root.i18n.opt_cache_spread;
+                                                is_primary: root.cache_affinity_mode_index == 2;
+                                                is_accent: root.cache_affinity_mode_index == 2;
+                                                clicked => { root.set_cache_affinity_mode(2); }
+                                            }
                                         }
-                                        ActionButton {
-                                            text: root.i18n.opt_cache_balanced;
-                                            is_primary: root.cache_affinity_mode_index == 1;
-                                            is_accent: root.cache_affinity_mode_index == 1;
-                                            clicked => { root.set_cache_affinity_mode(1); }
-                                        }
-                                        ActionButton {
-                                            text: root.i18n.opt_cache_spread;
-                                            is_primary: root.cache_affinity_mode_index == 2;
-                                            is_accent: root.cache_affinity_mode_index == 2;
-                                            clicked => { root.set_cache_affinity_mode(2); }
-                                        }
-                                    }
 
-                                    HorizontalLayout {
-                                        alignment: space-between;
-                                        VerticalLayout {
-                                            spacing: 1px;
-                                            Text { text: root.i18n.lbl_failover; font-size: 11px; font-weight: 600; color: #fafafa; }
-                                            Text { text: root.i18n.lbl_failover_desc; font-size: 10px; color: #71717a; }
-                                        }
-                                        VerticalLayout {
-                                            alignment: center;
-                                            ToggleSwitch {
-                                                checked: root.failover_on_429;
-                                                toggled => { root.toggle_failover_429(); }
+                                        HorizontalLayout {
+                                            alignment: space-between;
+                                            VerticalLayout {
+                                                spacing: 1px;
+                                                Text { text: root.i18n.lbl_failover; font-size: 10px; font-weight: 600; color: #fafafa; }
+                                                Text { text: root.i18n.lbl_failover_desc; font-size: 9px; color: #71717a; }
+                                            }
+                                            VerticalLayout {
+                                                alignment: center;
+                                                ToggleSwitch {
+                                                    checked: root.failover_on_429;
+                                                    toggled => { root.toggle_failover_429(); }
+                                                }
                                             }
                                         }
                                     }
@@ -1656,13 +1664,13 @@ export component MainWindow inherits Window {
                                 border-color: #27272a;
 
                                 VerticalLayout {
-                                    padding: 10px;
-                                    spacing: 8px;
+                                    padding: 8px;
+                                    spacing: 5px;
 
-                                    Text { text: root.i18n.lbl_quota_protection; font-size: 12px; font-weight: 700; color: #ffffff; }
+                                    Text { text: root.i18n.lbl_quota_protection; font-size: 11px; font-weight: 700; color: #ffffff; }
 
                                     HorizontalLayout {
-                                        spacing: 8px;
+                                        spacing: 6px;
                                         ActionButton {
                                             text: root.i18n.btn_off;
                                             is_primary: root.quota_protection_threshold == 0;
@@ -1711,52 +1719,52 @@ export component MainWindow inherits Window {
                                 border-color: #27272a;
 
                                 VerticalLayout {
-                                    padding: 10px;
-                                    spacing: 6px;
+                                    padding: 8px;
+                                    spacing: 4px;
 
-                                    Text { text: root.i18n.lbl_endpoints_title; font-size: 12px; font-weight: 700; color: #ffffff; }
+                                    Text { text: root.i18n.lbl_endpoints_title; font-size: 11px; font-weight: 700; color: #ffffff; }
 
                                     // Table Header
                                     HorizontalLayout {
                                         padding-left: 8px;
                                         padding-right: 8px;
-                                        Text { text: root.i18n.lbl_endpoints_protocol; width: 150px; font-size: 10px; font-weight: 700; color: #71717a; }
+                                        Text { text: root.i18n.lbl_endpoints_protocol; width: 140px; font-size: 10px; font-weight: 700; color: #71717a; }
                                         Text { text: root.i18n.lbl_endpoints_path; horizontal-stretch: 1; font-size: 10px; font-weight: 700; color: #71717a; }
                                     }
 
                                     Rectangle {
-                                        height: 32px;
-                                        border-radius: 6px;
+                                        height: 24px;
+                                        border-radius: 5px;
                                         background: #121214;
                                         HorizontalLayout {
                                             padding-left: 8px;
                                             padding-right: 8px;
-                                            Text { text: "OpenAI v1"; width: 150px; font-size: 11px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
-                                            Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/chat/completions"; horizontal-stretch: 1; font-size: 11px; color: #38bdf8; vertical-alignment: center; }
+                                            Text { text: "OpenAI v1"; width: 140px; font-size: 10px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
+                                            Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/chat/completions"; horizontal-stretch: 1; font-size: 10px; color: #38bdf8; vertical-alignment: center; }
                                         }
                                     }
 
                                     Rectangle {
-                                        height: 32px;
-                                        border-radius: 6px;
+                                        height: 24px;
+                                        border-radius: 5px;
                                         background: #121214;
                                         HorizontalLayout {
                                             padding-left: 8px;
                                             padding-right: 8px;
-                                            Text { text: "Claude Messages"; width: 150px; font-size: 11px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
-                                            Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/messages"; horizontal-stretch: 1; font-size: 11px; color: #38bdf8; vertical-alignment: center; }
+                                            Text { text: "Claude Messages"; width: 140px; font-size: 10px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
+                                            Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/messages"; horizontal-stretch: 1; font-size: 10px; color: #38bdf8; vertical-alignment: center; }
                                         }
                                     }
 
                                     Rectangle {
-                                        height: 32px;
-                                        border-radius: 6px;
+                                        height: 24px;
+                                        border-radius: 5px;
                                         background: #121214;
                                         HorizontalLayout {
                                             padding-left: 8px;
                                             padding-right: 8px;
-                                            Text { text: root.i18n.lbl_endpoints_models; width: 150px; font-size: 11px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
-                                            Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/models"; horizontal-stretch: 1; font-size: 11px; color: #38bdf8; vertical-alignment: center; }
+                                            Text { text: root.i18n.lbl_endpoints_models; width: 140px; font-size: 10px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
+                                            Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/models"; horizontal-stretch: 1; font-size: 10px; color: #38bdf8; vertical-alignment: center; }
                                         }
                                     }
                                 }
@@ -1770,14 +1778,14 @@ export component MainWindow inherits Window {
                                 border-color: #27272a;
 
                                 VerticalLayout {
-                                    padding: 10px;
-                                    spacing: 6px;
+                                    padding: 8px;
+                                    spacing: 4px;
 
-                                    Text { text: root.i18n.lbl_master_key_title; font-size: 12px; font-weight: 700; color: #ffffff; }
-                                    Text { text: root.i18n.lbl_master_key_desc; font-size: 10px; color: #71717a; }
+                                    Text { text: root.i18n.lbl_master_key_title; font-size: 11px; font-weight: 700; color: #ffffff; }
+                                    Text { text: root.i18n.lbl_master_key_desc; font-size: 9px; color: #71717a; }
 
                                     HorizontalLayout {
-                                        spacing: 8px;
+                                        spacing: 6px;
                                         LineEdit {
                                             horizontal-stretch: 1;
                                             text: root.master_api_key;
@@ -3033,7 +3041,7 @@ export component MainWindow inherits Window {
         }
 
         modal_card2 := Rectangle {
-            width: 740px;
+            width: 800px;
             height: modal_inner2.min-height;
             background: #141416;
             border-radius: 12px;
@@ -3094,7 +3102,7 @@ export component MainWindow inherits Window {
                         LineEdit { text <=> root.test_temperature; }
                     }
                     VerticalLayout {
-                        width: 85px;
+                        min-width: 130px;
                         spacing: 2px;
                         alignment: center;
                         Text { text: root.i18n.test_stream_toggle; font-size: 10px; font-weight: 600; color: #71717a; }
@@ -3122,7 +3130,7 @@ export component MainWindow inherits Window {
                             clicked => { root.cancel_test_request(); }
                         }
                         ActionButton {
-                            text: root.test_running ? "Sending..." : root.i18n.btn_send_test;
+                            text: root.test_running ? root.i18n.lbl_sending : root.i18n.btn_send_test;
                             is_accent: !root.test_running;
                             is_disabled: root.test_running;
                             clicked => { root.execute_test_request(); }
@@ -3132,7 +3140,7 @@ export component MainWindow inherits Window {
 
                 // Output Viewer
                 Rectangle {
-                    height: 220px;
+                    height: 260px;
                     border-radius: 6px;
                     background: #0d0d0f;
                     border-width: 1px;
@@ -3140,12 +3148,13 @@ export component MainWindow inherits Window {
 
                     ScrollView {
                         VerticalLayout {
-                            padding: 12px;
+                            padding: 14px;
                             alignment: start;
                             Text {
                                 text: root.test_response == "" ? "Response body and streaming chunks will appear here..." : root.test_response;
-                                font-size: 12px;
-                                color: root.test_response == "" ? #52525b : #fafafa;
+                                font-family: "monospace";
+                                font-size: 11px;
+                                color: root.test_response == "" ? #52525b : #f4f4f5;
                                 wrap: word-wrap;
                             }
                         }

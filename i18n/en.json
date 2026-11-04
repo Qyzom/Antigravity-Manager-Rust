@@ -187,5 +187,6 @@
   "lbl_stat_error": "Error",
   "lbl_checking_updates": "Checking updates...",
   "lbl_update_available": "Update Available",
-  "lbl_latest_version": "Latest Version"
+  "lbl_latest_version": "Latest Version",
+  "lbl_sending": "Sending..."
 }

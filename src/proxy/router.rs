@@ -129,20 +129,28 @@ pub fn resolve_model_with_effort(
     match account.provider.as_str() {
         "antigravity" => {
             if lower.contains("opus") {
-                match effective_effort {
-                    Some(ReasoningEffort::Low) => ("claude-opus-5-5-low".to_string(), Some(ReasoningEffort::Low)),
-                    Some(ReasoningEffort::Medium) => ("claude-opus-5-5-medium".to_string(), Some(ReasoningEffort::Medium)),
-                    Some(ReasoningEffort::High) => ("claude-opus-5-5-high".to_string(), Some(ReasoningEffort::High)),
-                    Some(ReasoningEffort::Off) => ("claude-opus-5-5".to_string(), Some(ReasoningEffort::Off)),
-                    None => ("claude-opus-5-5-high".to_string(), Some(ReasoningEffort::High)),
+                if lower.contains("4-6") || lower.contains("4.6") {
+                    ("claude-opus-4-6-thinking".to_string(), effective_effort.or(Some(ReasoningEffort::High)))
+                } else {
+                    match effective_effort {
+                        Some(ReasoningEffort::Low) => ("claude-opus-5-5-low".to_string(), Some(ReasoningEffort::Low)),
+                        Some(ReasoningEffort::Medium) => ("claude-opus-5-5-medium".to_string(), Some(ReasoningEffort::Medium)),
+                        Some(ReasoningEffort::High) => ("claude-opus-5-5-high".to_string(), Some(ReasoningEffort::High)),
+                        Some(ReasoningEffort::Off) => ("claude-opus-5-5".to_string(), Some(ReasoningEffort::Off)),
+                        None => ("claude-opus-5-5-high".to_string(), Some(ReasoningEffort::High)),
+                    }
                 }
             } else if lower.contains("claude") || lower.contains("sonnet") {
-                match effective_effort {
-                    Some(ReasoningEffort::Low) => ("claude-sonnet-5-5-low".to_string(), Some(ReasoningEffort::Low)),
-                    Some(ReasoningEffort::Medium) => ("claude-sonnet-5-5-medium".to_string(), Some(ReasoningEffort::Medium)),
-                    Some(ReasoningEffort::High) => ("claude-sonnet-5-5-high".to_string(), Some(ReasoningEffort::High)),
-                    Some(ReasoningEffort::Off) => ("claude-sonnet-5-5".to_string(), Some(ReasoningEffort::Off)),
-                    None => ("claude-sonnet-5-5-high".to_string(), Some(ReasoningEffort::High)),
+                if lower.contains("4-6") || lower.contains("4.6") {
+                    ("claude-sonnet-4-6".to_string(), effective_effort.or(Some(ReasoningEffort::High)))
+                } else {
+                    match effective_effort {
+                        Some(ReasoningEffort::Low) => ("claude-sonnet-5-5-low".to_string(), Some(ReasoningEffort::Low)),
+                        Some(ReasoningEffort::Medium) => ("claude-sonnet-5-5-medium".to_string(), Some(ReasoningEffort::Medium)),
+                        Some(ReasoningEffort::High) => ("claude-sonnet-5-5-high".to_string(), Some(ReasoningEffort::High)),
+                        Some(ReasoningEffort::Off) => ("claude-sonnet-5-5".to_string(), Some(ReasoningEffort::Off)),
+                        None => ("claude-sonnet-5-5-high".to_string(), Some(ReasoningEffort::High)),
+                    }
                 }
             } else if lower.contains("argon") {
                 match effective_effort {
@@ -152,7 +160,7 @@ pub fn resolve_model_with_effort(
                     Some(ReasoningEffort::Off) => ("gemini-4-argon".to_string(), Some(ReasoningEffort::Off)),
                     None => ("gemini-4-argon-medium".to_string(), Some(ReasoningEffort::Medium)),
                 }
-            } else if lower.contains("gemini") || lower.contains("flash") {
+            } else {
                 match effective_effort {
                     Some(ReasoningEffort::Low) => ("gemini-3.8-flash-low".to_string(), Some(ReasoningEffort::Low)),
                     Some(ReasoningEffort::Medium) => ("gemini-3.8-flash-medium".to_string(), Some(ReasoningEffort::Medium)),
@@ -160,8 +168,6 @@ pub fn resolve_model_with_effort(
                     Some(ReasoningEffort::Off) => ("gemini-3.8-flash".to_string(), Some(ReasoningEffort::Off)),
                     None => ("gemini-3.8-flash-medium".to_string(), Some(ReasoningEffort::Medium)),
                 }
-            } else {
-                ("claude-sonnet-5-5-high".to_string(), effective_effort.or(Some(ReasoningEffort::High)))
             }
         }
         "anthropic" => {

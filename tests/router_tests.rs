@@ -235,8 +235,11 @@ mod tests {
             extra: Default::default(),
         };
 
-        let payload = build_antigravity_payload(&req, "claude-3-7-sonnet", Some("test-project"), Some(ReasoningEffort::Medium));
-        assert_eq!(payload["model"], "claude-sonnet-4-6");
+        let payload_46 = build_antigravity_payload(&req, "claude-sonnet-4-6", Some("test-project"), Some(ReasoningEffort::Medium));
+        assert_eq!(payload_46["model"], "claude-sonnet-4-6");
+
+        let payload = build_antigravity_payload(&req, "claude-sonnet-5-5", Some("test-project"), Some(ReasoningEffort::Medium));
+        assert_eq!(payload["model"], "claude-sonnet-5-5-high");
         assert_eq!(payload["project"], "test-project");
         assert_eq!(payload["userAgent"], "antigravity");
         assert!(payload["request"]["systemInstruction"]["parts"][0]["text"].as_str().unwrap().contains("Antigravity"));

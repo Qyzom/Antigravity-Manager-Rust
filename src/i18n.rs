@@ -237,6 +237,7 @@ pub struct TranslationBundle {
     pub lbl_checking_updates: String,
     pub lbl_update_available: String,
     pub lbl_latest_version: String,
+    pub lbl_sending: String,
 }
 
 pub fn get_translations(lang: Language) -> TranslationBundle {

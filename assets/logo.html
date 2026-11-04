@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Aroxy Logo</title>
+<style>
+  @font-face {
+    font-family: 'Unbounded';
+    src: url('../ui/fonts/Unbounded.ttf') format('truetype');
+    font-weight: 800;
+  }
+  body {
+    background: #09090b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    margin: 0;
+  }
+  .logo-card {
+    width: 280px;
+    height: 280px;
+    background: linear-gradient(135deg, #222228 0%, #121215 100%);
+    border: 2px solid #2e2e36;
+    border-radius: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform: perspective(600px) rotate(-6deg) rotateX(8deg);
+    box-shadow: 
+      0 24px 48px -12px rgba(0, 0, 0, 0.75),
+      0 8px 16px -4px rgba(0, 0, 0, 0.5),
+      inset 0 1px 1px rgba(255, 255, 255, 0.15);
+    position: relative;
+    user-select: none;
+  }
+  .logo-letter {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 150px;
+    font-weight: 800;
+    color: #ffffff;
+    text-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+    margin-top: -6px;
+  }
+</style>
+</head>
+<body>
+  <div class="logo-card">
+    <div class="logo-letter">A</div>
+  </div>
+</body>
+</html>

@@ -187,5 +187,6 @@
   "lbl_stat_error": "错误",
   "lbl_checking_updates": "正在检查更新...",
   "lbl_update_available": "发现新版本",
-  "lbl_latest_version": "已是最新版本"
+  "lbl_latest_version": "已是最新版本",
+  "lbl_sending": "发送中..."
 }

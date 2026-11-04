@@ -77,17 +77,21 @@ pub fn normalize_antigravity_upstream_model(requested: &str) -> &'static str {
         .trim_end_matches(" (no-thinking)");
 
     if clean.contains("opus") {
-        "claude-opus-4-6-thinking"
+        if clean.contains("5-5") || clean.contains("5.5") {
+            "claude-opus-5-5-high"
+        } else {
+            "claude-opus-4-6-thinking"
+        }
     } else if clean.contains("claude") || clean.contains("sonnet") {
-        "claude-sonnet-4-6"
-    } else if clean.contains("argon") {
-        "gemini-4-argon"
-    } else if clean.contains("3.8") || clean.contains("tiered") {
-        "gemini-3.8-flash-tiered"
-    } else if clean.contains("pro") {
+        if clean.contains("4-6") || clean.contains("4.6") {
+            "claude-sonnet-4-6"
+        } else {
+            "claude-sonnet-5-5-high"
+        }
+    } else if clean.contains("argon") || clean.contains("pro") {
         "gemini-2.5-pro"
     } else {
-        "gemini-2.5-flash"
+        "gemini-3.8-flash-tiered"
     }
 }
 
@@ -545,21 +549,24 @@ pub async fn fetch_models_and_quota(
                         }
 
                         let clean_id = match id.as_str() {
-                            "claude-sonnet-5-5-high" | "claude-sonnet-5-5" => "claude-sonnet-4-6".to_string(),
-                            "claude-opus-5-5-high" | "claude-opus-5-5" => "claude-opus-4-6-thinking".to_string(),
-                            "claude-3-7-sonnet" => "claude-sonnet-4-6".to_string(),
+                            "claude-sonnet-5-5-high" | "claude-sonnet-5-5" => "claude-sonnet-5-5".to_string(),
+                            "claude-opus-5-5-high" | "claude-opus-5-5" => "claude-opus-5-5".to_string(),
+                            "claude-sonnet-4-6" => "claude-sonnet-4-6".to_string(),
+                            "claude-opus-4-6-thinking" => "claude-opus-4-6-thinking".to_string(),
+                            "claude-3-7-sonnet" => "claude-sonnet-5-5".to_string(),
                             "gemini-3.8-flash-high" | "gemini-3.8-flash-tiered" => "gemini-3.8-flash".to_string(),
-                            "gemini-2.5-flash-thinking" => "gemini-2.5-flash".to_string(),
+                            "gemini-2.5-flash-thinking" | "gemini-2.5-flash" => "gemini-3.8-flash".to_string(),
+                            "gemini-2.5-pro" => "gemini-4-argon".to_string(),
                             other => other.to_string(),
                         };
 
                         let disp_name = match clean_id.as_str() {
-                            "claude-sonnet-4-6" => "Claude Sonnet 4.6 / 3.7".to_string(),
+                            "claude-sonnet-5-5" => "Claude Sonnet 5.5".to_string(),
+                            "claude-opus-5-5" => "Claude Opus 5.5".to_string(),
+                            "claude-sonnet-4-6" => "Claude Sonnet 4.6".to_string(),
                             "claude-opus-4-6-thinking" => "Claude Opus 4.6 Thinking".to_string(),
                             "gemini-3.8-flash" => "Gemini 3.8 Flash".to_string(),
                             "gemini-4-argon" => "Gemini 4 Argon".to_string(),
-                            "gemini-2.5-pro" => "Gemini 2.5 Pro".to_string(),
-                            "gemini-2.5-flash" => "Gemini 2.5 Flash".to_string(),
                             _ => entry.display_name.clone().unwrap_or_else(|| clean_id.clone()),
                         };
 
@@ -602,6 +609,14 @@ pub async fn fetch_models_and_quota(
                                 is_enabled: true,
                                 supports_thinking,
                             });
+                        }
+                    }
+
+                    // Always ensure core flagship models are available in the catalog
+                    let default_models = crate::config::AppConfig::default().models;
+                    for def in default_models {
+                        if !models.iter().any(|m| m.id == def.id) {
+                            models.push(def);
                         }
                     }
 
