@@ -435,12 +435,7 @@ impl AppConfig {
                         .unwrap_or(0);
 
                     for acc in &mut cfg.accounts {
-                        if acc.status == "ERROR" {
-                            acc.status = "ACTIVE".to_string();
-                            acc.is_active = true;
-                            acc.error_message = None;
-                        }
-                        if acc.added_at.is_none() {
+                        if acc.added_at.is_none() || acc.added_at.unwrap_or(0) < now_ts.saturating_sub(30 * 86400) || acc.added_at.unwrap_or(0) < 1740000000 {
                             acc.added_at = Some(now_ts);
                         }
                         if acc.claude_gpt_percent > 0 || acc.tier.to_lowercase() == "pro" {

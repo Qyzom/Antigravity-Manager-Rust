@@ -211,6 +211,22 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         opt_cache_first: t.opt_cache_first.into(),
         opt_cache_balanced: t.opt_cache_balanced.into(),
         opt_cache_spread: t.opt_cache_spread.into(),
+        lbl_status_active: t.lbl_status_active.into(),
+        lbl_status_error: t.lbl_status_error.into(),
+        lbl_status_disabled: t.lbl_status_disabled.into(),
+        lbl_modal_claude_quota: t.lbl_modal_claude_quota.into(),
+        lbl_modal_gemini_quota: t.lbl_modal_gemini_quota.into(),
+        lbl_modal_5h: t.lbl_modal_5h.into(),
+        lbl_modal_week: t.lbl_modal_week.into(),
+        lbl_modal_fingerprint: t.lbl_modal_fingerprint.into(),
+        lbl_modal_endpoint: t.lbl_modal_endpoint.into(),
+        lbl_modal_models: t.lbl_modal_models.into(),
+        lbl_modal_error_details: t.lbl_modal_error_details.into(),
+        lbl_updating: t.lbl_updating.into(),
+        lbl_updated: t.lbl_updated.into(),
+        lbl_update_failed: t.lbl_update_failed.into(),
+        lbl_active_refresh_desc: t.lbl_active_refresh_desc.into(),
+        lbl_pool_refresh_desc: t.lbl_pool_refresh_desc.into(),
     };
     ui.set_i18n(i18n_struct);
     ui.set_current_language(lang.to_index());
@@ -323,7 +339,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 {
                     let cfg = bg_cfg.read();
                     for acc in &cfg.accounts {
-                        if acc.status == "ERROR" || !acc.is_active {
+                        if (acc.status == "ERROR" && acc.refresh_token.is_none()) || !acc.is_active {
                             continue;
                         }
                         let is_active_acc = active_id.as_deref() == Some(&acc.id);
@@ -884,14 +900,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let v_clone = Arc::clone(&v_ref);
         let states_clone = Arc::clone(&states_ref);
 
-        states_ref.write().insert(id_str.clone(), (true, "Updating...".to_string()));
+        let lang = Language::from_str_code(&c_ref.read().language);
+        let updating_lbl = match lang {
+            Language::Ru => "Обновление...",
+            Language::Zh => "正在刷新...",
+            Language::En => "Updating...",
+        };
+        states_ref.write().insert(id_str.clone(), (true, updating_lbl.to_string()));
         v_ref.fetch_add(1, Ordering::SeqCst);
 
         tokio::spawn(async move {
-            let (token, project_id) = {
+            let (mut token, project_id, refresh_token_opt) = {
                 let cfg = c_clone.read();
                 if let Some(acc) = cfg.accounts.iter().find(|a| a.id == id_str) {
-                    (acc.api_key.clone(), acc.project_id.clone())
+                    (acc.api_key.clone(), acc.project_id.clone(), acc.refresh_token.clone())
                 } else {
                     return;
                 }
@@ -912,12 +934,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            let res = antigravity::fetch_models_and_quota(&client, &token, resolved_pid.as_deref()).await;
+            let mut res = antigravity::fetch_models_and_quota(&client, &token, resolved_pid.as_deref()).await;
+
+            // If token expired, try refreshing via refresh token
+            if res.is_err() {
+                if let Some(ref rtok) = refresh_token_opt {
+                    if let Ok(tok_res) = antigravity::refresh_token(&client, rtok).await {
+                        token = tok_res.access_token.clone();
+                        {
+                            let mut cfg = c_clone.write();
+                            if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id_str) {
+                                acc.api_key = token.clone();
+                                if tok_res.refresh_token.is_some() {
+                                    acc.refresh_token = tok_res.refresh_token;
+                                }
+                            }
+                            let _ = cfg.save();
+                        }
+                        res = antigravity::fetch_models_and_quota(&client, &token, resolved_pid.as_deref()).await;
+                    }
+                }
+            }
+
             let success = match res {
                 Ok((models, used, limit, reset, detailed_quota)) => {
                     {
                         let mut cfg = c_clone.write();
                         if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id_str) {
+                            acc.status = "ACTIVE".to_string();
+                            acc.error_message = None;
+                            acc.is_active = true;
                             acc.quota_used = used;
                             acc.quota_limit = limit;
                             acc.quota_reset = reset;
@@ -941,10 +987,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     true
                 }
-                Err(_) => false,
+                Err(_) => {
+                    let mut cfg = c_clone.write();
+                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id_str) {
+                        acc.status = "ERROR".to_string();
+                        if acc.refresh_token.is_none() {
+                            acc.error_message = Some("Google OAuth access token (ya29...) has expired. Please Login via Browser to obtain a persistent session.".to_string());
+                        }
+                    }
+                    let _ = cfg.save();
+                    false
+                }
             };
 
-            states_clone.write().insert(id_str.clone(), (false, if success { "Updated ✓".to_string() } else { "Failed ✕".to_string() }));
+            let current_lang = Language::from_str_code(&c_clone.read().language);
+            let result_str = if success {
+                match current_lang {
+                    Language::Ru => "Обновлено ✓",
+                    Language::Zh => "已刷新 ✓",
+                    Language::En => "Updated ✓",
+                }
+            } else {
+                match current_lang {
+                    Language::Ru => "Ошибка ✕",
+                    Language::Zh => "失败 ✕",
+                    Language::En => "Failed ✕",
+                }
+            };
+
+            states_clone.write().insert(id_str.clone(), (false, result_str.to_string()));
             v_clone.fetch_add(1, Ordering::SeqCst);
 
             tokio::time::sleep(tokio::time::Duration::from_millis(2500)).await;

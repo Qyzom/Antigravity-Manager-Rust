@@ -230,7 +230,7 @@ async fn chat_completions(
             state.stats.record_request("POST", "/v1/chat/completions", &requested_model, 502, 0, start_time.elapsed().as_millis() as u64);
             return (
                 StatusCode::BAD_GATEWAY,
-                Json(json!({"error": {"message": "Active upstream account has empty API token in Aroxy. Please connect an account in Aroxy.", "type": "authentication_error", "code": "empty_api_key"}})),
+                Json(json!({"error": {"message": "Active upstream account has empty API token in Aroxy. Please connect an account in Aroxy.", "type": "upstream_error", "code": "upstream_account_missing_token"}})),
             ).into_response();
         }
         Err(e) => {
@@ -424,11 +424,28 @@ async fn execute_chat_request(
                 status
             };
 
+            let err_code = if is_auth_error {
+                "upstream_token_expired".to_string()
+            } else if is_429 {
+                "rate_limit_exceeded".to_string()
+            } else {
+                "upstream_error".to_string()
+            };
+
+            let helpful_msg = if is_auth_error {
+                format!(
+                    "Upstream Google account token expired for '{}'. Please log in via browser in Aroxy (OAuth) to restore session. Upstream details: {}",
+                    account.name, error_msg
+                )
+            } else {
+                format!("Google Antigravity Upstream: {}", error_msg)
+            };
+
             return ((return_status, Json(json!({
                 "error": {
-                    "message": format!("Google Antigravity Upstream: {}", error_msg),
+                    "message": helpful_msg,
                     "type": "upstream_error",
-                    "code": status.as_u16().to_string()
+                    "code": err_code
                 }
             }))).into_response(), is_429 || is_auth_error);
         }
@@ -593,11 +610,28 @@ async fn execute_chat_request(
 
             let return_status = if is_auth_error { StatusCode::BAD_GATEWAY } else { status };
 
+            let err_code = if is_auth_error {
+                "upstream_token_expired".to_string()
+            } else if is_429 {
+                "rate_limit_exceeded".to_string()
+            } else {
+                "upstream_error".to_string()
+            };
+
+            let helpful_msg = if is_auth_error {
+                format!(
+                    "Upstream Google account token expired for '{}'. Please log in via browser in Aroxy (OAuth) to restore session. Upstream details: {}",
+                    account.name, error_msg
+                )
+            } else {
+                format!("Google Antigravity Upstream: {}", error_msg)
+            };
+
             return ((return_status, Json(json!({
                 "error": {
-                    "message": format!("Google Antigravity Upstream: {}", error_msg),
+                    "message": helpful_msg,
                     "type": "upstream_error",
-                    "code": status.as_u16().to_string()
+                    "code": err_code
                 }
             }))).into_response(), is_429 || is_auth_error);
         }

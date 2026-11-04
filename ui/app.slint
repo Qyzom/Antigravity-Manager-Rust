@@ -168,6 +168,22 @@ export struct I18nData {
     opt_cache_first: string,
     opt_cache_balanced: string,
     opt_cache_spread: string,
+    lbl_status_active: string,
+    lbl_status_error: string,
+    lbl_status_disabled: string,
+    lbl_modal_claude_quota: string,
+    lbl_modal_gemini_quota: string,
+    lbl_modal_5h: string,
+    lbl_modal_week: string,
+    lbl_modal_fingerprint: string,
+    lbl_modal_endpoint: string,
+    lbl_modal_models: string,
+    lbl_modal_error_details: string,
+    lbl_updating: string,
+    lbl_updated: string,
+    lbl_update_failed: string,
+    lbl_active_refresh_desc: string,
+    lbl_pool_refresh_desc: string,
 }
 
 component NavItem inherits Rectangle {
@@ -210,6 +226,7 @@ component ActionButton inherits Rectangle {
     callback clicked;
 
     height: root.custom_height;
+    min-width: txt_el.min-width + 20px;
     border-radius: 6px;
     background: root.is_disabled
         ? #1c1c1f
@@ -225,10 +242,10 @@ component ActionButton inherits Rectangle {
     animate background { duration: 100ms; }
 
     HorizontalLayout {
-        padding-left: 12px;
-        padding-right: 12px;
+        padding-left: 10px;
+        padding-right: 10px;
         alignment: center;
-        Text {
+        txt_el := Text {
             text: root.text;
             font-size: 11px;
             font-weight: 700;
@@ -1033,19 +1050,18 @@ export component MainWindow inherits Window {
                                 HorizontalLayout {
                                     alignment: space-between;
                                     VerticalLayout {
+                                        horizontal-stretch: 1;
                                         spacing: 2px;
                                         Text { text: root.i18n.lbl_active_refresh + ": " + root.active_account_refresh_mins + "m"; font-size: 12px; font-weight: 600; color: #ffffff; }
-                                        Text { text: "Fast sync for currently routed working account"; font-size: 11px; color: #71717a; }
+                                        Text { text: root.i18n.lbl_active_refresh_desc; font-size: 11px; color: #71717a; }
                                     }
                                     HorizontalLayout {
                                         spacing: 4px;
-                                        ActionButton { text: "1m"; is_primary: root.active_account_refresh_mins == 1; is_accent: root.active_account_refresh_mins == 1; clicked => { root.set_active_refresh_cadence(1); } }
-                                        ActionButton { text: "2m"; is_primary: root.active_account_refresh_mins == 2; is_accent: root.active_account_refresh_mins == 2; clicked => { root.set_active_refresh_cadence(2); } }
-                                        ActionButton { text: "3m"; is_primary: root.active_account_refresh_mins == 3; is_accent: root.active_account_refresh_mins == 3; clicked => { root.set_active_refresh_cadence(3); } }
-                                        ActionButton { text: "5m"; is_primary: root.active_account_refresh_mins == 5; is_accent: root.active_account_refresh_mins == 5; clicked => { root.set_active_refresh_cadence(5); } }
-                                        ActionButton { text: "10m"; is_primary: root.active_account_refresh_mins == 10; is_accent: root.active_account_refresh_mins == 10; clicked => { root.set_active_refresh_cadence(10); } }
-                                        ActionButton { text: "15m"; is_primary: root.active_account_refresh_mins == 15; is_accent: root.active_account_refresh_mins == 15; clicked => { root.set_active_refresh_cadence(15); } }
-                                        ActionButton { text: "30m"; is_primary: root.active_account_refresh_mins == 30; is_accent: root.active_account_refresh_mins == 30; clicked => { root.set_active_refresh_cadence(30); } }
+                                        ActionButton { custom_height: 26px; text: "1m"; is_primary: root.active_account_refresh_mins == 1; is_accent: root.active_account_refresh_mins == 1; clicked => { root.set_active_refresh_cadence(1); } }
+                                        ActionButton { custom_height: 26px; text: "2m"; is_primary: root.active_account_refresh_mins == 2; is_accent: root.active_account_refresh_mins == 2; clicked => { root.set_active_refresh_cadence(2); } }
+                                        ActionButton { custom_height: 26px; text: "5m"; is_primary: root.active_account_refresh_mins == 5; is_accent: root.active_account_refresh_mins == 5; clicked => { root.set_active_refresh_cadence(5); } }
+                                        ActionButton { custom_height: 26px; text: "15m"; is_primary: root.active_account_refresh_mins == 15; is_accent: root.active_account_refresh_mins == 15; clicked => { root.set_active_refresh_cadence(15); } }
+                                        ActionButton { custom_height: 26px; text: "30m"; is_primary: root.active_account_refresh_mins == 30; is_accent: root.active_account_refresh_mins == 30; clicked => { root.set_active_refresh_cadence(30); } }
                                     }
                                 }
 
@@ -1054,19 +1070,18 @@ export component MainWindow inherits Window {
                                 HorizontalLayout {
                                     alignment: space-between;
                                     VerticalLayout {
+                                        horizontal-stretch: 1;
                                         spacing: 2px;
                                         Text { text: root.i18n.lbl_pool_refresh + ": " + root.pool_account_refresh_mins + "m"; font-size: 12px; font-weight: 600; color: #ffffff; }
-                                        Text { text: "Background quota polling for standby pool accounts"; font-size: 11px; color: #71717a; }
+                                        Text { text: root.i18n.lbl_pool_refresh_desc; font-size: 11px; color: #71717a; }
                                     }
                                     HorizontalLayout {
                                         spacing: 4px;
-                                        ActionButton { text: "2m"; is_primary: root.pool_account_refresh_mins == 2; is_accent: root.pool_account_refresh_mins == 2; clicked => { root.set_pool_refresh_cadence(2); } }
-                                        ActionButton { text: "5m"; is_primary: root.pool_account_refresh_mins == 5; is_accent: root.pool_account_refresh_mins == 5; clicked => { root.set_pool_refresh_cadence(5); } }
-                                        ActionButton { text: "10m"; is_primary: root.pool_account_refresh_mins == 10; is_accent: root.pool_account_refresh_mins == 10; clicked => { root.set_pool_refresh_cadence(10); } }
-                                        ActionButton { text: "15m"; is_primary: root.pool_account_refresh_mins == 15; is_accent: root.pool_account_refresh_mins == 15; clicked => { root.set_pool_refresh_cadence(15); } }
-                                        ActionButton { text: "30m"; is_primary: root.pool_account_refresh_mins == 30; is_accent: root.pool_account_refresh_mins == 30; clicked => { root.set_pool_refresh_cadence(30); } }
-                                        ActionButton { text: "45m"; is_primary: root.pool_account_refresh_mins == 45; is_accent: root.pool_account_refresh_mins == 45; clicked => { root.set_pool_refresh_cadence(45); } }
-                                        ActionButton { text: "60m"; is_primary: root.pool_account_refresh_mins == 60; is_accent: root.pool_account_refresh_mins == 60; clicked => { root.set_pool_refresh_cadence(60); } }
+                                        ActionButton { custom_height: 26px; text: "5m"; is_primary: root.pool_account_refresh_mins == 5; is_accent: root.pool_account_refresh_mins == 5; clicked => { root.set_pool_refresh_cadence(5); } }
+                                        ActionButton { custom_height: 26px; text: "15m"; is_primary: root.pool_account_refresh_mins == 15; is_accent: root.pool_account_refresh_mins == 15; clicked => { root.set_pool_refresh_cadence(15); } }
+                                        ActionButton { custom_height: 26px; text: "30m"; is_primary: root.pool_account_refresh_mins == 30; is_accent: root.pool_account_refresh_mins == 30; clicked => { root.set_pool_refresh_cadence(30); } }
+                                        ActionButton { custom_height: 26px; text: "45m"; is_primary: root.pool_account_refresh_mins == 45; is_accent: root.pool_account_refresh_mins == 45; clicked => { root.set_pool_refresh_cadence(45); } }
+                                        ActionButton { custom_height: 26px; text: "60m"; is_primary: root.pool_account_refresh_mins == 60; is_accent: root.pool_account_refresh_mins == 60; clicked => { root.set_pool_refresh_cadence(60); } }
                                     }
                                 }
                             }
@@ -1104,7 +1119,7 @@ export component MainWindow inherits Window {
                                         VerticalLayout {
                                             alignment: center;
                                             Badge {
-                                                text: acc.status;
+                                                text: acc.status == "ACTIVE" ? root.i18n.lbl_status_active : (acc.status == "ERROR" ? root.i18n.lbl_status_error : root.i18n.lbl_status_disabled);
                                                 is_green: acc.status == "ACTIVE";
                                                 is_danger: acc.status == "ERROR";
                                             }
@@ -2671,11 +2686,11 @@ export component MainWindow inherits Window {
                         Text { text: root.info_account_name; font-size: 13px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
                         VerticalLayout {
                             alignment: center;
-                            Badge { text: root.info_account_tier; is_green: root.info_account_tier == "PRO" || root.info_account_tier == "Pro"; }
-                        }
-                        VerticalLayout {
-                            alignment: center;
-                            Badge { text: root.info_account_status; is_green: root.info_account_status == "ACTIVE"; is_danger: root.info_account_status != "ACTIVE"; }
+                            Badge {
+                                text: root.info_account_status == "ACTIVE" ? root.i18n.lbl_status_active : (root.info_account_status == "ERROR" ? root.i18n.lbl_status_error : root.i18n.lbl_status_disabled);
+                                is_green: root.info_account_status == "ACTIVE";
+                                is_danger: root.info_account_status != "ACTIVE";
+                            }
                         }
                     }
                     ActionButton {
@@ -2707,7 +2722,7 @@ export component MainWindow inherits Window {
                         padding: 8px;
                         spacing: 4px;
 
-                        Text { text: "Claude & GPT Quota (Anthropic & OpenAI OSS)"; font-size: 11px; font-weight: 700; color: #ffffff; }
+                        Text { text: root.i18n.lbl_modal_claude_quota; font-size: 11px; font-weight: 700; color: #ffffff; }
 
                         HorizontalLayout {
                             spacing: 12px;
@@ -2716,7 +2731,7 @@ export component MainWindow inherits Window {
                                 spacing: 3px;
                                 HorizontalLayout {
                                     alignment: space-between;
-                                    Text { text: "5-Hour Window"; font-size: 10px; color: #a1a1aa; }
+                                    Text { text: root.i18n.lbl_modal_5h; font-size: 10px; color: #a1a1aa; }
                                     Text {
                                         text: root.info_account_claude_5h_pct + "% (" + root.info_account_claude_5h_reset + ")";
                                         font-size: 10px;
@@ -2744,7 +2759,7 @@ export component MainWindow inherits Window {
                                 spacing: 3px;
                                 HorizontalLayout {
                                     alignment: space-between;
-                                    Text { text: "Weekly Window"; font-size: 10px; color: #a1a1aa; }
+                                    Text { text: root.i18n.lbl_modal_week; font-size: 10px; color: #a1a1aa; }
                                     Text {
                                         text: root.info_account_claude_week_pct + "% (" + root.info_account_claude_week_reset + ")";
                                         font-size: 10px;
@@ -2781,7 +2796,7 @@ export component MainWindow inherits Window {
                         padding: 8px;
                         spacing: 4px;
 
-                        Text { text: "Gemini Quota (Google Cloud Code / Gemini 3.x & 4)"; font-size: 11px; font-weight: 700; color: #ffffff; }
+                        Text { text: root.i18n.lbl_modal_gemini_quota; font-size: 11px; font-weight: 700; color: #ffffff; }
 
                         HorizontalLayout {
                             spacing: 12px;
@@ -2790,7 +2805,7 @@ export component MainWindow inherits Window {
                                 spacing: 3px;
                                 HorizontalLayout {
                                     alignment: space-between;
-                                    Text { text: "5-Hour Window"; font-size: 10px; color: #a1a1aa; }
+                                    Text { text: root.i18n.lbl_modal_5h; font-size: 10px; color: #a1a1aa; }
                                     Text {
                                         text: root.info_account_gemini_5h_pct + "% (" + root.info_account_gemini_5h_reset + ")";
                                         font-size: 10px;
@@ -2818,7 +2833,7 @@ export component MainWindow inherits Window {
                                 spacing: 3px;
                                 HorizontalLayout {
                                     alignment: space-between;
-                                    Text { text: "Weekly Window"; font-size: 10px; color: #a1a1aa; }
+                                    Text { text: root.i18n.lbl_modal_week; font-size: 10px; color: #a1a1aa; }
                                     Text {
                                         text: root.info_account_gemini_week_pct + "% (" + root.info_account_gemini_week_reset + ")";
                                         font-size: 10px;
@@ -2857,19 +2872,19 @@ export component MainWindow inherits Window {
 
                         HorizontalLayout {
                             alignment: space-between;
-                            Text { text: "Fingerprint / Client ID"; font-size: 10px; color: #a1a1aa; }
+                            Text { text: root.i18n.lbl_modal_fingerprint; font-size: 10px; color: #a1a1aa; }
                             Text { text: root.info_account_fingerprint != "" ? root.info_account_fingerprint : "Google Antigravity Client (1.107.0)"; font-size: 10px; color: #e4e4e7; }
                         }
 
                         HorizontalLayout {
                             alignment: space-between;
-                            Text { text: "Upstream Service Endpoint"; font-size: 10px; color: #a1a1aa; }
+                            Text { text: root.i18n.lbl_modal_endpoint; font-size: 10px; color: #a1a1aa; }
                             Text { text: "Google Cloud Code Pa API"; font-size: 10px; color: #e4e4e7; }
                         }
 
                         HorizontalLayout {
                             alignment: space-between;
-                            Text { text: "Catalog Models Available"; font-size: 10px; color: #a1a1aa; }
+                            Text { text: root.i18n.lbl_modal_models; font-size: 10px; color: #a1a1aa; }
                             Text { text: root.info_account_models; font-size: 10px; color: #e4e4e7; }
                         }
                     }
@@ -2881,10 +2896,22 @@ export component MainWindow inherits Window {
                     border-width: 1px;
                     border-color: #7f1d1d;
                     VerticalLayout {
-                        padding: 8px;
-                        spacing: 3px;
-                        Text { text: root.i18n.info_error_label + ":"; font-size: 10px; font-weight: 700; color: #f87171; }
+                        padding: 10px;
+                        spacing: 8px;
+                        Text { text: root.i18n.lbl_modal_error_details; font-size: 10px; font-weight: 700; color: #f87171; }
                         Text { text: root.info_account_error; font-size: 10px; color: #fca5a5; wrap: word-wrap; }
+                        HorizontalLayout {
+                            alignment: start;
+                            ActionButton {
+                                text: root.i18n.btn_login_oauth;
+                                is_accent: true;
+                                custom_height: 28px;
+                                clicked => {
+                                    root.show_account_info = false;
+                                    root.add_account_browser_oauth();
+                                }
+                            }
+                        }
                     }
                 }
             }
