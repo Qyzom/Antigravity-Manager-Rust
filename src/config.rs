@@ -401,7 +401,7 @@ impl Default for AppConfig {
                     provider: "anthropic".to_string(),
                     tier: "PRO".to_string(),
                     is_enabled: true,
-                    supports_thinking: false,
+                    supports_thinking: true,
                 },
                 ModelCatalogItem {
                     id: "claude-sonnet-4-6".to_string(),
@@ -492,7 +492,7 @@ impl AppConfig {
                 m.id = "claude-opus-5-5".to_string();
                 m.display_name = "Claude Opus 5.5".to_string();
                 m.provider = "anthropic".to_string();
-                m.supports_thinking = false;
+                m.supports_thinking = true;
             } else if m.id == "claude-sonnet-4-6" {
                 m.display_name = "Claude Sonnet 4.6".to_string();
                 m.provider = "anthropic".to_string();

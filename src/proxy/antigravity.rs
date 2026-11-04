@@ -578,7 +578,7 @@ pub async fn fetch_models_and_quota(
                             "openai".to_string()
                         };
 
-                        let supports_thinking = !clean_id.contains("opus");
+                        let supports_thinking = clean_id != "claude-opus-4-6";
 
                         let tier = "PRO".to_string();
 
