@@ -23,7 +23,7 @@ Existing tools for transforming Antigravity into standard API endpoints are almo
 
 - **100% Original Codebase:** Written completely from scratch on pure **Tokio**, **Axum**, and **Slint**. Zero upstream code was used or adapted.
 - **Zero Webview & Zero Telemetry:** No Electron, no Tauri, no React, no Node.js. No analytics or phone-home requests under any circumstances.
-- **Engineered for Reliability:** Features lock-free concurrency and automatic SSE heartbeat frames (`: ping\n\n`) to prevent connection timeouts when querying deep-thinking models (Claude 3.7 Sonnet, o1, Gemini 2.5).
+- **Engineered for Reliability:** Features lock-free concurrency and automatic SSE heartbeat frames (`: ping\n\n`) to prevent connection timeouts when querying deep-thinking models (Claude Sonnet 5.5, Gemini 4 Argon, Gemini 3.8 Flash).
 
 ---
 
@@ -47,10 +47,10 @@ Existing tools for transforming Antigravity into standard API endpoints are almo
 
 - **Multi-Protocol Emulation:** Native `/v1/chat/completions`, `/v1/models`, and Anthropic `/v1/messages` compatibility with real-time SSE stream translation.
 - **Dual-Mode Reasoning Effort:**
-  - **Virtual Clones:** Automatically exposes `(low)`, `(medium)`, `(high)`, and `(no-thinking)` model variants for clients without reasoning sliders (e.g., `claude-3-7-sonnet (medium)`).
+  - **Virtual Clones:** Automatically exposes `(low)`, `(medium)`, `(high)`, and `(no-thinking)` model variants for clients without reasoning sliders (e.g., `claude-sonnet-5-5 (high)`).
   - **Native Protocol Control:** Transparently honors native OpenAI `reasoning_effort` and Anthropic `thinking.budget_tokens`.
 - **Model Catalog Filtering:** Enable or disable specific models broadcasted via `/v1/models` directly in the UI.
-- **Anti-Detection Fingerprinting:** Selectable client profiles (`Claude Code 2.x`, `Cursor Pro`, `Antigravity CLI`, `OpenCode`) with authentic User-Agent and protocol headers.
+- **Anti-Detection Fingerprinting:** Selectable client profiles (`Google Antigravity Client`, `Claude Code 2.x`, `Cursor Pro`) with authentic User-Agent and protocol headers.
 - **Modern Dark UI:** Minimalist monochrome design inspired by modern desktop interfaces.
 - **Background Tray Daemon:** Minimize to system tray on close with zero resource waste.
 

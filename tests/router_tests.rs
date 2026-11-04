@@ -38,6 +38,7 @@ mod tests {
             refresh_token: None,
             project_id: None,
             is_active: true,
+            added_at: None,
         };
 
         assert_eq!(resolve_model("claude-3-7-sonnet", &account), "claude-3-7-sonnet-20250219");
@@ -81,18 +82,18 @@ mod tests {
         cfg.expose_reasoning_variants = true;
 
         let broadcasted = cfg.get_broadcast_models();
-        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6"));
-        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6 (low)"));
-        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6 (medium)"));
-        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6 (high)"));
-        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6 (no-thinking)"));
+        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-5-5"));
+        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-5-5 (low)"));
+        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-5-5 (medium)"));
+        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-5-5 (high)"));
+        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-5-5 (no-thinking)"));
 
         // When group_reasoning_clones is enabled, clones should NOT be present
         cfg.group_reasoning_clones = true;
         let grouped = cfg.get_broadcast_models();
-        assert!(grouped.iter().any(|m| m["id"] == "claude-sonnet-4-6"));
-        assert!(grouped.iter().any(|m| m["id"] == "claude-sonnet-4-6" && m["reasoning"]["supported_efforts"].is_array()));
-        assert!(!grouped.iter().any(|m| m["id"] == "claude-sonnet-4-6 (low)"));
+        assert!(grouped.iter().any(|m| m["id"] == "claude-sonnet-5-5"));
+        assert!(grouped.iter().any(|m| m["id"] == "claude-sonnet-5-5" && m["reasoning"]["supported_efforts"].is_array()));
+        assert!(!grouped.iter().any(|m| m["id"] == "claude-sonnet-5-5 (low)"));
     }
 
     #[test]
@@ -296,6 +297,7 @@ mod tests {
             refresh_token: None,
             project_id: None,
             is_active: true,
+            added_at: None,
         };
 
         let acc_b = UpstreamAccount {
@@ -322,6 +324,7 @@ mod tests {
             refresh_token: None,
             project_id: None,
             is_active: true,
+            added_at: None,
         };
 
         cfg.accounts = vec![acc_a.clone(), acc_b.clone()];
@@ -379,6 +382,7 @@ mod tests {
             refresh_token: None,
             project_id: None,
             is_active: true,
+            added_at: None,
         };
 
         // Account 2: Pro tier, Claude quota 60%, Gemini 90%
@@ -406,6 +410,7 @@ mod tests {
             refresh_token: None,
             project_id: None,
             is_active: true,
+            added_at: None,
         };
 
         cfg.accounts = vec![acc_free.clone(), acc_pro.clone()];
@@ -615,6 +620,7 @@ mod tests {
             refresh_token: None,
             project_id: None,
             is_active: true,
+            added_at: None,
         };
 
         let acc_healthy = UpstreamAccount {
@@ -641,6 +647,7 @@ mod tests {
             refresh_token: None,
             project_id: None,
             is_active: true,
+            added_at: None,
         };
 
         let acc_error = UpstreamAccount {
@@ -667,6 +674,7 @@ mod tests {
             refresh_token: None,
             project_id: None,
             is_active: false,
+            added_at: None,
         };
 
         cfg.accounts = vec![acc_low.clone(), acc_healthy.clone(), acc_error.clone()];

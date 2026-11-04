@@ -136,6 +136,8 @@ pub struct UpstreamAccount {
     pub refresh_token: Option<String>,
     #[serde(default)]
     pub project_id: Option<String>,
+    #[serde(default)]
+    pub added_at: Option<u64>,
 }
 
 fn default_weekly_reset() -> String {
@@ -230,7 +232,7 @@ pub struct AppConfig {
     #[serde(default = "default_true")]
     pub show_stats_tab: bool,
     #[serde(default)]
-    pub compact_ui_mode: bool,
+    pub hide_about_tab: bool,
     #[serde(default = "default_true")]
     pub check_updates_startup: bool,
     #[serde(default)]
@@ -271,7 +273,7 @@ fn default_heartbeat() -> u64 {
 }
 
 fn default_fingerprint() -> String {
-    "Claude Code 2.x".to_string()
+    "Google Antigravity Client (1.107.0)".to_string()
 }
 
 fn default_protection_threshold() -> u8 {
@@ -316,29 +318,13 @@ impl Default for AppConfig {
             pool_account_refresh_mins: 15,
             show_logs_tab: true,
             show_stats_tab: true,
-            compact_ui_mode: false,
+            hide_about_tab: false,
             check_updates_startup: true,
             clear_logs_on_exit: false,
             master_api_key: "sk-aroxy-v1-master-key".to_string(),
             accounts: Vec::new(),
             active_account_id: None,
             models: vec![
-                ModelCatalogItem {
-                    id: "claude-sonnet-4-6".to_string(),
-                    display_name: "Claude Sonnet 4.6 (Thinking)".to_string(),
-                    provider: "anthropic".to_string(),
-                    tier: "Pro".to_string(),
-                    is_enabled: true,
-                    supports_thinking: true,
-                },
-                ModelCatalogItem {
-                    id: "claude-opus-4-6-thinking".to_string(),
-                    display_name: "Claude Opus 4.6 (Thinking)".to_string(),
-                    provider: "anthropic".to_string(),
-                    tier: "Pro".to_string(),
-                    is_enabled: true,
-                    supports_thinking: true,
-                },
                 ModelCatalogItem {
                     id: "claude-sonnet-5-5".to_string(),
                     display_name: "Claude Sonnet 5.5".to_string(),
@@ -367,22 +353,6 @@ impl Default for AppConfig {
                     id: "gemini-3.8-flash".to_string(),
                     display_name: "Gemini 3.8 Flash".to_string(),
                     provider: "gemini".to_string(),
-                    tier: "Pro".to_string(),
-                    is_enabled: true,
-                    supports_thinking: true,
-                },
-                ModelCatalogItem {
-                    id: "gemini-3.1-pro".to_string(),
-                    display_name: "Gemini 3.1 Pro".to_string(),
-                    provider: "gemini".to_string(),
-                    tier: "Pro".to_string(),
-                    is_enabled: true,
-                    supports_thinking: true,
-                },
-                ModelCatalogItem {
-                    id: "gpt-oss-120b".to_string(),
-                    display_name: "GPT-OSS 120B".to_string(),
-                    provider: "openai".to_string(),
                     tier: "Pro".to_string(),
                     is_enabled: true,
                     supports_thinking: true,
@@ -420,6 +390,9 @@ impl AppConfig {
                             && !m.id.contains("gemini-3-flash")
                             && !m.id.contains("gemini-3.7")
                             && !m.id.contains("gemini-3.6")
+                            && !m.id.contains("gemini-3.1")
+                            && !m.id.contains("4-6")
+                            && !m.id.contains("gpt-oss")
                             && m.id != "gemini-3.9-flash"
                             && m.id != "o1"
                             && m.id != "gpt-4o"
@@ -442,13 +415,9 @@ impl AppConfig {
                         } else if m.id == "gemini-3.8-flash-high" {
                             m.id = "gemini-3.8-flash".to_string();
                             m.display_name = "Gemini 3.8 Flash".to_string();
-                        } else if m.id == "gemini-3.1-pro-high" {
-                            m.id = "gemini-3.1-pro".to_string();
-                            m.display_name = "Gemini 3.1 Pro".to_string();
-                        } else if m.id == "gpt-oss-120b-medium" {
-                            m.id = "gpt-oss-120b".to_string();
-                            m.display_name = "GPT-OSS 120B".to_string();
                         }
+                        // Ensure all models have thinking enabled
+                        m.supports_thinking = true;
                     }
 
                     if cfg.models.is_empty() {
@@ -459,25 +428,31 @@ impl AppConfig {
                     let mut seen_ids = std::collections::HashSet::new();
                     cfg.models.retain(|m| seen_ids.insert(m.id.clone()));
 
-                    // Auto-recover any accounts previously marked with transient error
+                    // Auto-recover accounts and ensure timestamp & tier consistency
+                    let now_ts = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+
                     for acc in &mut cfg.accounts {
                         if acc.status == "ERROR" {
                             acc.status = "ACTIVE".to_string();
                             acc.is_active = true;
                             acc.error_message = None;
                         }
+                        if acc.added_at.is_none() {
+                            acc.added_at = Some(now_ts);
+                        }
+                        if acc.claude_gpt_percent > 0 || acc.tier.to_lowercase() == "pro" {
+                            acc.tier = "PRO".to_string();
+                        }
                     }
 
-                    // Ensure modern gemini-3.8-flash exists
-                    if !cfg.models.iter().any(|m| m.id == "gemini-3.8-flash") {
-                        cfg.models.push(ModelCatalogItem {
-                            id: "gemini-3.8-flash".to_string(),
-                            display_name: "Gemini 3.8 Flash".to_string(),
-                            provider: "gemini".to_string(),
-                            tier: "Pro".to_string(),
-                            is_enabled: true,
-                            supports_thinking: true,
-                        });
+                    // Ensure required core models exist
+                    for def_m in Self::default().models {
+                        if !cfg.models.iter().any(|m| m.id == def_m.id) {
+                            cfg.models.push(def_m);
+                        }
                     }
 
                     if cfg.models.is_empty() {

@@ -37,6 +37,7 @@ export struct AccountData {
     error_message: string,
     is_updating: bool,
     update_status_text: string,
+    added_at_text: string,
 }
 
 export struct ModelItemData {
@@ -137,7 +138,9 @@ export struct I18nData {
     btn_save_settings: string,
     lbl_show_logs: string,
     lbl_show_stats: string,
-    lbl_compact_ui: string,
+    lbl_hide_about: string,
+    lbl_hide_about_desc: string,
+    lbl_added_at: string,
     lbl_check_updates: string,
     lbl_clear_logs_exit: string,
     lbl_quota_protection: string,
@@ -490,13 +493,15 @@ export component MainWindow inherits Window {
     // Preferences & Toggles
     in-out property <bool> show_logs_tab: true;
     in-out property <bool> show_stats_tab: true;
-    in-out property <bool> compact_ui_mode: false;
+    in-out property <bool> hide_about_tab: false;
+    in-out property <length> accounts_scroll_y: 0px;
     in-out property <bool> setting_minimize_tray: true;
     in-out property <bool> setting_autostart: false;
     in-out property <bool> setting_portable_mode: false;
     in-out property <bool> setting_check_updates: true;
     in-out property <bool> setting_clear_logs_exit: false;
     in-out property <string> info_account_error: "";
+    in-out property <string> info_account_added_at: "";
 
     // Callbacks
     callback toggle_proxy();
@@ -526,7 +531,7 @@ export component MainWindow inherits Window {
     callback set_pool_refresh_cadence(int);
     callback toggle_show_logs();
     callback toggle_show_stats();
-    callback toggle_compact_mode();
+    callback toggle_hide_about_tab();
     callback toggle_check_updates();
     callback toggle_clear_logs_exit();
     callback toggle_minimize_tray();
@@ -616,7 +621,7 @@ export component MainWindow inherits Window {
                     is_active: root.active_tab == 6;
                     clicked => { root.active_tab = 6; }
                 }
-                NavItem {
+                if !root.hide_about_tab: NavItem {
                     text: root.i18n.tab_about;
                     is_active: root.active_tab == 7;
                     clicked => { root.active_tab = 7; }
@@ -2170,22 +2175,22 @@ export component MainWindow inherits Window {
                                     }
                                 }
 
-                                // Compact Interface Mode Toggle
+                                // Hide About Tab Toggle
                                 HorizontalLayout {
                                     alignment: space-between;
                                     VerticalLayout {
                                         horizontal-stretch: 1;
                                         spacing: 2px;
-                                        Text { text: root.i18n.lbl_compact_ui; font-size: 12px; color: #e4e4e7; }
-                                        Text { text: "High-density layout optimized for compact screens"; font-size: 11px; color: #71717a; }
+                                        Text { text: root.i18n.lbl_hide_about; font-size: 12px; color: #e4e4e7; }
+                                        Text { text: root.i18n.lbl_hide_about_desc; font-size: 11px; color: #71717a; }
                                     }
                                     VerticalLayout {
                                         alignment: center;
                                         ToggleSwitch {
-                                            checked: root.compact_ui_mode;
+                                            checked: root.hide_about_tab;
                                             toggled => {
-                                                root.compact_ui_mode = !root.compact_ui_mode;
-                                                root.toggle_compact_mode();
+                                                root.hide_about_tab = !root.hide_about_tab;
+                                                root.toggle_hide_about_tab();
                                             }
                                         }
                                     }
@@ -2341,26 +2346,26 @@ export component MainWindow inherits Window {
                             border-color: #27272a;
 
                             VerticalLayout {
-                                padding: 20px;
+                                padding: 22px;
                                 spacing: 16px;
 
                                 HorizontalLayout {
                                     spacing: 14px;
                                     alignment: start;
                                     Rectangle {
-                                        width: 50px;
-                                        height: 50px;
-                                        border-radius: 10px;
+                                        width: 48px;
+                                        height: 48px;
+                                        border-radius: 8px;
                                         background: #27272a;
                                         border-width: 1px;
                                         border-color: #3f3f46;
-                                        Text { text: "A"; font-size: 24px; font-weight: 900; color: #ffffff; horizontal-alignment: center; vertical-alignment: center; }
+                                        Text { text: "A"; font-size: 22px; font-weight: 900; color: #ffffff; horizontal-alignment: center; vertical-alignment: center; }
                                     }
                                     VerticalLayout {
-                                        spacing: 4px;
+                                        spacing: 3px;
                                         alignment: center;
-                                        Text { text: "Aroxy — AI Protocol Proxy & Emulator"; font-size: 16px; font-weight: 800; color: #ffffff; }
-                                        Text { text: "Version 0.0.2 · Pure Rust Core · Zero Bloat & Zero Telemetry"; font-size: 12px; color: #a1a1aa; }
+                                        Text { text: "Aroxy"; font-size: 16px; font-weight: 800; color: #ffffff; }
+                                        Text { text: "Version 0.0.2 · AI Protocol Proxy & Quota Dispatcher"; font-size: 12px; color: #a1a1aa; }
                                     }
                                 }
 
@@ -2368,22 +2373,28 @@ export component MainWindow inherits Window {
 
                                 VerticalLayout {
                                     spacing: 8px;
-                                    Text { text: "ARCHITECTURE & SPECIFICATIONS"; font-size: 10px; font-weight: 700; color: #71717a; }
-                                    HorizontalLayout {
-                                        spacing: 10px;
-                                        Badge { text: "Tokio Async"; }
-                                        Badge { text: "Axum 0.8"; }
-                                        Badge { text: "Slint Native GUI"; }
-                                        Badge { text: "FemtoVG / Winit"; }
-                                        Badge { text: "MIT License"; }
-                                    }
-                                }
+                                    Text { text: "SOFTWARE STACK & SPECIFICATIONS"; font-size: 11px; font-weight: 700; color: #71717a; }
 
-                                VerticalLayout {
-                                    spacing: 6px;
-                                    Text { text: "MAINTAINER & LICENSE"; font-size: 10px; font-weight: 700; color: #71717a; }
-                                    Text { text: "Maintained by Qyzom"; font-size: 13px; font-weight: 600; color: #ffffff; }
-                                    Text { text: "Released as open source under the permissive MIT License."; font-size: 12px; color: #a1a1aa; }
+                                    HorizontalLayout {
+                                        alignment: space-between;
+                                        Text { text: "Core Proxy Runtime"; font-size: 12px; color: #a1a1aa; }
+                                        Text { text: "Tokio 1.x (Lock-Free Async Engine)"; font-size: 12px; font-weight: 600; color: #e4e4e7; }
+                                    }
+                                    HorizontalLayout {
+                                        alignment: space-between;
+                                        Text { text: "HTTP Network Transport"; font-size: 12px; color: #a1a1aa; }
+                                        Text { text: "Axum 0.7 & Reqwest 0.12 (Hyper / Rustls)"; font-size: 12px; font-weight: 600; color: #e4e4e7; }
+                                    }
+                                    HorizontalLayout {
+                                        alignment: space-between;
+                                        Text { text: "GUI Framework"; font-size: 12px; color: #a1a1aa; }
+                                        Text { text: "Slint 1.9 (backend-winit, renderer-femtovg)"; font-size: 12px; font-weight: 600; color: #e4e4e7; }
+                                    }
+                                    HorizontalLayout {
+                                        alignment: space-between;
+                                        Text { text: "License"; font-size: 12px; color: #a1a1aa; }
+                                        Text { text: "MIT License (Open Source)"; font-size: 12px; font-weight: 600; color: #e4e4e7; }
+                                    }
                                 }
 
                                 Rectangle { height: 1px; background: #27272a; }
@@ -2392,17 +2403,18 @@ export component MainWindow inherits Window {
                                     spacing: 12px;
                                     ActionButton {
                                         text: root.github_update_status;
+                                        is_primary: true;
                                         is_accent: true;
                                         is_disabled: root.github_checking_update;
                                         clicked => { root.check_github_updates(); }
                                     }
                                     ActionButton {
-                                        text: "GitHub Repository";
+                                        text: "GitHub Releases";
                                         is_primary: false;
-                                        clicked => { root.open_github_repo(); }
+                                        clicked => { root.open_github_releases(); }
                                     }
                                     ActionButton {
-                                        text: "Open App Config Folder";
+                                        text: "Config Folder";
                                         is_primary: false;
                                         clicked => { root.open_config_folder(); }
                                     }
@@ -2425,7 +2437,7 @@ export component MainWindow inherits Window {
         }
 
         modal_card1 := Rectangle {
-            width: 520px;
+            width: 620px;
             height: modal_inner1.min-height;
             background: #141416;
             border-radius: 12px;
@@ -2437,8 +2449,8 @@ export component MainWindow inherits Window {
             TouchArea { clicked => { } }
 
             modal_inner1 := VerticalLayout {
-                padding: 14px;
-                spacing: 8px;
+                padding: 16px;
+                spacing: 10px;
 
                 HorizontalLayout {
                     alignment: space-between;
@@ -2459,6 +2471,15 @@ export component MainWindow inherits Window {
                         text: root.i18n.btn_close;
                         is_primary: false;
                         clicked => { root.show_account_info = false; }
+                    }
+                }
+
+                HorizontalLayout {
+                    alignment: space-between;
+                    Text {
+                        text: root.i18n.lbl_added_at + " " + (root.info_account_added_at != "" ? root.info_account_added_at : "just now");
+                        font-size: 11px;
+                        color: #a1a1aa;
                     }
                 }
 
@@ -2626,7 +2647,7 @@ export component MainWindow inherits Window {
                         HorizontalLayout {
                             alignment: space-between;
                             Text { text: "Fingerprint / Client ID"; font-size: 10px; color: #a1a1aa; }
-                            Text { text: root.info_account_fingerprint != "" ? root.info_account_fingerprint : "Claude Code 2.x"; font-size: 10px; color: #e4e4e7; }
+                            Text { text: root.info_account_fingerprint != "" ? root.info_account_fingerprint : "Google Antigravity Client (1.107.0)"; font-size: 10px; color: #e4e4e7; }
                         }
 
                         HorizontalLayout {
@@ -2669,7 +2690,7 @@ export component MainWindow inherits Window {
         }
 
         modal_card2 := Rectangle {
-            width: 520px;
+            width: 620px;
             height: modal_inner2.min-height;
             background: #141416;
             border-radius: 12px;
@@ -2681,15 +2702,15 @@ export component MainWindow inherits Window {
             TouchArea { clicked => { } }
 
             modal_inner2 := VerticalLayout {
-                padding: 14px;
-                spacing: 8px;
+                padding: 16px;
+                spacing: 10px;
 
                 HorizontalLayout {
                     alignment: space-between;
                     HorizontalLayout {
                         spacing: 8px;
-                        Text { text: root.i18n.test_dialog_title; font-size: 13px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
-                        Badge { text: root.test_model_id; is_green: true; }
+                        alignment: start;
+                        Text { text: root.i18n.test_dialog_title + ": " + root.test_model_id; font-size: 13px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
                     }
                     ActionButton {
                         text: root.i18n.btn_close;
@@ -2766,7 +2787,7 @@ export component MainWindow inherits Window {
 
                 // Output Viewer
                 Rectangle {
-                    height: 70px;
+                    height: 90px;
                     border-radius: 6px;
                     background: #111113;
                     border-width: 1px;

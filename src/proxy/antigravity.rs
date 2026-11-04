@@ -245,6 +245,9 @@ pub async fn fetch_project_and_tier(
         "metadata": { "ideType": "ANTIGRAVITY" }
     });
 
+    let mut project_id = Some("aicode-consumers".to_string());
+    let mut tier = "PRO".to_string();
+
     for endpoint in LOAD_PROJECT_ENDPOINTS {
         if let Ok(resp) = client
             .post(endpoint)
@@ -256,28 +259,35 @@ pub async fn fetch_project_and_tier(
         {
             if resp.status().is_success() {
                 if let Ok(data) = resp.json::<LoadProjectResponse>().await {
-                    let project_id = data.project_id.or_else(|| Some("aicode-consumers".to_string()));
+                    if let Some(pid) = data.project_id {
+                        project_id = Some(pid);
+                    }
                     let raw_tier = data
                         .paid_tier
                         .and_then(|t| t.id.or(t.name))
                         .or_else(|| data.current_tier.and_then(|t| t.id.or(t.name)))
-                        .unwrap_or_else(|| "free-tier".to_string());
+                        .unwrap_or_default();
 
-                    let tier = if raw_tier.to_lowercase().contains("pro")
-                        || raw_tier.to_lowercase().contains("ultra")
-                    {
-                        "PRO".to_string()
-                    } else {
-                        "FREE".to_string()
-                    };
-
-                    return (project_id, tier);
+                    if !raw_tier.is_empty() {
+                        tier = if raw_tier.to_lowercase().contains("free") {
+                            "FREE".to_string()
+                        } else {
+                            "PRO".to_string()
+                        };
+                    }
+                    break;
                 }
             }
         }
     }
 
-    (Some("aicode-consumers".to_string()), "FREE".to_string())
+    // Double check via quota summary: any account with Claude quota is definitely PRO
+    let quota_summary = fetch_user_quota_summary(client, access_token).await;
+    if quota_summary.claude_gpt_percent > 0 {
+        tier = "PRO".to_string();
+    }
+
+    (project_id, tier)
 }
 
 const QUOTA_SUMMARY_ENDPOINTS: [&str; 3] = [
@@ -472,6 +482,9 @@ pub async fn fetch_models_and_quota(
                             || id.contains("gemini-3.9")
                             || id.contains("gemini-3.7")
                             || id.contains("gemini-3.6")
+                            || id.contains("gemini-3.1")
+                            || id.contains("4-6")
+                            || id.contains("gpt-oss")
                             || id == "claude-3-7-sonnet"
                             || id == "gemini-2.5-pro"
                             || id == "gemini-2.5-flash"
@@ -483,8 +496,6 @@ pub async fn fetch_models_and_quota(
                             "claude-sonnet-5-5-high" => "claude-sonnet-5-5".to_string(),
                             "claude-opus-5-5-high" => "claude-opus-5-5".to_string(),
                             "gemini-3.8-flash-high" => "gemini-3.8-flash".to_string(),
-                            "gemini-3.1-pro-high" => "gemini-3.1-pro".to_string(),
-                            "gpt-oss-120b-medium" => "gpt-oss-120b".to_string(),
                             other => other.to_string(),
                         };
 
@@ -492,8 +503,7 @@ pub async fn fetch_models_and_quota(
                             "claude-sonnet-5-5" => "Claude Sonnet 5.5".to_string(),
                             "claude-opus-5-5" => "Claude Opus 5.5".to_string(),
                             "gemini-3.8-flash" => "Gemini 3.8 Flash".to_string(),
-                            "gemini-3.1-pro" => "Gemini 3.1 Pro".to_string(),
-                            "gpt-oss-120b" => "GPT-OSS 120B".to_string(),
+                            "gemini-4-argon" => "Gemini 4 Argon".to_string(),
                             _ => entry.display_name.clone().unwrap_or_else(|| clean_id.clone()),
                         };
 
@@ -505,22 +515,9 @@ pub async fn fetch_models_and_quota(
                             "openai".to_string()
                         };
 
-                        let supports_thinking = clean_id.contains("3-7")
-                            || clean_id.contains("3.7")
-                            || clean_id.contains("3.8")
-                            || clean_id.contains("4-argon")
-                            || clean_id.contains("4.6")
-                            || clean_id.contains("5.5")
-                            || clean_id.contains("thinking");
+                        let supports_thinking = true;
 
-                        let tier = if clean_id.contains("haiku")
-                            || clean_id.contains("flash-lite")
-                            || clean_id.contains("mini")
-                        {
-                            "FREE".to_string()
-                        } else {
-                            "PRO".to_string()
-                        };
+                        let tier = "PRO".to_string();
 
                         if let Some(qi) = entry.quota_info {
                             if let Some(frac) = qi.remaining_fraction {

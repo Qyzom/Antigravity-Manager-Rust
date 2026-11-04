@@ -137,7 +137,7 @@ async fn oauth_callback(
                 api_key: access_token,
                 refresh_token: refresh_token_opt,
                 project_id: project_id_opt,
-                fingerprint: "Claude Code 2.x".to_string(),
+                fingerprint: "Google Antigravity Client (1.107.0)".to_string(),
                 tier: tier.clone(),
                 quota_used,
                 quota_limit,
@@ -153,6 +153,7 @@ async fn oauth_callback(
                 status: "ACTIVE".to_string(),
                 error_message: None,
                 is_active: true,
+                added_at: Some(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)),
             });
             cfg.active_account_id = Some(new_id);
         }
@@ -582,7 +583,7 @@ async fn execute_chat_request(
                     let mut cfg = state.config.write();
                     if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
                         acc.status = "ERROR".to_string();
-                        acc.is_active = false;
+                        // Never deactivate account permanently so it can retry or auto-recover!
                         acc.error_message = Some(helpful_err);
                     }
                     let _ = cfg.save();
@@ -590,7 +591,9 @@ async fn execute_chat_request(
                 state.cfg_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             }
 
-            return ((status, Json(json!({
+            let return_status = if is_auth_error { StatusCode::BAD_GATEWAY } else { status };
+
+            return ((return_status, Json(json!({
                 "error": {
                     "message": format!("Google Antigravity Upstream: {}", error_msg),
                     "type": "upstream_error",

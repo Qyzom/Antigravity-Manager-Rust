@@ -192,7 +192,7 @@ impl LoadBalancer {
             .iter()
             .filter(|a| match family {
                 ModelFamily::ClaudeOrGpt => {
-                    a.claude_gpt_percent > 0 && a.claude_gpt_weekly_percent > 0 && a.tier.to_uppercase() != "FREE"
+                    a.claude_gpt_percent > 0 && a.claude_gpt_weekly_percent > 0
                 }
                 ModelFamily::Gemini => a.gemini_percent > 0 && a.gemini_weekly_percent > 0,
             })

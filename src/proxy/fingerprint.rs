@@ -10,6 +10,14 @@ pub struct FingerprintProfile {
 
 pub fn get_profile(name: &str) -> FingerprintProfile {
     match name {
+        "Google Antigravity Client (1.107.0)" | "Antigravity IDE" | "Antigravity CLI" => FingerprintProfile {
+            name: "Google Antigravity Client (1.107.0)",
+            user_agent: "antigravity/1.107.0 linux/x64",
+            extra_headers: vec![
+                ("x-goog-api-client", "gl-go/1.21.0 gdcl/0.1.0"),
+                ("x-client-vendor", "Google-Antigravity"),
+            ],
+        },
         "Claude Code 2.x" => FingerprintProfile {
             name: "Claude Code 2.x",
             user_agent: "claude-code/0.2.29 (darwin-arm64)",
@@ -29,14 +37,6 @@ pub fn get_profile(name: &str) -> FingerprintProfile {
                 ("sec-fetch-mode", "cors"),
             ],
         },
-        "Antigravity CLI" => FingerprintProfile {
-            name: "Antigravity CLI",
-            user_agent: "antigravity/2.0.0-core (x86_64-linux)",
-            extra_headers: vec![
-                ("x-goog-api-client", "gl-rust/1.99.0"),
-                ("x-client-vendor", "Antigravity"),
-            ],
-        },
         "OpenCode" => FingerprintProfile {
             name: "OpenCode",
             user_agent: "OpenCode/1.1.0",
@@ -45,9 +45,11 @@ pub fn get_profile(name: &str) -> FingerprintProfile {
             ],
         },
         _ => FingerprintProfile {
-            name: "Native Aroxy",
-            user_agent: "Aroxy/0.1.0",
-            extra_headers: vec![],
+            name: "Google Antigravity Client (1.107.0)",
+            user_agent: "antigravity/1.107.0 linux/x64",
+            extra_headers: vec![
+                ("x-goog-api-client", "gl-go/1.21.0 gdcl/0.1.0"),
+            ],
         },
     }
 }

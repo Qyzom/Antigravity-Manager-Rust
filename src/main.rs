@@ -27,6 +27,49 @@ fn open_in_system(target: &str) {
     let _ = std::process::Command::new("open").arg(target).spawn();
 }
 
+fn format_elapsed_time(added_at: u64, lang: Language) -> String {
+    if added_at == 0 {
+        return match lang {
+            Language::Ru => "только что".to_string(),
+            Language::Zh => "刚刚".to_string(),
+            Language::En => "just now".to_string(),
+        };
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(added_at);
+    let diff = now.saturating_sub(added_at);
+    if diff < 60 {
+        match lang {
+            Language::Ru => "только что".to_string(),
+            Language::Zh => "刚刚".to_string(),
+            Language::En => "just now".to_string(),
+        }
+    } else if diff < 3600 {
+        let mins = diff / 60;
+        match lang {
+            Language::Ru => format!("{} мин. назад", mins),
+            Language::Zh => format!("{} 分钟前", mins),
+            Language::En => format!("{}m ago", mins),
+        }
+    } else if diff < 86400 {
+        let hours = diff / 3600;
+        match lang {
+            Language::Ru => format!("{} ч. назад", hours),
+            Language::Zh => format!("{} 小时前", hours),
+            Language::En => format!("{}h ago", hours),
+        }
+    } else {
+        let days = diff / 86400;
+        match lang {
+            Language::Ru => format!("{} дн. назад", days),
+            Language::Zh => format!("{} 天前", days),
+            Language::En => format!("{}d ago", days),
+        }
+    }
+}
+
 fn apply_translations(ui: &MainWindow, lang: Language) {
     let t = get_translations(lang);
     let i18n_struct = I18nData {
@@ -118,7 +161,9 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         btn_save_settings: t.btn_save_settings.into(),
         lbl_show_logs: t.lbl_show_logs.into(),
         lbl_show_stats: t.lbl_show_stats.into(),
-        lbl_compact_ui: t.lbl_compact_ui.into(),
+        lbl_hide_about: t.lbl_hide_about.into(),
+        lbl_hide_about_desc: t.lbl_hide_about_desc.into(),
+        lbl_added_at: t.lbl_added_at.into(),
         lbl_check_updates: t.lbl_check_updates.into(),
         lbl_clear_logs_exit: t.lbl_clear_logs_exit.into(),
         lbl_quota_protection: t.lbl_quota_protection.into(),
@@ -314,6 +359,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
                                     acc.error_message = None;
                                     acc.status = "ACTIVE".to_string();
+                                    if detailed_quota.claude_gpt_percent > 0 {
+                                        acc.tier = "PRO".to_string();
+                                    }
                                 }
                                 if is_active_acc {
                                     let clean: Vec<_> = models.into_iter().filter(|x| !x.id.starts_with("chat_") && !x.id.contains("gemini-3.5")).collect();
@@ -332,7 +380,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let mut cfg = bg_cfg.write();
                                     if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id) {
                                         acc.status = "ERROR".to_string();
-                                        acc.is_active = false;
+                                        // Do not deactivate account permanently on transient token failure
                                         acc.error_message = Some(format!("Authentication failed: {}", err_str));
                                     }
                                     let _ = cfg.save();
@@ -469,7 +517,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_hide_sidebar_brand(cfg.hide_sidebar_brand);
         main_window.set_show_logs_tab(cfg.show_logs_tab);
         main_window.set_show_stats_tab(cfg.show_stats_tab);
-        main_window.set_compact_ui_mode(cfg.compact_ui_mode);
+        main_window.set_hide_about_tab(cfg.hide_about_tab);
         main_window.set_setting_check_updates(cfg.check_updates_startup);
         main_window.set_setting_clear_logs_exit(cfg.clear_logs_on_exit);
         main_window.set_quota_protection_threshold(cfg.quota_protection_threshold as i32);
@@ -526,6 +574,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 error_message: acc.error_message.clone().unwrap_or_default().into(),
                 is_updating: false,
                 update_status_text: "".into(),
+                added_at_text: format_elapsed_time(acc.added_at.unwrap_or(0), Language::from_str_code(&cfg.language)).into(),
             });
         }
 
@@ -725,7 +774,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     provider: "antigravity".to_string(),
                     base_url: "https://api.anthropic.com".to_string(),
                     api_key: access_token,
-                    fingerprint: "Claude Code 2.x".to_string(),
+                    fingerprint: "Google Antigravity Client (1.107.0)".to_string(),
                     tier,
                     quota_used,
                     quota_limit,
@@ -743,6 +792,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     refresh_token: refresh_token_opt,
                     project_id,
                     is_active: true,
+                    added_at: Some(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)),
                 };
 
                 {
@@ -859,6 +909,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             acc.gemini_reset = detailed_quota.gemini_reset;
                             acc.gemini_weekly_percent = detailed_quota.gemini_weekly_percent;
                             acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
+                            if detailed_quota.claude_gpt_percent > 0 {
+                                acc.tier = "PRO".to_string();
+                            }
                         }
                         let clean_models: Vec<_> = models.into_iter().filter(|x| !x.id.starts_with("chat_") && !x.id.contains("gemini-3.5")).collect();
                         if !clean_models.is_empty() {
@@ -901,6 +954,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 h.set_info_account_gemini_week_reset(acc.gemini_weekly_reset.clone().into());
                 h.set_info_account_fingerprint(acc.fingerprint.clone().into());
                 h.set_info_account_models(format!("{} upstream models available", cfg.models.len()).into());
+                h.set_info_account_added_at(format_elapsed_time(acc.added_at.unwrap_or(0), Language::from_str_code(&cfg.language)).into());
                 h.set_info_account_error(acc.error_message.clone().unwrap_or_default().into());
                 h.set_show_account_info(true);
             }
@@ -962,6 +1016,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             h.set_github_update_status("Checking GitHub...".into());
         }
         let h_res = h_gh.clone();
+        let h_gh_reset = h_gh.clone();
         tokio::spawn(async move {
             let client = reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(5))
@@ -978,24 +1033,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if let Ok(json) = resp.json::<serde_json::Value>().await {
                         if let Some(tag) = json.get("tag_name").and_then(|v| v.as_str()) {
                             if tag == "v0.0.2" {
-                                "v0.0.2 (Latest ✓)".to_string()
+                                "v0.0.2 (Latest)".to_string()
                             } else {
                                 format!("Update Available ({})", tag)
                             }
                         } else {
-                            "v0.0.2 (Latest ✓)".to_string()
+                            "v0.0.2 (Latest)".to_string()
                         }
                     } else {
-                        "v0.0.2 (Up-to-date)".to_string()
+                        "v0.0.2 (Latest)".to_string()
                     }
                 }
-                _ => "v0.0.2 (Up-to-date)".to_string(),
+                _ => "v0.0.2 (Latest)".to_string(),
             };
 
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(h) = h_res.upgrade() {
                     h.set_github_checking_update(false);
                     h.set_github_update_status(status_str.into());
+                }
+            });
+
+            // Automatically revert button text after 3 seconds
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(h) = h_gh_reset.upgrade() {
+                    h.set_github_update_status("Check for Updates".into());
                 }
             });
         });
@@ -1093,16 +1156,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
 
                         let (content_text, tokens) = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&body_text) {
-                            let text = parsed["choices"][0]["message"]["content"].as_str().unwrap_or(&body_text).to_string();
-                            let tok = parsed["usage"]["total_tokens"].as_u64().unwrap_or(45);
-                            (text, tok)
+                            if status_code.is_success() {
+                                let text = parsed["choices"][0]["message"]["content"].as_str().unwrap_or(&body_text).to_string();
+                                let tok = parsed["usage"]["total_tokens"].as_u64().unwrap_or(45);
+                                (text, tok)
+                            } else {
+                                let err_msg = parsed.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).unwrap_or(&body_text);
+                                (format!("Error ({}): {}", status_code.as_u16(), err_msg), 0)
+                            }
                         } else {
                             (body_text, 0)
                         };
 
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(ui) = h_async.upgrade() {
-                                ui.set_test_status(format!("{} OK", status_code.as_u16()).into());
+                                let reason = status_code.canonical_reason().unwrap_or(if status_code.is_success() { "OK" } else { "Error" });
+                                ui.set_test_status(format!("{} {}", status_code.as_u16(), reason).into());
                                 ui.set_test_latency(format!("{} ms", lat).into());
                                 ui.set_test_tokens(tokens.to_string().into());
                                 ui.set_test_response(content_text.into());
@@ -1365,17 +1434,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let c_cmp = Arc::clone(&config_arc);
-    let h_cmp = window_handle.clone();
-    main_window.on_toggle_compact_mode(move || {
+    let c_abt = Arc::clone(&config_arc);
+    let h_abt = window_handle.clone();
+    main_window.on_toggle_hide_about_tab(move || {
         let next_val = {
-            let mut cfg = c_cmp.write();
-            cfg.compact_ui_mode = !cfg.compact_ui_mode;
+            let mut cfg = c_abt.write();
+            cfg.hide_about_tab = !cfg.hide_about_tab;
             let _ = cfg.save();
-            cfg.compact_ui_mode
+            cfg.hide_about_tab
         };
-        if let Some(h) = h_cmp.upgrade() {
-            h.set_compact_ui_mode(next_val);
+        if let Some(h) = h_abt.upgrade() {
+            h.set_hide_about_tab(next_val);
         }
     });
 
@@ -1459,12 +1528,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let c_cmp = Arc::clone(&config_arc);
-    main_window.on_toggle_compact_mode(move || {
-        let mut cfg = c_cmp.write();
-        cfg.compact_ui_mode = !cfg.compact_ui_mode;
-        let _ = cfg.save();
-    });
 
     let c_qpt = Arc::clone(&config_arc);
     let h_qpt = window_handle.clone();
@@ -1623,6 +1686,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             error_message: acc.error_message.clone().unwrap_or_default().into(),
                             is_updating: false,
                             update_status_text: "".into(),
+                            added_at_text: format_elapsed_time(acc.added_at.unwrap_or(0), Language::from_str_code(&cfg.language)).into(),
                         }
                     })
                     .collect();
