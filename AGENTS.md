@@ -1,7 +1,7 @@
-# AGENTS.md — Aroxy Architecture & Maintenance Guide
+# AGENTS.md — AMR Architecture & Maintenance Guide
 
 ## Overview
-Aroxy is an ultra-lightweight, high-performance cross-platform AI protocol proxy and emulator written in pure Rust (Tokio, Axum, reqwest) with a native Slint GUI (using `backend-winit` and `renderer-femtovg`).
+AMR is an ultra-lightweight, high-performance cross-platform AI protocol proxy and emulator written in pure Rust (Tokio, Axum, reqwest) with a native Slint GUI (using `backend-winit` and `renderer-femtovg`).
 
 ## Core Architecture & Module Layout
 ```
@@ -49,10 +49,10 @@ src/
 
 ## Release Packaging & Artifacts
 The release workflow (`.github/workflows/release.yml`) builds exactly two standalone release artifacts:
-- `Aroxy-0.1.0-x86_64.AppImage` (Linux)
-- `Aroxy-0.1.0-x86_64.exe` (Windows)
+- `AMR-0.1.0-x86_64.AppImage` (Linux)
+- `AMR-0.1.0-x86_64.exe` (Windows)
 
 Do not add unnecessary packaging formats or complex installer wrappers.
 
 ## Maintenance Policy
-Aroxy prioritizes stability, sub-millisecond dispatch performance, and zero bloat. Releases occur on significant protocol shifts or when a solid bundle of improvements has accumulated.
+AMR prioritizes stability, sub-millisecond dispatch performance, and zero bloat. Releases occur on significant protocol shifts or when a solid bundle of improvements has accumulated.

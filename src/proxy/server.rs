@@ -218,7 +218,7 @@ async fn oauth_callback(
         <html>
         <head>
             <meta charset="utf-8">
-            <title>Aroxy — Account Connected</title>
+            <title>AMR — Account Connected</title>
             <style>
                 body {{ background: #09090b; color: #fafafa; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }}
                 .card {{ background: #18181b; border: 1px solid #27272a; border-radius: 10px; padding: 32px; max-width: 440px; text-align: center; }}
@@ -231,8 +231,8 @@ async fn oauth_callback(
             <div class="card">
                 <h2>Account Connected</h2>
                 <p>Authorized as <strong>{}</strong> (Tier: {})</p>
-                <p>Antigravity quota and active models have been synchronized with Aroxy.<br>You can close this tab and return to the application.</p>
-                <div class="badge">Aroxy v0.0.3</div>
+                <p>Antigravity quota and active models have been synchronized with AMR.<br>You can close this tab and return to the application.</p>
+                <div class="badge">AMR v0.1.0</div>
             </div>
         </body>
         </html>
@@ -240,7 +240,7 @@ async fn oauth_callback(
 }
 
 async fn health_check() -> impl IntoResponse {
-    (StatusCode::OK, Json(json!({"status": "ok", "service": "Aroxy", "version": env!("CARGO_PKG_VERSION")})))
+    (StatusCode::OK, Json(json!({"status": "ok", "service": "AMR", "version": env!("CARGO_PKG_VERSION")})))
 }
 
 async fn billing_subscription(State(state): State<AppState>) -> Response {
@@ -262,10 +262,10 @@ async fn billing_subscription(State(state): State<AppState>) -> Response {
         "hard_limit_usd": hard_limit,
         "system_hard_limit_usd": hard_limit,
         "plan": {
-            "title": "Aroxy Enterprise Unlimited",
+            "title": "AMR Enterprise Unlimited",
             "id": "enterprise"
         },
-        "account_name": "Aroxy User"
+        "account_name": "AMR User"
     });
 
     Json(resp).into_response()
@@ -324,7 +324,7 @@ async fn chat_completions(
             state.stats.record_request("POST", "/v1/chat/completions", &requested_model, 502, 0, start_time.elapsed().as_millis() as u64);
             return (
                 StatusCode::BAD_GATEWAY,
-                Json(json!({"error": {"message": "Active upstream account has empty API token in Aroxy. Please connect an account in Aroxy.", "type": "upstream_error", "code": "upstream_account_missing_token"}})),
+                Json(json!({"error": {"message": "Active upstream account has empty API token in AMR. Please connect an account in AMR.", "type": "upstream_error", "code": "upstream_account_missing_token"}})),
             ).into_response();
         }
         Err(e) => {
@@ -555,7 +555,7 @@ async fn execute_chat_request(
 
             let helpful_msg = if is_auth_error {
                 format!(
-                    "Upstream Google account token expired for '{}'. Please log in via browser in Aroxy (OAuth) to restore session. Upstream details: {}",
+                    "Upstream Google account token expired for '{}'. Please log in via browser in AMR (OAuth) to restore session. Upstream details: {}",
                     account.name, error_msg
                 )
             } else {
@@ -784,7 +784,7 @@ async fn execute_chat_request(
 
             let helpful_msg = if is_auth_error {
                 format!(
-                    "Upstream Google account token expired for '{}'. Please log in via browser in Aroxy (OAuth) to restore session. Upstream details: {}",
+                    "Upstream Google account token expired for '{}'. Please log in via browser in AMR (OAuth) to restore session. Upstream details: {}",
                     account.name, error_msg
                 )
             } else {
@@ -960,7 +960,7 @@ async fn claude_messages(
         Ok(_) => {
             return (
                 StatusCode::BAD_GATEWAY,
-                Json(json!({"type": "error", "error": {"type": "authentication_error", "message": "Account has empty API token in Aroxy"}})),
+                Json(json!({"type": "error", "error": {"type": "authentication_error", "message": "Account has empty API token in AMR"}})),
             ).into_response();
         }
         Err(e) => {

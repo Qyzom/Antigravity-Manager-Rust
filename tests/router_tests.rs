@@ -1,14 +1,14 @@
 #[cfg(test)]
 mod tests {
-    use aroxy::config::{AppConfig, UpstreamAccount};
-    use aroxy::proxy::fingerprint::apply_fingerprint;
-    use aroxy::proxy::mappers::claude::{ClaudeContentBlock, ClaudeMessageResponse, ClaudeUsage};
-    use aroxy::proxy::mappers::openai::{create_stream_chunk, OpenAIChatRequest, OpenAIMessage};
-    use aroxy::proxy::router::{
+    use amr::config::{AppConfig, UpstreamAccount};
+    use amr::proxy::fingerprint::apply_fingerprint;
+    use amr::proxy::mappers::claude::{ClaudeContentBlock, ClaudeMessageResponse, ClaudeUsage};
+    use amr::proxy::mappers::openai::{create_stream_chunk, OpenAIChatRequest, OpenAIMessage};
+    use amr::proxy::router::{
         convert_claude_response_to_openai, convert_openai_to_claude, parse_model_and_reasoning,
         resolve_model, ReasoningEffort,
     };
-    use aroxy::proxy::stats::ProxyStats;
+    use amr::proxy::stats::ProxyStats;
     use reqwest::header::HeaderMap;
     use serde_json::Value;
 
@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn test_antigravity_payload_conversion() {
-        use aroxy::proxy::antigravity::{build_antigravity_payload, convert_antigravity_response_to_openai};
+        use amr::proxy::antigravity::{build_antigravity_payload, convert_antigravity_response_to_openai};
 
         let req = OpenAIChatRequest {
             model: "claude-3-7-sonnet".into(),
@@ -269,8 +269,8 @@ mod tests {
 
     #[test]
     fn test_balancer_cache_affinity_and_failover() {
-        use aroxy::config::{CacheAffinityMode, RoutingStrategy};
-        use aroxy::proxy::balancer::LoadBalancer;
+        use amr::config::{CacheAffinityMode, RoutingStrategy};
+        use amr::proxy::balancer::LoadBalancer;
 
         let balancer = LoadBalancer::new();
         let mut cfg = AppConfig::default();
@@ -359,8 +359,8 @@ mod tests {
 
     #[test]
     fn test_quota_aware_model_family_filtering() {
-        use aroxy::config::{AppConfig, CacheAffinityMode, RoutingStrategy, UpstreamAccount};
-        use aroxy::proxy::balancer::LoadBalancer;
+        use amr::config::{AppConfig, CacheAffinityMode, RoutingStrategy, UpstreamAccount};
+        use amr::proxy::balancer::LoadBalancer;
 
         let balancer = LoadBalancer::new();
         let mut cfg = AppConfig::default();
@@ -442,7 +442,7 @@ mod tests {
         cfg_only_free.accounts = vec![acc_free.clone()];
         let err = balancer.select_account(&cfg_only_free, "claude-opus-4-6", None).unwrap_err();
         match err {
-            aroxy::proxy::balancer::RoutingError::ClaudeQuotaExhausted { reset } => {
+            amr::proxy::balancer::RoutingError::ClaudeQuotaExhausted { reset } => {
                 assert!(reset.contains("4h"));
             }
             other => panic!("expected ClaudeQuotaExhausted, got {:?}", other),
@@ -451,7 +451,7 @@ mod tests {
 
     #[test]
     fn test_extract_session_fingerprint_multiturn() {
-        use aroxy::proxy::balancer::LoadBalancer;
+        use amr::proxy::balancer::LoadBalancer;
 
         // Turn 1
         let req1 = OpenAIChatRequest {
@@ -530,8 +530,8 @@ mod tests {
 
     #[test]
     fn test_multimodal_vision_conversion() {
-        use aroxy::proxy::antigravity::{build_antigravity_payload, build_antigravity_payload_from_claude};
-        use aroxy::proxy::mappers::openai::{OpenAIChatRequest, OpenAIMessage};
+        use amr::proxy::antigravity::{build_antigravity_payload, build_antigravity_payload_from_claude};
+        use amr::proxy::mappers::openai::{OpenAIChatRequest, OpenAIMessage};
         use serde_json::json;
 
         // 1. Anthropic-style base64 image block
@@ -602,8 +602,8 @@ mod tests {
 
     #[test]
     fn test_quota_protection_threshold_and_error_exclusion() {
-        use aroxy::config::{AppConfig, RoutingStrategy, UpstreamAccount};
-        use aroxy::proxy::balancer::LoadBalancer;
+        use amr::config::{AppConfig, RoutingStrategy, UpstreamAccount};
+        use amr::proxy::balancer::LoadBalancer;
 
         let balancer = LoadBalancer::new();
         let mut cfg = AppConfig::default();
@@ -712,7 +712,7 @@ mod tests {
 
     #[test]
     fn test_jwt_email_extraction() {
-        use aroxy::proxy::antigravity::extract_email_from_jwt;
+        use amr::proxy::antigravity::extract_email_from_jwt;
 
         // Valid JWT structure with header.payload.signature
         // payload: {"email":"developer@antigravity.test","sub":"12345"}
@@ -728,8 +728,8 @@ mod tests {
 
     #[test]
     fn test_stream_usage_chunk_and_smoothing() {
-        use aroxy::proxy::mappers::openai::{create_stream_chunk_with_usage, create_stream_usage_chunk, OpenAIUsage};
-        use aroxy::proxy::stream::emit_smooth_chunks;
+        use amr::proxy::mappers::openai::{create_stream_chunk_with_usage, create_stream_usage_chunk, OpenAIUsage};
+        use amr::proxy::stream::emit_smooth_chunks;
 
         let usage = OpenAIUsage {
             prompt_tokens: 15,
@@ -758,7 +758,7 @@ mod tests {
 
     #[test]
     fn test_model_deduplication_and_grouping() {
-        use aroxy::config::{AppConfig, ModelCatalogItem};
+        use amr::config::{AppConfig, ModelCatalogItem};
 
         let mut cfg = AppConfig::default();
         // Simulate corrupted config with clones and duplicates
@@ -788,9 +788,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_billing_and_usage_emulation() {
-        use aroxy::config::AppConfig;
-        use aroxy::proxy::server::{create_proxy_router, AppState};
-        use aroxy::proxy::stats::ProxyStats;
+        use amr::config::AppConfig;
+        use amr::proxy::server::{create_proxy_router, AppState};
+        use amr::proxy::stats::ProxyStats;
         use axum::http::{Request, StatusCode};
         use std::sync::atomic::Ordering;
         use std::sync::Arc;
@@ -799,7 +799,7 @@ mod tests {
         let stats = Arc::new(ProxyStats::new());
         stats.total_tokens.store(500_000, Ordering::Relaxed);
         let config = Arc::new(parking_lot::RwLock::new(AppConfig::default()));
-        let balancer = Arc::new(aroxy::proxy::balancer::LoadBalancer::new());
+        let balancer = Arc::new(amr::proxy::balancer::LoadBalancer::new());
         let http_client = reqwest::Client::new();
         let cfg_version = Arc::new(std::sync::atomic::AtomicU64::new(1));
         let proxy_clients = Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new()));

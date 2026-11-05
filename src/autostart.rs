@@ -1,4 +1,4 @@
-// Aroxy Autostart Management (Linux XDG & Windows Registry)
+// AMR Autostart Management (Linux XDG & Windows Registry)
 
 use std::path::PathBuf;
 
@@ -7,14 +7,14 @@ pub fn set_autostart(enable: bool) -> Result<(), String> {
     {
         if let Some(config_dir) = dirs::config_dir() {
             let autostart_dir = config_dir.join("autostart");
-            let desktop_file = autostart_dir.join("aroxy.desktop");
+            let desktop_file = autostart_dir.join("amr.desktop");
 
             if enable {
                 let _ = std::fs::create_dir_all(&autostart_dir);
-                let current_exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("aroxy"));
+                let current_exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("amr"));
                 let exe_str = current_exe.to_string_lossy();
                 let entry_content = format!(
-                    "[Desktop Entry]\nType=Application\nVersion=1.0\nName=Aroxy\nComment=Aroxy AI Protocol Proxy Daemon\nExec=\"{}\" --start-minimized\nTerminal=false\nCategories=Utility;Development;\n",
+                    "[Desktop Entry]\nType=Application\nVersion=1.0\nName=AMR\nComment=AMR (Antigravity Manager Rust) AI Protocol Proxy Daemon\nExec=\"{}\" --start-minimized\nTerminal=false\nCategories=Utility;Development;\n",
                     exe_str
                 );
                 std::fs::write(&desktop_file, entry_content)
@@ -28,10 +28,10 @@ pub fn set_autostart(enable: bool) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
-        let current_exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("aroxy.exe"));
-        let exe_str = current_exe.to_str().unwrap_or("aroxy.exe");
+        let current_exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("amr.exe"));
+        let exe_str = current_exe.to_str().unwrap_or("amr.exe");
         let auto = auto_launch::AutoLaunchBuilder::new()
-            .set_app_name("Aroxy")
+            .set_app_name("AMR")
             .set_app_path(exe_str)
             .set_args(&["--start-minimized"])
             .build();

@@ -36,7 +36,7 @@ pub enum RoutingError {
 impl std::fmt::Display for RoutingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NoAccounts => write!(f, "No active upstream accounts configured in Aroxy"),
+            Self::NoAccounts => write!(f, "No active upstream accounts configured in AMR"),
             Self::ClaudeQuotaExhausted { reset } => write!(
                 f,
                 "Claude/GPT quota exhausted across all connected accounts (resets {})",

@@ -1,14 +1,14 @@
 slint::include_modules!();
 
-use aroxy::autostart::set_autostart;
-use aroxy::cli::CliArgs;
-use aroxy::config::{AppConfig, RoutingStrategy, UpstreamAccount};
-use aroxy::i18n::{get_translations, Language};
-use aroxy::proxy::antigravity;
-use aroxy::proxy::server::{create_proxy_router, AppState};
-use aroxy::proxy::stats::ProxyStats;
-use aroxy::sys_metrics::get_process_memory_string;
-use aroxy::tray::{SystemTray, TrayAction};
+use amr::autostart::set_autostart;
+use amr::cli::CliArgs;
+use amr::config::{AppConfig, RoutingStrategy, UpstreamAccount};
+use amr::i18n::{get_translations, Language};
+use amr::proxy::antigravity;
+use amr::proxy::server::{create_proxy_router, AppState};
+use amr::proxy::stats::ProxyStats;
+use amr::sys_metrics::get_process_memory_string;
+use amr::tray::{SystemTray, TrayAction};
 use clap::Parser;
 use parking_lot::RwLock;
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
@@ -95,7 +95,7 @@ fn get_display_models(cfg: &AppConfig) -> Vec<ModelItemData> {
     let mut seen_ids = std::collections::HashSet::new();
 
     for m in &cfg.models {
-        let (base_id, _) = aroxy::proxy::router::parse_model_and_reasoning(&m.id, None);
+        let (base_id, _) = amr::proxy::router::parse_model_and_reasoning(&m.id, None);
 
         if cfg.group_reasoning_clones {
             // Grouping ON: Only show unique base flagship models
@@ -473,7 +473,7 @@ fn setup_linux_desktop_integration() {
         let app_dir = home.join(".local/share/applications");
         let icons_base = home.join(".local/share/icons/hicolor");
         let pixmaps_dir = home.join(".local/share/pixmaps");
-        let fonts_dir = home.join(".local/share/fonts/aroxy");
+        let fonts_dir = home.join(".local/share/fonts/amr");
 
         let _ = std::fs::create_dir_all(&app_dir);
         let _ = std::fs::create_dir_all(&pixmaps_dir);
@@ -492,11 +492,11 @@ fn setup_linux_desktop_integration() {
         for (sz, bytes) in icon_sizes {
             let sz_dir = icons_base.join(format!("{}x{}/apps", sz, sz));
             let _ = std::fs::create_dir_all(&sz_dir);
-            let _ = std::fs::write(sz_dir.join("aroxy.png"), bytes);
+            let _ = std::fs::write(sz_dir.join("amr.png"), bytes);
         }
 
-        let _ = std::fs::write(pixmaps_dir.join("aroxy.png"), include_bytes!("../assets/icons/logo_256.png"));
-        let _ = std::fs::write(home.join(".local/share/icons").join("aroxy.png"), include_bytes!("../assets/icons/logo_256.png"));
+        let _ = std::fs::write(pixmaps_dir.join("amr.png"), include_bytes!("../assets/icons/logo_256.png"));
+        let _ = std::fs::write(home.join(".local/share/icons").join("amr.png"), include_bytes!("../assets/icons/logo_256.png"));
         let _ = std::fs::write(fonts_dir.join("Unbounded.ttf"), include_bytes!("../ui/fonts/Unbounded.ttf"));
 
         let exec_path = if let Ok(appimage) = std::env::var("APPIMAGE") {
@@ -504,25 +504,25 @@ fn setup_linux_desktop_integration() {
         } else if let Ok(exe) = std::env::current_exe() {
             exe.to_string_lossy().to_string()
         } else {
-            "aroxy".to_string()
+            "amr".to_string()
         };
 
         let desktop_content = format!(
             "[Desktop Entry]\n\
-            Name=Aroxy\n\
-            Comment=Ultra-lightweight AI Protocol Proxy & Quota Dispatcher\n\
+            Name=AMR\n\
+            Comment=AMR (Antigravity Manager Rust) — Ultra-lightweight AI Protocol Proxy\n\
             Exec=\"{}\"\n\
-            Icon=aroxy\n\
+            Icon=amr\n\
             Terminal=false\n\
             Type=Application\n\
             Categories=Development;Network;Utility;\n\
             StartupNotify=false\n\
-            StartupWMClass=aroxy\n\
-            Keywords=ai;proxy;openai;claude;gemini;antigravity;\n",
+            StartupWMClass=amr\n\
+            Keywords=ai;proxy;openai;claude;gemini;antigravity;amr;\n",
             exec_path
         );
 
-        let desktop_file = app_dir.join("aroxy.desktop");
+        let desktop_file = app_dir.join("amr.desktop");
         let _ = std::fs::write(&desktop_file, desktop_content);
 
         let _ = std::process::Command::new("update-desktop-database")
@@ -540,6 +540,279 @@ fn setup_linux_desktop_integration() {
     }
 }
 
+fn capture_and_save_screenshots(target_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let main_window = MainWindow::new()?;
+    apply_translations(&main_window, Language::En);
+
+    main_window.set_proxy_running(true);
+    main_window.set_proxy_port(8045);
+    main_window.set_proxy_host("127.0.0.1".into());
+    main_window.set_total_requests("1,428".into());
+    main_window.set_total_tokens("384.2k".into());
+    main_window.set_avg_latency("412 ms".into());
+    main_window.set_app_memory("22.4 MB".into());
+    main_window.set_healthy_accounts_count(3);
+
+    main_window.set_global_claude_percent(94);
+    main_window.set_global_claude_label("94% Available".into());
+    main_window.set_global_claude_reset("in 3h 42m".into());
+    main_window.set_global_claude_weekly_percent(88);
+    main_window.set_global_claude_weekly_label("88% Available".into());
+    main_window.set_global_claude_weekly_reset("in 5d 14h".into());
+
+    main_window.set_global_gemini_percent(100);
+    main_window.set_global_gemini_label("100% Available".into());
+    main_window.set_global_gemini_reset("in 4h 00m".into());
+    main_window.set_global_gemini_weekly_percent(96);
+    main_window.set_global_gemini_weekly_label("96% Available".into());
+    main_window.set_global_gemini_weekly_reset("in 6d 08h".into());
+
+    let accounts = vec![
+        AccountData {
+            id: "acc_1".into(),
+            name: "developer***@gmail.com".into(),
+            provider: "Antigravity Cloud".into(),
+            base_url: "https://cloudcode-pa.googleapis.com".into(),
+            api_key_masked: "ya29.a0AfH6SM...".into(),
+            fingerprint: "hw-98af12e0".into(),
+            proxy_url: "".into(),
+            tier: "Pro (High Tier)".into(),
+            quota_used: 120,
+            quota_limit: 2000,
+            quota_percent: 94,
+            quota_reset: "in 3h 42m".into(),
+            claude_gpt_percent: 94,
+            claude_gpt_reset: "in 3h 42m".into(),
+            claude_gpt_weekly_percent: 88,
+            claude_gpt_weekly_reset: "in 5d 14h".into(),
+            gemini_percent: 100,
+            gemini_reset: "in 4h 00m".into(),
+            gemini_weekly_percent: 96,
+            gemini_weekly_reset: "in 6d 08h".into(),
+            status: "ACTIVE".into(),
+            is_active: true,
+            error_message: "".into(),
+            is_updating: false,
+            update_status_text: "".into(),
+            added_at_text: "2 hours ago".into(),
+        },
+        AccountData {
+            id: "acc_2".into(),
+            name: "team-lead***@company.org".into(),
+            provider: "Antigravity Cloud".into(),
+            base_url: "https://cloudcode-pa.googleapis.com".into(),
+            api_key_masked: "ya29.a0AfH6SM...".into(),
+            fingerprint: "hw-48bc29d1".into(),
+            proxy_url: "".into(),
+            tier: "Pro (High Tier)".into(),
+            quota_used: 350,
+            quota_limit: 2000,
+            quota_percent: 82,
+            quota_reset: "in 1h 45m".into(),
+            claude_gpt_percent: 82,
+            claude_gpt_reset: "in 1h 45m".into(),
+            claude_gpt_weekly_percent: 85,
+            claude_gpt_weekly_reset: "in 4d 06h".into(),
+            gemini_percent: 92,
+            gemini_reset: "in 2h 20m".into(),
+            gemini_weekly_percent: 94,
+            gemini_weekly_reset: "in 5d 16h".into(),
+            status: "ACTIVE".into(),
+            is_active: true,
+            error_message: "".into(),
+            is_updating: false,
+            update_status_text: "".into(),
+            added_at_text: "5 hours ago".into(),
+        },
+        AccountData {
+            id: "acc_3".into(),
+            name: "ops-cluster***@enterprise.io".into(),
+            provider: "Antigravity Cloud".into(),
+            base_url: "https://cloudcode-pa.googleapis.com".into(),
+            api_key_masked: "ya29.a0AfH6SM...".into(),
+            fingerprint: "hw-33ef77aa".into(),
+            proxy_url: "".into(),
+            tier: "Pro (Reserve)".into(),
+            quota_used: 0,
+            quota_limit: 2000,
+            quota_percent: 100,
+            quota_reset: "in 4h 00m".into(),
+            claude_gpt_percent: 100,
+            claude_gpt_reset: "in 4h 00m".into(),
+            claude_gpt_weekly_percent: 100,
+            claude_gpt_weekly_reset: "in 7d 00h".into(),
+            gemini_percent: 100,
+            gemini_reset: "in 4h 00m".into(),
+            gemini_weekly_percent: 100,
+            gemini_weekly_reset: "in 7d 00h".into(),
+            status: "ACTIVE".into(),
+            is_active: true,
+            error_message: "".into(),
+            is_updating: false,
+            update_status_text: "".into(),
+            added_at_text: "1 day ago".into(),
+        },
+    ];
+    main_window.set_accounts(Rc::new(VecModel::from(accounts)).into());
+
+    let models = vec![
+        ModelItemData {
+            id: "claude-3-7-sonnet".into(),
+            display_name: "Claude 3.7 Sonnet".into(),
+            provider: "Anthropic / Cloud Code".into(),
+            tier: "Reasoning".into(),
+            is_enabled: true,
+            supports_thinking: true,
+        },
+        ModelItemData {
+            id: "claude-3-5-sonnet".into(),
+            display_name: "Claude 3.5 Sonnet v2".into(),
+            provider: "Anthropic / Cloud Code".into(),
+            tier: "Standard".into(),
+            is_enabled: true,
+            supports_thinking: false,
+        },
+        ModelItemData {
+            id: "gemini-2.5-pro".into(),
+            display_name: "Gemini 2.5 Pro".into(),
+            provider: "Google / Cloud Code".into(),
+            tier: "Dynamic Thinking".into(),
+            is_enabled: true,
+            supports_thinking: true,
+        },
+        ModelItemData {
+            id: "gemini-2.5-flash".into(),
+            display_name: "Gemini 2.5 Flash".into(),
+            provider: "Google / Cloud Code".into(),
+            tier: "Low Latency".into(),
+            is_enabled: true,
+            supports_thinking: true,
+        },
+    ];
+    main_window.set_models(Rc::new(VecModel::from(models)).into());
+
+    let logs = vec![
+        LogEntryData {
+            id: "req_01".into(),
+            time: "19:02:14".into(),
+            method: "POST".into(),
+            path: "/v1/chat/completions".into(),
+            model: "claude-3-7-sonnet (high)".into(),
+            status: 200,
+            tokens: 1240,
+            latency_ms: 420,
+        },
+        LogEntryData {
+            id: "req_02".into(),
+            time: "19:01:50".into(),
+            method: "POST".into(),
+            path: "/v1/messages".into(),
+            model: "gemini-2.5-pro".into(),
+            status: 200,
+            tokens: 2850,
+            latency_ms: 610,
+        },
+        LogEntryData {
+            id: "req_03".into(),
+            time: "19:00:22".into(),
+            method: "GET".into(),
+            path: "/v1/models".into(),
+            model: "system".into(),
+            status: 200,
+            tokens: 0,
+            latency_ms: 2,
+        },
+    ];
+    main_window.set_log_entries(Rc::new(VecModel::from(logs)).into());
+
+    // Stats tab metrics
+    main_window.set_stat_prompt_tokens("184,200".into());
+    main_window.set_stat_completion_tokens("142,500".into());
+    main_window.set_stat_thinking_tokens("57,500".into());
+    main_window.set_stat_prompt_pct(48);
+    main_window.set_stat_comp_pct(37);
+    main_window.set_stat_think_pct(15);
+    main_window.set_stat_success_rate("100%".into());
+    main_window.set_stat_success_pct(100);
+    main_window.set_stat_error_count("0".into());
+    main_window.set_stat_error_pct(0);
+    main_window.set_stat_max_latency("1,240 ms".into());
+    main_window.set_stat_claude_pct(60);
+    main_window.set_stat_gemini_pct(40);
+
+    let out_dir = std::path::PathBuf::from(target_dir);
+    std::fs::create_dir_all(&out_dir)?;
+
+    let tabs: Vec<(i32, &'static str)> = vec![
+        (0, "dashboard.png"),
+        (1, "accounts.png"),
+        (2, "models.png"),
+        (3, "balancer.png"),
+        (4, "logs.png"),
+        (5, "stats.png"),
+        (6, "settings.png"),
+        (7, "about.png"),
+    ];
+
+    main_window.show()?;
+    let ui_weak = main_window.as_weak();
+    let step = Rc::new(std::cell::Cell::new(0usize));
+    let timer = Rc::new(slint::Timer::default());
+    let timer_clone = Rc::clone(&timer);
+
+    timer.start(slint::TimerMode::Repeated, std::time::Duration::from_millis(250), move || {
+        let cur = step.get();
+        if cur >= tabs.len() * 2 {
+            timer_clone.stop();
+            println!("All screenshots captured successfully in English!");
+            slint::quit_event_loop().ok();
+            return;
+        }
+
+        let tab_idx = cur / 2;
+        let is_capture_tick = (cur % 2) == 1;
+
+        if let Some(ui) = ui_weak.upgrade() {
+            if !is_capture_tick {
+                let (tid, _) = tabs[tab_idx];
+                ui.set_active_tab(tid);
+                ui.window().request_redraw();
+            } else {
+                let (_, filename) = tabs[tab_idx];
+                let target_path = out_dir.join(filename);
+                match ui.window().take_snapshot() {
+                    Ok(snapshot) => {
+                        let w = snapshot.width();
+                        let h = snapshot.height();
+                        let slice = snapshot.as_slice();
+                        let mut raw = Vec::with_capacity((w * h * 4) as usize);
+                        for p in slice {
+                            raw.push(p.r);
+                            raw.push(p.g);
+                            raw.push(p.b);
+                            raw.push(p.a);
+                        }
+                        if let Some(img) = image::RgbaImage::from_raw(w, h, raw) {
+                            if let Err(e) = img.save(&target_path) {
+                                eprintln!("Failed to save screenshot {}: {}", filename, e);
+                            } else {
+                                println!("Saved screenshot: {}", target_path.display());
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to take snapshot for {}: {:?}", filename, e);
+                    }
+                }
+            }
+        }
+        step.set(cur + 1);
+    });
+
+    slint::run_event_loop()?;
+    std::process::exit(0);
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -548,6 +821,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     setup_linux_desktop_integration();
 
     let args = CliArgs::parse();
+    if let Some(target_dir) = args.take_screenshots.as_ref() {
+        return capture_and_save_screenshots(target_dir);
+    }
     let mut config = AppConfig::load();
     if let Some(port) = args.port {
         config.port = port;
@@ -555,7 +831,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config_arc = Arc::new(RwLock::new(config));
     let stats_arc = Arc::new(ProxyStats::new());
-    let balancer_arc = Arc::new(aroxy::proxy::balancer::LoadBalancer::new());
+    let balancer_arc = Arc::new(amr::proxy::balancer::LoadBalancer::new());
     let cfg_version = Arc::new(AtomicU64::new(1));
     let (stop_sender, stop_receiver) = watch::channel(false);
     let (proxy_enable_tx, mut proxy_enable_rx) = watch::channel(true);
@@ -973,8 +1249,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             {
                 use i_slint_backend_winit::winit::platform::wayland::WindowAttributesExtWayland;
                 use i_slint_backend_winit::winit::platform::x11::WindowAttributesExtX11;
-                let attrs = WindowAttributesExtWayland::with_name(attrs, "aroxy", "aroxy");
-                let attrs = WindowAttributesExtX11::with_name(attrs, "aroxy", "aroxy");
+                let attrs = WindowAttributesExtWayland::with_name(attrs, "amr", "amr");
+                let attrs = WindowAttributesExtX11::with_name(attrs, "amr", "amr");
                 let icon_bytes = include_bytes!("../assets/icons/tray_32x32.rgba");
                 if let Ok(icon) = i_slint_backend_winit::winit::window::Icon::from_rgba(icon_bytes.to_vec(), 32, 32) {
                     attrs.with_window_icon(Some(icon))
@@ -990,7 +1266,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Ok(backend) = backend_builder.build() {
             let _ = slint::platform::set_platform(Box::new(backend));
         }
-        let _ = slint::set_xdg_app_id("aroxy");
+        let _ = slint::set_xdg_app_id("amr");
     }
 
     // Launch Slint GUI
@@ -1306,7 +1582,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     project_id,
                     is_active: true,
                     added_at: Some(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)),
-                    device_profile: Some(aroxy::config::DeviceProfile::generate()),
+                    device_profile: Some(amr::config::DeviceProfile::generate()),
                     proxy_url: proxy_opt,
                 };
 
@@ -1567,7 +1843,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let h_regen_fp = window_handle.clone();
     main_window.on_regenerate_account_device_fingerprint(move |id_slint| {
         let id_str = id_slint.to_string();
-        let new_dp = aroxy::config::DeviceProfile::generate();
+        let new_dp = amr::config::DeviceProfile::generate();
         {
             let mut cfg = c_regen_fp.write();
             if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id_str) {
@@ -1592,7 +1868,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         let _ = arboard::Clipboard::new().and_then(|mut cb| cb.set_text(key));
         if let Some(h) = h_mkey.upgrade() {
-            let t = aroxy::i18n::get_translations(aroxy::i18n::Language::from_str_code(&lang));
+            let t = amr::i18n::get_translations(amr::i18n::Language::from_str_code(&lang));
             h.set_master_key_status_text(t.lbl_copied.into());
         }
         let h_timer = h_mkey.clone();
@@ -1617,7 +1893,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             cfg.language.clone()
         };
         if let Some(h) = h_regen.upgrade() {
-            let t = aroxy::i18n::get_translations(aroxy::i18n::Language::from_str_code(&lang));
+            let t = amr::i18n::get_translations(amr::i18n::Language::from_str_code(&lang));
             h.set_master_api_key(new_key.into());
             h.set_master_key_status_text(t.lbl_updated.into());
         }
@@ -1637,7 +1913,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let c_gh_lang = Arc::clone(&config_arc);
     main_window.on_check_github_updates(move || {
         let lang_code = c_gh_lang.read().language.clone();
-        let t_init = aroxy::i18n::get_translations(aroxy::i18n::Language::from_str_code(&lang_code));
+        let t_init = amr::i18n::get_translations(amr::i18n::Language::from_str_code(&lang_code));
         if let Some(h) = h_gh.upgrade() {
             h.set_github_checking_update(true);
             h.set_github_update_status(t_init.lbl_checking_updates.into());
@@ -1651,12 +1927,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .build()
                 .unwrap_or_default();
             let res = client
-                .get("https://api.github.com/repos/Qyzom/Antigravity-Proxy-Rust/releases/latest")
-                .header("User-Agent", "Aroxy-Client")
+                .get("https://api.github.com/repos/Qyzom/Antigravity-Manager-Rust/releases/latest")
+                .header("User-Agent", "AMR-Client")
                 .send()
                 .await;
 
-            let t = aroxy::i18n::get_translations(aroxy::i18n::Language::from_str_code(&lang_for_async));
+            let t = amr::i18n::get_translations(amr::i18n::Language::from_str_code(&lang_for_async));
             let current_ver = concat!("v", env!("CARGO_PKG_VERSION"));
             let status_str = match res {
                 Ok(resp) if resp.status().is_success() => {
@@ -1688,7 +1964,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(h) = h_gh_reset.upgrade() {
-                    let t_rev = aroxy::i18n::get_translations(aroxy::i18n::Language::from_str_code(&lang_for_async));
+                    let t_rev = amr::i18n::get_translations(amr::i18n::Language::from_str_code(&lang_for_async));
                     h.set_github_update_status(t_rev.btn_check_updates.into());
                 }
             });
@@ -2037,7 +2313,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let c_cam = Arc::clone(&config_arc);
     let h_cam = window_handle.clone();
     main_window.on_set_cache_affinity_mode(move |index| {
-        let mode = aroxy::config::CacheAffinityMode::from_index(index);
+        let mode = amr::config::CacheAffinityMode::from_index(index);
         {
             let mut cfg = c_cam.write();
             cfg.cache_affinity_mode = mode;
@@ -2252,7 +2528,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     main_window.on_open_logs_folder(move || {
-        let p = aroxy::proxy::stats::ProxyStats::logs_folder_path();
+        let p = amr::proxy::stats::ProxyStats::logs_folder_path();
         open_in_system(&p.to_string_lossy());
     });
 

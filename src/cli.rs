@@ -2,9 +2,9 @@ use clap::Parser;
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "aroxy",
+    name = "amr",
     version = env!("CARGO_PKG_VERSION"),
-    about = "Ultra-lightweight AI API proxy & protocol emulator"
+    about = "AMR (Antigravity Manager Rust) — Ultra-lightweight AI API Proxy & Emulator"
 )]
 pub struct CliArgs {
     /// Run proxy in headless mode without graphical UI
@@ -22,4 +22,8 @@ pub struct CliArgs {
     /// Custom config file path
     #[arg(short, long)]
     pub config: Option<String>,
+
+    /// Capture UI screenshots in English to target directory and exit
+    #[arg(long)]
+    pub take_screenshots: Option<String>,
 }

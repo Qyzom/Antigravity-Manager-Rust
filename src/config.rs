@@ -302,7 +302,7 @@ pub struct AppConfig {
 }
 
 fn default_master_api_key() -> String {
-    format!("sk-aroxy-{}", &uuid::Uuid::new_v4().simple().to_string()[..16])
+    format!("sk-amr-{}", &uuid::Uuid::new_v4().simple().to_string()[..16])
 }
 
 fn default_session_ttl() -> u64 {
@@ -384,7 +384,7 @@ impl Default for AppConfig {
             enable_billing_emulation: true,
             check_updates_startup: true,
             clear_logs_on_exit: false,
-            master_api_key: "sk-aroxy-v1-master-key".to_string(),
+            master_api_key: "sk-amr-v1-master-key".to_string(),
             accounts: Vec::new(),
             active_account_id: None,
             models: vec![
@@ -443,13 +443,23 @@ impl Default for AppConfig {
 
 impl AppConfig {
     pub fn config_path() -> PathBuf {
-        let local_cfg = Path::new("aroxy.json");
+        let local_cfg = Path::new("amr.json");
         if local_cfg.exists() {
             return local_cfg.to_path_buf();
         }
+        let legacy_local_cfg = Path::new("aroxy.json");
+        if legacy_local_cfg.exists() {
+            return legacy_local_cfg.to_path_buf();
+        }
 
         if let Some(cfg_dir) = dirs::config_dir() {
-            let app_dir = cfg_dir.join("aroxy");
+            let app_dir = cfg_dir.join("amr");
+            if !app_dir.exists() {
+                let legacy_dir = cfg_dir.join("aroxy");
+                if legacy_dir.exists() {
+                    return legacy_dir.join("config.json");
+                }
+            }
             let _ = fs::create_dir_all(&app_dir);
             app_dir.join("config.json")
         } else {

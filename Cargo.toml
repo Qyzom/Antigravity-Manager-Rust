@@ -1,11 +1,11 @@
 [package]
-name = "aroxy"
+name = "amr"
 version = "0.1.0"
 edition = "2021"
 authors = ["Qyzom <t0lotsmail@gmail.com>"]
-description = "Ultra-lightweight high-performance AI API proxy & protocol emulator with Slint UI"
+description = "Ultra-lightweight high-performance AI API proxy & protocol emulator in Rust (Antigravity Manager Rust)"
 license = "MIT"
-repository = "https://github.com/Qyzom/Antigravity-Proxy-Rust"
+repository = "https://github.com/Qyzom/Antigravity-Manager-Rust"
 
 [dependencies]
 # GUI
@@ -38,6 +38,8 @@ uuid = { version = "1.10", features = ["v4"] }
 tray-icon = { version = "0.19", default-features = false }
 muda = { version = "0.15", default-features = false }
 arboard = "3.7.0"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
 
 [target.'cfg(windows)'.dependencies]
 auto-launch = "0.5"
@@ -49,6 +51,10 @@ windows-sys = { version = "0.59", features = [
 
 [build-dependencies]
 slint-build = "1.9"
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
+
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"

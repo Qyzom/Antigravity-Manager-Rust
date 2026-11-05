@@ -1,22 +1,22 @@
 #!/bin/bash
 set -e
 
-echo "==> Building Aroxy release binary..."
-cargo build --release --bin aroxy
+echo "==> Building AMR release binary..."
+cargo build --release --bin amr
 
 APPDIR="target/AppDir"
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin"
 for sz in 16 32 48 64 128 256 512; do
   mkdir -p "$APPDIR/usr/share/icons/hicolor/${sz}x${sz}/apps"
-  cp "assets/icons/logo_${sz}.png" "$APPDIR/usr/share/icons/hicolor/${sz}x${sz}/apps/aroxy.png" 2>/dev/null || true
+  cp "assets/icons/logo_${sz}.png" "$APPDIR/usr/share/icons/hicolor/${sz}x${sz}/apps/amr.png" 2>/dev/null || true
 done
 mkdir -p "$APPDIR/usr/share/applications"
 
-cp target/release/aroxy "$APPDIR/usr/bin/"
-cp packaging/linux/aroxy.desktop "$APPDIR/usr/share/applications/"
-cp packaging/linux/aroxy.desktop "$APPDIR/"
-cp assets/icons/logo_256.png "$APPDIR/aroxy.png"
+cp target/release/amr "$APPDIR/usr/bin/"
+cp packaging/linux/amr.desktop "$APPDIR/usr/share/applications/"
+cp packaging/linux/amr.desktop "$APPDIR/"
+cp assets/icons/logo_256.png "$APPDIR/amr.png"
 cp assets/icons/logo_256.png "$APPDIR/.DirIcon"
 
 cat << 'EOF' > "$APPDIR/AppRun"
@@ -24,7 +24,7 @@ cat << 'EOF' > "$APPDIR/AppRun"
 HERE="$(dirname "$(readlink -f "${0}")")"
 export XDG_DATA_DIRS="$HERE/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 export APPDIR="$HERE"
-exec "$HERE/usr/bin/aroxy" "$@"
+exec "$HERE/usr/bin/amr" "$@"
 EOF
 chmod +x "$APPDIR/AppRun"
 
@@ -36,11 +36,11 @@ if [ -f "target/runtime-x86_64" ]; then
 fi
 
 if command -v appimagetool &> /dev/null; then
-    appimagetool $RUNTIME_FLAG "$APPDIR" "Aroxy-${VERSION}-x86_64.AppImage"
-    echo "==> AppImage created successfully: Aroxy-${VERSION}-x86_64.AppImage"
+    appimagetool $RUNTIME_FLAG "$APPDIR" "AMR-${VERSION}-x86_64.AppImage"
+    echo "==> AppImage created successfully: AMR-${VERSION}-x86_64.AppImage"
 elif [ -f "target/squashfs-root/AppRun" ]; then
-    ARCH=x86_64 target/squashfs-root/AppRun --no-appstream $RUNTIME_FLAG "$APPDIR" "Aroxy-${VERSION}-x86_64.AppImage"
-    echo "==> AppImage created successfully: Aroxy-${VERSION}-x86_64.AppImage"
+    ARCH=x86_64 target/squashfs-root/AppRun --no-appstream $RUNTIME_FLAG "$APPDIR" "AMR-${VERSION}-x86_64.AppImage"
+    echo "==> AppImage created successfully: AMR-${VERSION}-x86_64.AppImage"
 else
     echo "Notice: appimagetool not found locally. Ready for CI packaging."
 fi
