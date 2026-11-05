@@ -844,13 +844,20 @@ impl AppConfig {
 
     pub fn get_broadcast_models(&self) -> Vec<serde_json::Value> {
         let mut list = Vec::new();
+        let mut seen_ids = std::collections::HashSet::new();
+
         for m in &self.models {
             if !m.is_enabled {
                 continue;
             }
+            let (base_id, _) = crate::proxy::router::parse_model_and_reasoning(&m.id, None);
+            if !seen_ids.insert(base_id.clone()) {
+                continue;
+            }
+
             // Base model enriched with reasoning and capability metadata
             let mut model_json = serde_json::json!({
-                "id": m.id,
+                "id": base_id,
                 "object": "model",
                 "created": 1700000000,
                 "owned_by": m.provider,
@@ -889,22 +896,22 @@ impl AppConfig {
             // If reasoning clones are NOT grouped into base models, expose clones
             if !self.group_reasoning_clones && self.expose_reasoning_variants && m.supports_thinking {
                 for (suffix, label) in [
-                    ("-low", "Low Effort"),
-                    ("-medium", "Medium Effort"),
-                    ("-high", "High Effort"),
                     (" (low)", "Low Effort"),
                     (" (medium)", "Medium Effort"),
                     (" (high)", "High Effort"),
                     (" (no-thinking)", "Thinking Off"),
                 ] {
-                    list.push(serde_json::json!({
-                        "id": format!("{}{}", m.id, suffix),
-                        "object": "model",
-                        "created": 1700000000,
-                        "owned_by": m.provider,
-                        "display_name": format!("{} [{}]", m.display_name, label),
-                        "tier": m.tier
-                    }));
+                    let clone_id = format!("{}{}", base_id, suffix);
+                    if seen_ids.insert(clone_id.clone()) {
+                        list.push(serde_json::json!({
+                            "id": clone_id,
+                            "object": "model",
+                            "created": 1700000000,
+                            "owned_by": m.provider,
+                            "display_name": format!("{} [{}]", m.display_name, label),
+                            "tier": m.tier
+                        }));
+                    }
                 }
             }
         }

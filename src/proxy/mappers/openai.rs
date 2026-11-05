@@ -12,6 +12,8 @@ pub struct OpenAIChatRequest {
     #[serde(default)]
     pub max_tokens: Option<u32>,
     #[serde(default)]
+    pub max_completion_tokens: Option<u32>,
+    #[serde(default)]
     pub reasoning_effort: Option<String>,
     #[serde(default)]
     pub stream_options: Option<Value>,
@@ -130,6 +132,7 @@ pub fn create_stream_chunk_with_usage(
     finish_reason: Option<&str>,
     usage: Option<OpenAIUsage>,
 ) -> String {
+    let is_finish = finish_reason.is_some();
     let chunk = OpenAIStreamChunk {
         id: id.to_string(),
         object: "chat.completion.chunk".to_string(),
@@ -139,7 +142,7 @@ pub fn create_stream_chunk_with_usage(
         choices: vec![OpenAIStreamChoice {
             index: 0,
             delta: OpenAIStreamDelta {
-                role: if content.is_some() || reasoning.is_some() { None } else { Some("assistant".to_string()) },
+                role: if is_finish || content.is_some() || reasoning.is_some() { None } else { Some("assistant".to_string()) },
                 content: content.map(|s| s.to_string()),
                 reasoning_content: reasoning.map(|s| s.to_string()),
                 reasoning: reasoning.map(|s| s.to_string()),
@@ -158,8 +161,22 @@ pub fn create_stream_chunk_with_usage(
 pub fn create_stream_usage_chunk(
     id: &str,
     model: &str,
-    usage: OpenAIUsage,
+    mut usage: OpenAIUsage,
 ) -> String {
+    if usage.prompt_tokens_details.is_none() {
+        usage.prompt_tokens_details = Some(PromptTokensDetails {
+            cached_tokens: 0,
+            audio_tokens: 0,
+        });
+    }
+    if usage.completion_tokens_details.is_none() {
+        usage.completion_tokens_details = Some(CompletionTokensDetails {
+            reasoning_tokens: 0,
+            audio_tokens: 0,
+            accepted_prediction_tokens: 0,
+            rejected_prediction_tokens: 0,
+        });
+    }
     let chunk = OpenAIStreamChunk {
         id: id.to_string(),
         object: "chat.completion.chunk".to_string(),

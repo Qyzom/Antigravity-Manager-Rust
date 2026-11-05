@@ -753,9 +753,10 @@ pub fn build_antigravity_payload(
     if let Some(temp) = req.temperature {
         gen_config["temperature"] = serde_json::json!(temp);
     }
-    if let Some(max_tok) = req.max_tokens {
-        gen_config["maxOutputTokens"] = serde_json::json!(max_tok);
-    }
+    let max_output_tok = req.max_completion_tokens
+        .or(req.max_tokens)
+        .unwrap_or(65536);
+    gen_config["maxOutputTokens"] = serde_json::json!(max_output_tok);
 
     // Configure thinking / reasoning according to model architecture and user selection
     match reasoning_effort {
@@ -986,10 +987,10 @@ pub fn build_antigravity_payload_from_claude(
 
     // 3. Generation config
     let mut gen_config = serde_json::json!({});
-    if let Some(max_tok) = req.get("max_tokens").and_then(|v| v.as_u64()) {
+    if let Some(max_tok) = req.get("max_completion_tokens").or_else(|| req.get("max_tokens")).and_then(|v| v.as_u64()) {
         gen_config["maxOutputTokens"] = serde_json::json!(max_tok);
     } else {
-        gen_config["maxOutputTokens"] = serde_json::json!(8192);
+        gen_config["maxOutputTokens"] = serde_json::json!(65536);
     }
 
     match reasoning_effort {

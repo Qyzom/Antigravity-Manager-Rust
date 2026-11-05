@@ -64,4 +64,12 @@ opt-level = 3
 lto = "fat"
 codegen-units = 1
 panic = "unwind"
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/amr", dest = "/usr/bin/amr", mode = "755" },
+    { source = "packaging/linux/amr.desktop", dest = "/usr/share/applications/amr.desktop", mode = "644" },
+    { source = "assets/icons/logo_256.png", dest = "/usr/share/icons/hicolor/256x256/apps/amr.png", mode = "644" },
+]
+
 strip = "symbols"

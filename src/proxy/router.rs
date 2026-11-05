@@ -224,11 +224,9 @@ pub fn convert_openai_to_claude(
         None
     };
 
-    let max_tok = if thinking_config.is_some() {
-        req.max_tokens.unwrap_or(8192).max(4096)
-    } else {
-        req.max_tokens.unwrap_or(4096)
-    };
+    let budget = thinking_config.as_ref().map(|t| t.budget_tokens).unwrap_or(0);
+    let requested_max = req.max_completion_tokens.or(req.max_tokens).unwrap_or(if thinking_config.is_some() { 16384 } else { 8192 });
+    let max_tok = requested_max.max(budget + 4096);
 
     ClaudeMessageRequest {
         model: target_model.to_string(),

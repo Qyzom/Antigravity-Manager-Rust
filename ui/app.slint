@@ -3334,11 +3334,14 @@ export component MainWindow inherits Window {
                 // Top Header Row
                 HorizontalLayout {
                     alignment: space-between;
+                    height: 32px;
                     HorizontalLayout {
-                        spacing: 8px;
-                        alignment: center;
+                        spacing: 10px;
                         Text { text: root.i18n.lbl_inspector_title; font-size: 14px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
-                        Badge { text: root.modal_log_account; is_green: false; }
+                        VerticalLayout {
+                            alignment: center;
+                            Badge { text: root.modal_log_account; is_green: false; }
+                        }
                     }
                     ActionButton {
                         text: root.i18n.btn_close;
@@ -3350,14 +3353,15 @@ export component MainWindow inherits Window {
                 // Request Summary Row
                 HorizontalLayout {
                     spacing: 8px;
-                    alignment: center;
-                    Badge { text: root.modal_log_method; is_green: true; }
+                    alignment: start;
+                    height: 24px;
+                    VerticalLayout { alignment: center; Badge { text: root.modal_log_method; is_green: true; } }
                     Text { text: root.modal_log_path; font-size: 12px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
-                    Badge { text: root.modal_log_status; is_green: root.modal_log_status == "200 OK"; is_danger: root.modal_log_status != "200 OK"; }
-                    Badge { text: root.modal_log_model; is_amber: false; }
-                    if root.modal_log_effort != "": Badge { text: "effort: " + root.modal_log_effort; is_amber: root.modal_log_effort != "off"; is_green: root.modal_log_effort == "off"; }
-                    Badge { text: root.modal_log_tokens + " tok"; }
-                    Badge { text: root.modal_log_latency; }
+                    VerticalLayout { alignment: center; Badge { text: root.modal_log_status; is_green: root.modal_log_status == "200 OK"; is_danger: root.modal_log_status != "200 OK"; } }
+                    VerticalLayout { alignment: center; Badge { text: root.modal_log_model; is_amber: false; } }
+                    if root.modal_log_effort != "": VerticalLayout { alignment: center; Badge { text: "effort: " + root.modal_log_effort; is_amber: root.modal_log_effort != "off"; is_green: root.modal_log_effort == "off"; } }
+                    VerticalLayout { alignment: center; Badge { text: root.modal_log_tokens + " tok"; } }
+                    VerticalLayout { alignment: center; Badge { text: root.modal_log_latency; } }
                 }
 
                 Rectangle { height: 1px; background: #27272a; }

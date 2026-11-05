@@ -38,47 +38,68 @@
 
 ### Overview & Philosophy
 
-**AMR (Antigravity Manager Rust)** is an ultra-fast, cross-platform AI protocol gateway and account balancer built from the ground up in pure Rust. It unifies multiple upstream AI accounts into standard local endpoints compatible with **OpenAI** (`/v1/chat/completions`, `/v1/models`, `/v1/usage`), **Anthropic Claude** (`/v1/messages`), and developer tools like Cursor, Claude Code, NextChat, and DeepSeek Harness.
+**AMR (Antigravity Manager Rust)** is a cross-platform local AI protocol proxy and load balancer written in pure Rust. It transforms multiple upstream accounts into unified local endpoints compatible with **OpenAI** (`/v1/chat/completions`, `/v1/models`, `/v1/usage`), **Anthropic Claude** (`/v1/messages`), and development environments like Cursor, Claude Code, NextChat, and DeepSeek Harness.
 
-Unlike heavy Electron wrappers or WebKit-based shells that spawn full Chromium/WebKit browser engines consuming hundreds of megabytes of RAM just to route HTTP requests, AMR is engineered with:
-- **Zero Bloat & Zero Telemetry:** Completely free of trackers, ads, analytics, Sentry, OpenTelemetry, or phone-home requests.
-- **Microscopic Memory Footprint:** Idles at **~22 MB RSS** with the full hardware-accelerated GUI and **< 3 MB** in headless CLI daemon mode.
-- **Direct Native Rendering:** Powered by **Slint 1.9** on top of FemtoVG / OpenGL with sub-millisecond event dispatch and zero web runtime dependencies.
-- **Stream Resilience & Pacing:** Automatic SSE heartbeat frames (`: ping\n\n`) to prevent client timeouts during deep reasoning phases (Claude 3.7 Thinking, o1/o3, Gemini 2.5), combined with smooth micro-chunk stream pacing.
+> [!NOTE]
+> **Scope & Functional Boundaries:**  
+> AMR is exclusively a network-level HTTP proxy and protocol emulator (`127.0.0.1:8045`). It handles protocol translation, quota balancing, token stream pacing, and telemetry-free proxy dispatch.  
+> AMR **does not** manage or swap accounts locally on your disk, IDE storage, or host configuration, and will never do so — dedicated local helper scripts exist that handle local credential swapping much better. AMR operates strictly over HTTP network connections.
+
+---
+
+### Core Architecture
+
+- **Zero Telemetry:** Free of analytics, tracking libraries, ads, and telemetry collectors.
+- **Low Memory Overhead:** Idles at **~22 MB RSS** with the native hardware-accelerated GUI and **< 3 MB** in headless CLI daemon mode.
+- **Native GUI Rendering:** Built with **Slint 1.9** on top of FemtoVG / OpenGL without bundled Chromium or system WebKitGTK runtime dependencies.
+- **Stream Resilience & Heartbeats:** Automatic SSE heartbeat frames (`: ping\n\n`) to prevent client timeouts during extended thinking periods (Claude 3.7 Thinking, o1/o3, Gemini 2.5), alongside configurable micro-chunk stream pacing.
 
 ---
 
 ### Key Features
 
-- **Multi-Protocol Emulation:** Native translation between OpenAI (`/v1/chat/completions`), Claude (`/v1/messages`), and Google Cloud Code PA protocols with full reasoning support.
-- **Dual-Mode Thinking & Reasoning:** Supports both declarative model suffixes (`-low`, `-medium`, `-high`, `(low)`) and native protocol parameters (`reasoning_effort`, `thinking` budget).
-- **Quota-Aware Load Balancing:** Real-time quota tracking with automatic 429 failover, sticky session affinity for prompt KV cache reuse, and configurable emergency reserve thresholds.
-- **OpenAI Billing & Usage Emulation:** Compatible with tools and web UIs querying `/v1/dashboard/billing/subscription`, `/v1/dashboard/billing/usage`, and `/v1/usage`.
-- **Anti-Fingerprint Protection:** Cryptographic device ID and machine GUID isolation per upstream account, paired with randomized jitter timing (+-15%) to evade anti-abuse heuristics.
-- **Traffic Inspector & Persistent Logging:** Live searchable HTTP log inspector with token usage breakdowns (Prompt, Completion, Thinking), latency metrics, and payload viewer.
-- **Strict Internationalization (i18n):** Native support for English, Russian, and Chinese across all UI views, system tray menus, and OS notifications.
+- **Multi-Protocol Translation:** Bidirectional conversion between OpenAI, Claude, and Google Cloud Code PA formats with thinking/reasoning preservation.
+- **Dual-Mode Reasoning Configuration:** Handles both suffix naming conventions (`-low`, `-medium`, `-high`, `(low)`) and native protocol parameters (`reasoning_effort`, `thinking`).
+- **Quota-Aware Load Balancing:** Dynamic quota accounting with automatic 429 failover, sticky session affinity for prompt KV cache reuse, and configurable emergency reserve thresholds.
+- **OpenAI Billing & Usage Emulation:** Compatible with client applications querying `/v1/dashboard/billing/subscription`, `/v1/dashboard/billing/usage`, and `/v1/usage`.
+- **Hardware Isolation Profiles:** Distinct device IDs and machine GUIDs per upstream account, with optional randomized jitter (+-15%) for network cadence smoothing.
+- **Request Inspector & Disk Logging:** Searchable HTTP traffic log with per-request latency, token counts (Prompt, Completion, Thinking), status codes, and payload inspector.
+- **Internationalization (i18n):** Complete localization in English, Russian, and Chinese across all UI tabs, tray menus, and system notifications.
 
 ---
 
-### Performance Comparison
+### Technical Comparison
 
-| Benchmark / Specification | AntigravityManager (Electron) | Antigravity-Manager (Tauri) | AMR (Antigravity Manager Rust) |
+| Specification | AntigravityManager (Draculabo) | Antigravity-Manager (lbjlaq) | AMR |
 | :--- | :---: | :---: | :---: |
-| **Language & Engine** | TypeScript / Electron (Chromium + Node.js) | Rust + Tauri (WebKitGTK Web Engine) | **Pure Rust (Tokio + Axum + Slint)** |
-| **GUI Memory Footprint (RSS)** | ~220 – 380 MB | ~120 – 180 MB | **~22 MB** |
-| **Headless / Daemon RAM** | ❌ Not available | ❌ Not available | **~2.5 MB** |
+| **Tech Stack** | TypeScript, Electron 37, Node.js 24 | Rust, Tauri v2, WebKitGTK | **Pure Rust (Tokio, Axum, Slint 1.9)** |
+| **GUI RAM (RSS)** | ~220 – 380 MB | ~120 – 180 MB | **~22 MB** |
+| **Headless / Daemon Mode** | Not supported | Not supported | **Supported (~2.5 MB RAM)** |
 | **Cold Startup Latency** | 3.5 – 5.0 s | 1.5 – 2.2 s | **< 60 ms** |
-| **Binary / AppImage Size** | ~95 MB | ~45 MB (+ WebKitGTK runtime) | **~12 MB (Standalone)** |
-| **External Web Engine Required** | Yes (Bundled Chromium) | Yes (System WebKitGTK) | **❌ None (Native OpenGL / FemtoVG)** |
-| **Telemetry & Trackers** | Sentry, Clarity, OpenTelemetry | None | **Zero Bloat / Zero Telemetry** |
-| **License** | MIT License | CC-BY-NC-SA-4.0 (Non-Commercial) | **MIT License (Permissive Open-Source)** |
-| **SSE Heartbeat Injection (`: ping\n\n`)** | ❌ Raw upstream SSE | ❌ Raw upstream SSE | **✔ Native Auto-Injection** |
-| **Stream Micro-Chunk Pacing** | ❌ Bursty | ❌ Bursty | **✔ Configurable Sub-Token Pacing** |
-| **OpenAI Billing Emulation (`/v1/usage`)** | ❌ None | ❌ None | **✔ Built-in Emulation** |
-| **Dual-Mode Reasoning Effort** | ⚠️ Limited | ⚠️ Suffix Only | **✔ Suffixes + Native Protocol** |
+| **Package Size** | ~95 MB (AppImage) | ~45 MB (+ WebKitGTK runtime) | **~12 MB (Standalone AppImage)** |
+| **Web Runtime Dependency** | Bundled Chromium | System WebKitGTK | **None (Native OpenGL / FemtoVG)** |
+| **Telemetry Packages** | Sentry, Microsoft Clarity, OpenTelemetry | None | **None** |
+| **License** | MIT License | CC-BY-NC-SA-4.0 | **MIT License** |
+| **SSE Heartbeat Frame Injection** | Raw upstream SSE | Raw upstream SSE | **Auto-injected (`: ping\n\n`)** |
+| **Stream Micro-Chunk Pacing** | Raw upstream chunks | Raw upstream chunks | **Sub-token configurable pacing** |
+| **OpenAI `/v1/usage` Emulation** | No | No | **Yes** |
+| **Reasoning Effort Support** | Partial suffixes | Suffixes | **Suffixes + Native Protocol** |
 
 > *\* Real-world benchmarks performed on **Arch Linux** under identical test conditions.*  
 > *\* Software versions tested: AMR `v0.1.0` vs AntigravityManager `v0.30.0` (Draculabo) vs Antigravity-Manager `v5.0.0` (lbjlaq).*
+
+---
+
+### Downloads
+
+Pre-built binaries and distribution packages for AMR `v0.1.0` are available on the [**Releases**](https://github.com/Qyzom/Antigravity-Manager-Rust/releases/latest) page:
+
+| OS / Format | Package File | Description |
+| :--- | :--- | :--- |
+| **Linux (AppImage)** | `AMR-0.1.0-x86_64.AppImage` | Standalone portable executable (runs on any modern Linux) |
+| **Linux (Debian / Ubuntu)** | `AMR_0.1.0_amd64.deb` | Standard `.deb` package with system desktop & menu integration |
+| **Linux (Fedora / RHEL)** | `AMR-0.1.0-1.x86_64.rpm` | Standard `.rpm` package with system desktop & menu integration |
+| **Windows 10 / 11** | `AMR-0.1.0-x86_64.exe` | Standalone portable executable with system tray support |
 
 ---
 
@@ -87,22 +108,33 @@ Unlike heavy Electron wrappers or WebKit-based shells that spawn full Chromium/W
 #### Linux (AppImage)
 
 ```bash
-# Download latest standalone AppImage
 chmod +x AMR-0.1.0-x86_64.AppImage
 
-# Launch Graphical UI:
+# Launch GUI:
 ./AMR-0.1.0-x86_64.AppImage
 
-# Run in headless mode as a background proxy server:
+# Launch in headless daemon mode:
 ./AMR-0.1.0-x86_64.AppImage --headless --port 8045
 
 # Start minimized to system tray:
 ./AMR-0.1.0-x86_64.AppImage --start-minimized
 ```
 
+#### Linux (Debian / Ubuntu)
+
+```bash
+sudo dpkg -i AMR_0.1.0_amd64.deb
+```
+
+#### Linux (Fedora / RHEL)
+
+```bash
+sudo rpm -i AMR-0.1.0-1.x86_64.rpm
+```
+
 #### Windows
 
-Download `AMR-0.1.0-x86_64.exe` from the [**Releases**](https://github.com/Qyzom/Antigravity-Manager-Rust/releases/latest) page and run it. AMR automatically integrates with the Windows Notification Area (System Tray) and supports automatic startup via the Settings menu.
+Download `AMR-0.1.0-x86_64.exe` and execute it. AMR automatically integrates with the system tray and offers automatic startup on login.
 
 ---
 
@@ -127,7 +159,7 @@ Options:
 
 ### Client Integration Guide
 
-AMR runs on `http://127.0.0.1:8045` by default. You can configure any AI client or IDE with standard OpenAI or Anthropic protocols:
+AMR listens on `http://127.0.0.1:8045` by default:
 
 #### 1. Claude Code CLI
 ```bash
@@ -167,54 +199,34 @@ for chunk in response:
 
 ---
 
-### Architecture & Source Tree
-
-```
-src/
-├── main.rs          # Application entry point, CLI handling, Slint UI event binding & timers
-├── lib.rs           # Library exports for unit and integration testing
-├── cli.rs           # Clap CLI parser (--headless, --port, --config, --start-minimized)
-├── config.rs        # App configuration, quota calculus, account state, model catalogs
-├── i18n.rs          # TranslationBundle & multi-language loader (EN, RU, ZH)
-├── autostart.rs     # XDG Desktop (Linux) & Registry (Windows) auto-start manager
-├── sys_metrics.rs   # Low-overhead OS process RSS / memory metrics collector
-├── tray/            # System tray integration (muda / tray-icon) with dynamic localization
-└── proxy/
-    ├── server.rs    # Axum HTTP proxy router (/v1/chat/completions, /v1/messages, /v1/models, /v1/usage)
-    ├── balancer.rs  # Quota-aware load balancing, session stickiness & KV cache retention
-    ├── router.rs    # Suffix table & native reasoning effort parser, model name translation
-    ├── antigravity.rs # Upstream OAuth token refresh, Cloud Code Pa API mapping, device profiles
-    ├── fingerprint.rs # Cryptographic machine ID, device ID & hardware fingerprint generators
-    ├── stats.rs     # Lock-free atomic metrics counters & persistent disk logging (logs.jsonl)
-    ├── stream.rs    # SSE chunk transformer, heartbeat injector (: ping\n\n), reasoning parser
-    └── mappers/     # OpenAI <-> Claude protocol request & response schema transformers
-```
-
----
-
 ### Building from Source
 
 #### Prerequisites
 - Rust 1.75+ toolchain (`cargo`, `rustc`)
-- Linux dependencies: `libfontconfig1-dev`, `libxkbcommon-dev` (if building native GUI on Linux)
+- Linux libraries: `libfontconfig1-dev`, `libxkbcommon-dev` (for GUI build)
 
 ```bash
-# Clone the repository
 git clone https://github.com/Qyzom/Antigravity-Manager-Rust.git
 cd Antigravity-Manager-Rust
 
-# Run test suite (18 unit & integration tests)
+# Run tests
 cargo test
 
-# Build optimized release binary
-cargo build --release
-```
+# Build release binary
+cargo build --release --bin amr
 
-The resulting binary will be located at `target/release/amr`.
+# Package Linux artifacts (AppImage, deb, rpm)
+./packaging/linux/build_appimage.sh 0.1.0
+./packaging/linux/build_deb.sh 0.1.0
+./packaging/linux/build_rpm.sh 0.1.0
+```
 
 ---
 
-### License
+### License & Attribution
 
-AMR is distributed under the permissive **MIT License**.  
-See [LICENSE](LICENSE) for details.
+AMR is distributed under the [MIT License](LICENSE).
+
+#### Third-Party Components & Fonts
+- **Unbounded Font:** Licensed under the [SIL Open Font License, Version 1.1](http://scripts.sil.org/OFL) (Copyright 2022 The Unbounded Project Authors).
+- **Slint GUI Framework:** Used under the terms of the Royalty-Free Desktop Application License / GPLv3.

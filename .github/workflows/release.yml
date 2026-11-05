@@ -27,22 +27,28 @@ jobs:
       - name: Build AMR Release
         run: cargo build --release --bin amr
 
-      - name: Package AppImage
+      - name: Package AppImage, DEB and RPM
         shell: bash
         run: |
           RAW_VER="${GITHUB_REF_NAME#v}"
           VERSION="${RAW_VER:-0.1.0}"
-          echo "Packaging Linux AppImage for version $VERSION"
+          echo "Packaging Linux releases for version $VERSION"
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
           chmod +x appimagetool
           ./packaging/linux/build_appimage.sh "$VERSION"
           ./appimagetool target/AppDir "AMR-${VERSION}-x86_64.AppImage" || cp target/release/amr "AMR-${VERSION}-x86_64.AppImage"
+          ./packaging/linux/build_deb.sh "$VERSION"
+          cargo install cargo-generate-rpm --locked
+          cargo-generate-rpm --auto-req disabled -o "AMR-${VERSION}-1.x86_64.rpm"
 
-      - name: Upload Linux AppImage
+      - name: Upload Linux Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: linux-artifact
-          path: AMR-*-x86_64.AppImage
+          name: linux-artifacts
+          path: |
+            AMR-*-x86_64.AppImage
+            AMR_*_amd64.deb
+            AMR-*-1.x86_64.rpm
 
   build-windows:
     name: Build Windows Portable EXE
@@ -71,7 +77,7 @@ jobs:
           path: AMR-*-x86_64.exe
 
   create-release:
-    name: Publish GitHub Release (AppImage + EXE)
+    name: Publish GitHub Release (AppImage, DEB, RPM, EXE)
     needs: [build-linux, build-windows]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
@@ -90,29 +96,19 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          name: Aroxy ${{ github.ref_name }}
+          name: AMR ${{ github.ref_name }}
           tag_name: ${{ github.ref_name }}
           files: dist/*
           draft: false
           prerelease: false
           body: |
-            ## Aroxy ${{ github.ref_name }}
+            ## AMR (Antigravity Manager Rust) ${{ github.ref_name }}
 
-            Ultra-lightweight high-performance AI API proxy & emulator for Antigravity supporting OpenAI, Claude & Gemini protocols. Pure Rust + Slint.
+            Ultra-lightweight high-performance AI API proxy, protocol emulator & multi-account quota dispatcher in pure Rust.
 
-            ### What's New in v0.0.3:
-            - **Google OAuth 2.0 Web Flow & Token Keeper:**
-              - Built-in OAuth 2.0 loopback callback handler (`/oauth/callback`) with official Antigravity Client ID / Secret.
-              - Permanent `refresh_token` storage and automatic token refresh 5 minutes prior to expiration (no more expired token 401s).
-            - **Hardware Fingerprint & Device Isolation:**
-              - Isolated `DeviceProfile` per upstream account (`X-Client-Id`, `X-Machine-Id`, `gl-rust/1.0.0`, Hub UA `antigravity/hub/2.23.1`).
-            - **Per-Account Proxy Support:**
-              - Dynamic connection pool with individual HTTP / HTTPS / SOCKS5 proxy routing per account to avoid IP clustering.
-            - **RustCooling i18n Architecture:**
-              - Modern JSON-based localization (`i18n/ru.json`, `i18n/en.json`, `i18n/zh.json`).
-            - **UI Refinements:**
-              - Account details expanded modal, improved token statistics, zero-bloat.
+            ### Release Packages:
+            - **Linux AppImage:** `AMR-0.1.0-x86_64.AppImage` (Standalone portable Linux package)
+            - **Debian / Ubuntu DEB:** `AMR_0.1.0_amd64.deb` (Native package with system integration)
+            - **Fedora / RHEL RPM:** `AMR-0.1.0-1.x86_64.rpm` (Native RPM package with system integration)
+            - **Windows Portable EXE:** `AMR-0.1.0-x86_64.exe` (Standalone Windows 10/11 executable with tray support)
 
-            ### Release Binaries:
-            - **Linux:** `Aroxy-0.0.3-x86_64.AppImage` (Standalone Portable AppImage)
-            - **Windows:** `Aroxy-0.0.3-x86_64.exe` (Standalone Portable Executable)

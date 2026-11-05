@@ -7,3 +7,5 @@ Cargo.lock
 *.log
 *.AppImage
 *.exe
+*.deb
+*.rpm

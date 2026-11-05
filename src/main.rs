@@ -97,63 +97,40 @@ fn get_display_models(cfg: &AppConfig) -> Vec<ModelItemData> {
     for m in &cfg.models {
         let (base_id, _) = amr::proxy::router::parse_model_and_reasoning(&m.id, None);
 
-        if cfg.group_reasoning_clones {
-            // Grouping ON: Only show unique base flagship models
-            if seen_ids.insert(base_id.clone()) {
-                let disp_name = match base_id.as_str() {
-                    "claude-sonnet-5-5" => "Claude Sonnet 5.5",
-                    "claude-opus-5-5" => "Claude Opus 5.5",
-                    "claude-sonnet-4-6" => "Claude Sonnet 4.6",
-                    "claude-opus-4-6" => "Claude Opus 4.6",
-                    "gemini-4-argon" => "Gemini 4 Argon",
-                    "gemini-3.8-flash" => "Gemini 3.8 Flash",
-                    _ => &m.display_name,
-                };
-                result.push(ModelItemData {
-                    id: base_id.into(),
-                    display_name: disp_name.to_string().into(),
-                    provider: m.provider.clone().into(),
-                    tier: m.tier.clone().into(),
-                    is_enabled: m.is_enabled,
-                    supports_thinking: m.supports_thinking,
-                });
-            }
-        } else {
-            // Grouping OFF: Show base model + unique clones (-low, -medium, -high)
-            if seen_ids.insert(base_id.clone()) {
-                let disp_name = match base_id.as_str() {
-                    "claude-sonnet-5-5" => "Claude Sonnet 5.5",
-                    "claude-opus-5-5" => "Claude Opus 5.5",
-                    "claude-sonnet-4-6" => "Claude Sonnet 4.6",
-                    "claude-opus-4-6" => "Claude Opus 4.6",
-                    "gemini-4-argon" => "Gemini 4 Argon",
-                    "gemini-3.8-flash" => "Gemini 3.8 Flash",
-                    _ => &m.display_name,
-                };
-                result.push(ModelItemData {
-                    id: base_id.clone().into(),
-                    display_name: disp_name.to_string().into(),
-                    provider: m.provider.clone().into(),
-                    tier: m.tier.clone().into(),
-                    is_enabled: m.is_enabled,
-                    supports_thinking: m.supports_thinking,
-                });
+        if !seen_ids.insert(base_id.clone()) {
+            continue;
+        }
 
-                if m.supports_thinking {
-                    for (suffix, label) in [("-low", "Low"), ("-medium", "Medium"), ("-high", "High")] {
-                        let clone_id = format!("{}{}", base_id, suffix);
-                        if seen_ids.insert(clone_id.clone()) {
-                            result.push(ModelItemData {
-                                id: clone_id.into(),
-                                display_name: format!("{} ({})", disp_name, label).into(),
-                                provider: m.provider.clone().into(),
-                                tier: m.tier.clone().into(),
-                                is_enabled: m.is_enabled,
-                                supports_thinking: true,
-                            });
-                        }
-                    }
-                }
+        let disp_name = match base_id.as_str() {
+            "claude-sonnet-5-5" => "Claude Sonnet 5.5",
+            "claude-opus-5-5" => "Claude Opus 5.5",
+            "claude-sonnet-4-6" => "Claude Sonnet 4.6",
+            "claude-opus-4-6" => "Claude Opus 4.6",
+            "gemini-4-argon" => "Gemini 4 Argon",
+            "gemini-3.8-flash" => "Gemini 3.8 Flash",
+            _ => &m.display_name,
+        };
+
+        result.push(ModelItemData {
+            id: base_id.clone().into(),
+            display_name: disp_name.to_string().into(),
+            provider: m.provider.clone().into(),
+            tier: m.tier.clone().into(),
+            is_enabled: m.is_enabled,
+            supports_thinking: m.supports_thinking,
+        });
+
+        if !cfg.group_reasoning_clones && m.supports_thinking {
+            for (suffix, label) in [("-low", "Low"), ("-medium", "Medium"), ("-high", "High")] {
+                let clone_id = format!("{}{}", base_id, suffix);
+                result.push(ModelItemData {
+                    id: clone_id.into(),
+                    display_name: format!("{} ({})", disp_name, label).into(),
+                    provider: m.provider.clone().into(),
+                    tier: m.tier.clone().into(),
+                    is_enabled: m.is_enabled,
+                    supports_thinking: true,
+                });
             }
         }
     }
@@ -2220,7 +2197,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     h.set_modal_log_model(item.model.clone().into());
                     h.set_modal_log_effort(item.reasoning_effort.clone().into());
                     h.set_modal_log_status(if item.status == 200 { "200 OK".into() } else { format!("{} Error", item.status).into() });
-                    h.set_modal_log_tokens(item.tokens.to_string().into());
+                    let tok_str = if item.prompt_tokens > 0 || item.completion_tokens > 0 {
+                        format!("{} (in: {}, out: {})", item.tokens, item.prompt_tokens, item.completion_tokens)
+                    } else {
+                        item.tokens.to_string()
+                    };
+                    h.set_modal_log_tokens(tok_str.into());
                     h.set_modal_log_latency(format!("{} ms", item.latency_ms).into());
                     h.set_modal_log_account(item.account.clone().into());
                     h.set_modal_log_headers(item.request_headers.clone().into());

@@ -105,7 +105,7 @@ pub fn process_claude_to_openai_stream(
                                                                     let chunk = create_stream_chunk(&stream_id, &model_name, Some(sub), None, None);
                                                                     yield Ok(Bytes::from(chunk));
                                                                     if count > 1 && i + 1 < count {
-                                                                        tokio::time::sleep(Duration::from_millis(3)).await;
+                                                                        tokio::task::yield_now().await;
                                                                     }
                                                                 }
                                                             }
@@ -334,14 +334,14 @@ pub fn process_antigravity_to_openai_stream(
                                                                         let chunk = create_stream_chunk(&stream_id, &model_name, None, Some(txt), None);
                                                                         yield Ok(Bytes::from(chunk));
                                                                     } else {
-                                                                        // Emit smooth micro-chunks with minimal pacing
+                                                                        // Emit smooth micro-chunks with zero artificial latency
                                                                         let sub_chunks = emit_smooth_chunks(txt);
                                                                         let count = sub_chunks.len();
                                                                         for (i, sub) in sub_chunks.into_iter().enumerate() {
                                                                             let chunk = create_stream_chunk(&stream_id, &model_name, Some(sub), None, None);
                                                                             yield Ok(Bytes::from(chunk));
                                                                             if count > 1 && i + 1 < count {
-                                                                                tokio::time::sleep(Duration::from_millis(3)).await;
+                                                                                tokio::task::yield_now().await;
                                                                             }
                                                                         }
                                                                     }
@@ -370,8 +370,8 @@ pub fn process_antigravity_to_openai_stream(
                                                                 completion_tokens_details: None,
                                                             };
 
-                                                            // 1. Emit chunk with stop reason and usage
-                                                            let chunk = create_stream_chunk_with_usage(&stream_id, &model_name, None, None, Some(stop_reason), Some(usage_val.clone()));
+                                                            // 1. Emit chunk with stop reason (OpenAI standard: delta is empty {})
+                                                            let chunk = create_stream_chunk_with_usage(&stream_id, &model_name, None, None, Some(stop_reason), None);
                                                             yield Ok(Bytes::from(chunk));
 
                                                             // 2. Emit standard OpenAI usage chunk for strict tools (DeepSeek Harness / Cursor / continue.dev)
