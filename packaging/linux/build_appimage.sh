@@ -29,18 +29,19 @@ EOF
 chmod +x "$APPDIR/AppRun"
 
 VERSION="${1:-0.1.0}"
+ARCH="${2:-x86_64}"
 echo "==> AppDir structure prepared at $APPDIR"
 RUNTIME_FLAG=""
-if [ -f "target/runtime-x86_64" ]; then
-    RUNTIME_FLAG="--runtime-file target/runtime-x86_64"
+if [ -f "target/runtime-${ARCH}" ]; then
+    RUNTIME_FLAG="--runtime-file target/runtime-${ARCH}"
 fi
 
 if command -v appimagetool &> /dev/null; then
-    appimagetool $RUNTIME_FLAG "$APPDIR" "AMR-${VERSION}-x86_64.AppImage"
-    echo "==> AppImage created successfully: AMR-${VERSION}-x86_64.AppImage"
+    ARCH=${ARCH} appimagetool $RUNTIME_FLAG "$APPDIR" "AMR-${VERSION}-${ARCH}.AppImage"
+    echo "==> AppImage created successfully: AMR-${VERSION}-${ARCH}.AppImage"
 elif [ -f "target/squashfs-root/AppRun" ]; then
-    ARCH=x86_64 target/squashfs-root/AppRun --no-appstream $RUNTIME_FLAG "$APPDIR" "AMR-${VERSION}-x86_64.AppImage"
-    echo "==> AppImage created successfully: AMR-${VERSION}-x86_64.AppImage"
+    ARCH=${ARCH} target/squashfs-root/AppRun --no-appstream $RUNTIME_FLAG "$APPDIR" "AMR-${VERSION}-${ARCH}.AppImage"
+    echo "==> AppImage created successfully: AMR-${VERSION}-${ARCH}.AppImage"
 else
     echo "Notice: appimagetool not found locally. Ready for CI packaging."
 fi

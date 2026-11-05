@@ -2,7 +2,7 @@
 set -e
 
 VERSION="${1:-0.1.0}"
-ARCH="amd64"
+ARCH="${2:-amd64}"
 DEB_DIR="target/deb_pkg"
 rm -rf "$DEB_DIR"
 mkdir -p "$DEB_DIR/DEBIAN"
@@ -30,7 +30,7 @@ Description: AMR (Antigravity Manager Rust)
 Homepage: https://github.com/Qyzom/Antigravity-Manager-Rust
 EOF
 
-OUT_NAME="AMR_${VERSION}_amd64.deb"
+OUT_NAME="AMR_${VERSION}_${ARCH}.deb"
 BUILD_TMP="target/deb_tmp"
 rm -rf "$BUILD_TMP"
 mkdir -p "$BUILD_TMP"

@@ -50,6 +50,44 @@ jobs:
             AMR_*_amd64.deb
             AMR-*-1.x86_64.rpm
 
+  build-linux-arm64:
+    name: Build Linux ARM64 (aarch64)
+    runs-on: ubuntu-24.04-arm
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev
+
+      - name: Build AMR ARM64 Release
+        run: cargo build --release --bin amr
+
+      - name: Package Linux ARM64 (DEB, RPM, Binary)
+        shell: bash
+        run: |
+          RAW_VER="${GITHUB_REF_NAME#v}"
+          VERSION="${RAW_VER:-0.1.0}"
+          echo "Packaging Linux ARM64 releases for version $VERSION"
+          cp target/release/amr "AMR-${VERSION}-aarch64"
+          ./packaging/linux/build_deb.sh "$VERSION" "arm64"
+          cargo install cargo-generate-rpm --locked || true
+          cargo-generate-rpm --auto-req disabled -o "AMR-${VERSION}-1.aarch64.rpm" || true
+
+      - name: Upload Linux ARM64 Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-arm64-artifacts
+          path: |
+            AMR-*-aarch64
+            AMR_*_arm64.deb
+            AMR-*-1.aarch64.rpm
+
   build-windows:
     name: Build Windows Portable EXE
     runs-on: windows-latest
@@ -79,7 +117,7 @@ jobs:
   create-release:
     name: Publish GitHub Release (AppImage, DEB, RPM, EXE)
     needs: [build-linux, build-windows]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: always() && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -106,9 +144,9 @@ jobs:
 
             Ultra-lightweight high-performance AI API proxy, protocol emulator & multi-account quota dispatcher in pure Rust.
 
-            ### Release Packages:
-            - **Linux AppImage:** `AMR-0.1.0-x86_64.AppImage` (Standalone portable Linux package)
-            - **Debian / Ubuntu DEB:** `AMR_0.1.0_amd64.deb` (Native package with system integration)
-            - **Fedora / RHEL RPM:** `AMR-0.1.0-1.x86_64.rpm` (Native RPM package with system integration)
-            - **Windows Portable EXE:** `AMR-0.1.0-x86_64.exe` (Standalone Windows 10/11 executable with tray support)
+            ### Release Packages (x86_64 & ARM64):
+            - **Linux AppImage:** `AMR-0.1.0-x86_64.AppImage` (Portable package for any modern Linux)
+            - **Debian / Ubuntu DEB:** `AMR_0.1.0_amd64.deb` & `AMR_0.1.0_arm64.deb`
+            - **Fedora / RHEL RPM:** `AMR-0.1.0-1.x86_64.rpm` & `AMR-0.1.0-1.aarch64.rpm`
+            - **Windows Portable EXE:** `AMR-0.1.0-x86_64.exe` & `AMR-0.1.0-arm64.exe` (Standalone executables)
 

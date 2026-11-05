@@ -5,12 +5,12 @@
 # AMR (Antigravity Manager Rust)
 
 **Ultra-lightweight, high-performance AI protocol proxy & multi-account quota manager.**  
-*Native Linux & Windows • Pure Rust • Hardware-Accelerated Slint GUI • Zero Telemetry*
+*Native Linux & Windows (x86_64 & ARM64) • Pure Rust • Hardware-Accelerated Slint GUI • Zero Telemetry*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-2021_Edition-orange.svg)](https://www.rust-lang.org/)
 [![Slint](https://img.shields.io/badge/UI-Slint_1.9-blueviolet.svg)](https://slint.dev/)
-[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-brightgreen.svg)]()
+[![Platform](https://img.shields.io/badge/Platform-x86__64%20%7C%20ARM64-brightgreen.svg)]()
 [![Release](https://img.shields.io/github/v/release/Qyzom/Antigravity-Manager-Rust?color=teal)](https://github.com/Qyzom/Antigravity-Manager-Rust/releases)
 
 <br/>
@@ -91,14 +91,15 @@
 
 ### Downloads
 
-Pre-built binaries and distribution packages for AMR `v0.1.0` are available on the [**Releases**](https://github.com/Qyzom/Antigravity-Manager-Rust/releases/latest) page:
+Pre-built binaries and distribution packages for AMR `v0.1.0` (x86_64 and native ARM64) are available on the [**Releases**](https://github.com/Qyzom/Antigravity-Manager-Rust/releases/latest) page:
 
-| OS / Format | Package File | Description |
-| :--- | :--- | :--- |
-| **Linux (AppImage)** | `AMR-0.1.0-x86_64.AppImage` | Portable executable (runs on any modern Linux) |
-| **Linux (Debian / Ubuntu)** | `AMR_0.1.0_amd64.deb` | Standard `.deb` package with system desktop & menu integration |
-| **Linux (Fedora / RHEL)** | `AMR-0.1.0-1.x86_64.rpm` | Standard `.rpm` package with system desktop & menu integration |
-| **Windows 10 / 11** | `AMR-0.1.0-x86_64.exe` | Portable executable with system tray support |
+| OS / Format | Architecture | Package File | Description |
+| :--- | :---: | :--- | :--- |
+| **Linux (AppImage)** | `x86_64` | `AMR-0.1.0-x86_64.AppImage` | Portable executable (runs on any modern Linux) |
+| **Linux (Debian / Ubuntu)** | `x86_64` / `arm64` | `AMR_0.1.0_amd64.deb`<br/>`AMR_0.1.0_arm64.deb` | Standard `.deb` package with system desktop & menu integration |
+| **Linux (Fedora / RHEL)** | `x86_64` / `aarch64` | `AMR-0.1.0-1.x86_64.rpm`<br/>`AMR-0.1.0-1.aarch64.rpm` | Standard `.rpm` package with system desktop & menu integration |
+| **Windows 10 / 11** | `x86_64` | `AMR-0.1.0-x86_64.exe` | Portable 64-bit executable with system tray support |
+| **Windows on ARM** | `arm64` | `AMR-0.1.0-arm64.exe` | Native ARM64 executable for Snapdragon X Elite / Surface Pro |
 
 ---
 

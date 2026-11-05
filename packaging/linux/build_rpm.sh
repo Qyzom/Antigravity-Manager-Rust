@@ -2,7 +2,7 @@
 set -e
 
 VERSION="${1:-0.1.0}"
-ARCH="x86_64"
+ARCH="${2:-x86_64}"
 OUT_FILE="AMR-${VERSION}-1.${ARCH}.rpm"
 
 echo "==> Generating RPM package for AMR..."
