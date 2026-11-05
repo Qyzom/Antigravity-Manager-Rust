@@ -296,6 +296,10 @@ pub struct TranslationBundle {
     pub lbl_update_available: String,
     pub lbl_latest_version: String,
     pub lbl_sending: String,
+    pub lbl_tokens_upper: String,
+    pub lbl_active_upper: String,
+    pub lbl_antifraud_badge: String,
+    pub lbl_antifraud_desc: String,
 }
 
 pub fn get_translations(lang: Language) -> TranslationBundle {

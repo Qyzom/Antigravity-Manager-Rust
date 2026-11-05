@@ -350,6 +350,10 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_update_available: t.lbl_update_available.into(),
         lbl_latest_version: t.lbl_latest_version.into(),
         lbl_sending: t.lbl_sending.into(),
+        lbl_tokens_upper: t.lbl_tokens_upper.into(),
+        lbl_active_upper: t.lbl_active_upper.into(),
+        lbl_antifraud_badge: t.lbl_antifraud_badge.into(),
+        lbl_antifraud_desc: t.lbl_antifraud_desc.into(),
     };
     ui.set_github_update_status(t.btn_check_updates.clone().into());
     ui.set_i18n(i18n_struct);
@@ -511,8 +515,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut bg_stop_rx = stop_receiver.clone();
 
     tokio::spawn(async move {
-        let mut last_active_refresh = tokio::time::Instant::now();
-        let mut last_pool_refresh = tokio::time::Instant::now();
+        let (init_active_mins, init_pool_mins, init_jitter) = {
+            let cfg = bg_cfg.read();
+            (
+                cfg.active_account_refresh_mins.clamp(1, 10),
+                cfg.pool_account_refresh_mins.clamp(1, 60),
+                cfg.cadence_jitter_percent.clamp(0, 50),
+            )
+        };
+        let mut next_active_check = tokio::time::Instant::now() + Duration::from_secs(AppConfig::calculate_jittered_secs(init_active_mins, init_jitter));
+        // Offset pool check so active and pool refreshes never collide
+        let mut next_pool_check = tokio::time::Instant::now() + Duration::from_secs(AppConfig::calculate_jittered_secs(init_pool_mins, init_jitter) + 45);
+
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
@@ -520,52 +534,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         loop {
             tokio::select! {
-                _ = tokio::time::sleep(Duration::from_secs(10)) => {}
+                _ = tokio::time::sleep(Duration::from_secs(5)) => {}
                 _ = bg_stop_rx.changed() => {
                     break;
                 }
             }
 
-            let (active_id, active_mins, pool_mins) = {
+            let (active_id, active_mins, pool_mins, jitter_pct) = {
                 let cfg = bg_cfg.read();
                 (
                     cfg.active_account_id.clone(),
                     cfg.active_account_refresh_mins.clamp(1, 10),
                     cfg.pool_account_refresh_mins.clamp(1, 60),
+                    cfg.cadence_jitter_percent.clamp(0, 50),
                 )
             };
 
             let now = tokio::time::Instant::now();
-            let refresh_active = now.duration_since(last_active_refresh) >= Duration::from_secs((active_mins as u64) * 60);
-            let refresh_pool = now.duration_since(last_pool_refresh) >= Duration::from_secs((pool_mins as u64) * 60);
+            let check_active = now >= next_active_check;
+            let check_pool = now >= next_pool_check;
 
-            if refresh_active || refresh_pool {
-                let mut accounts_to_refresh = Vec::new();
-                {
+            // 1. Process active account check if due
+            if check_active {
+                next_active_check = tokio::time::Instant::now() + Duration::from_secs(AppConfig::calculate_jittered_secs(active_mins, jitter_pct));
+                // Prevent overlap with upcoming pool check
+                if next_pool_check > next_active_check && (next_pool_check - next_active_check) < Duration::from_secs(30) {
+                    next_pool_check += Duration::from_secs(45);
+                }
+
+                let active_account_opt = {
                     let cfg = bg_cfg.read();
-                    for acc in &cfg.accounts {
-                        if (acc.status == "ERROR" && acc.refresh_token.is_none()) || !acc.is_active {
-                            continue;
-                        }
-                        let is_active_acc = active_id.as_deref() == Some(&acc.id);
-                        if is_active_acc && refresh_active {
-                            accounts_to_refresh.push((acc.id.clone(), acc.api_key.clone(), acc.refresh_token.clone(), true));
-                        } else if !is_active_acc && refresh_pool {
-                            accounts_to_refresh.push((acc.id.clone(), acc.api_key.clone(), acc.refresh_token.clone(), false));
-                        }
-                    }
-                }
+                    cfg.accounts.iter().find(|a| active_id.as_deref() == Some(&a.id) && a.is_active).map(|a| (a.id.clone(), a.api_key.clone(), a.refresh_token.clone()))
+                };
 
-                if refresh_active {
-                    last_active_refresh = now;
-                }
-                if refresh_pool {
-                    last_pool_refresh = now;
-                }
-
-                for (id, mut token, refresh_tok, is_active_acc) in accounts_to_refresh {
+                if let Some((id, mut token, refresh_tok)) = active_account_opt {
                     let mut quota_res = antigravity::fetch_models_and_quota(&client, &token, None).await;
-
                     if quota_res.is_err() {
                         if let Some(ref rtok) = refresh_tok {
                             if let Ok(ref_res) = antigravity::refresh_token(&client, rtok).await {
@@ -604,10 +607,90 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         acc.tier = "PRO".to_string();
                                     }
                                 }
-                                if is_active_acc {
-                                    let clean: Vec<_> = models.into_iter().filter(|x| !x.id.starts_with("chat_") && !x.id.contains("gemini-3.5")).collect();
-                                    if !clean.is_empty() {
-                                        cfg.models = clean;
+                                let clean: Vec<_> = models.into_iter().filter(|x| !x.id.starts_with("chat_") && !x.id.contains("gemini-3.5")).collect();
+                                if !clean.is_empty() {
+                                    cfg.models = clean;
+                                }
+                                let _ = cfg.save();
+                            }
+                            bg_ver.fetch_add(1, Ordering::SeqCst);
+                        }
+                        Err(e) => {
+                            let err_str = e.to_string();
+                            if err_str.contains("401") || err_str.contains("403") || err_str.contains("invalid_grant") {
+                                {
+                                    let mut cfg = bg_cfg.write();
+                                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id) {
+                                        acc.status = "ERROR".to_string();
+                                        acc.error_message = Some(format!("Authentication failed: {}", err_str));
+                                    }
+                                    let _ = cfg.save();
+                                }
+                                bg_ver.fetch_add(1, Ordering::SeqCst);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Process pool accounts check if due (staggered and non-simultaneous)
+            if check_pool {
+                next_pool_check = tokio::time::Instant::now() + Duration::from_secs(AppConfig::calculate_jittered_secs(pool_mins, jitter_pct));
+                // Prevent collision with next active check
+                if next_active_check > next_pool_check && (next_active_check - next_pool_check) < Duration::from_secs(30) {
+                    next_active_check += Duration::from_secs(45);
+                }
+
+                let pool_accounts: Vec<(String, String, Option<String>)> = {
+                    let cfg = bg_cfg.read();
+                    cfg.accounts
+                        .iter()
+                        .filter(|a| a.is_active && active_id.as_deref() != Some(&a.id) && !(a.status == "ERROR" && a.refresh_token.is_none()))
+                        .map(|a| (a.id.clone(), a.api_key.clone(), a.refresh_token.clone()))
+                        .collect()
+                };
+
+                for (id, mut token, refresh_tok) in pool_accounts {
+                    // Stagger pool account checks with randomized 3 to 7 second pauses to avoid bot-like bursting
+                    tokio::time::sleep(Duration::from_millis(AppConfig::random_delay_ms(3000, 7000))).await;
+
+                    let mut quota_res = antigravity::fetch_models_and_quota(&client, &token, None).await;
+                    if quota_res.is_err() {
+                        if let Some(ref rtok) = refresh_tok {
+                            if let Ok(ref_res) = antigravity::refresh_token(&client, rtok).await {
+                                token = ref_res.access_token.clone();
+                                {
+                                    let mut cfg = bg_cfg.write();
+                                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id) {
+                                        acc.api_key = token.clone();
+                                    }
+                                    let _ = cfg.save();
+                                }
+                                quota_res = antigravity::fetch_models_and_quota(&client, &token, None).await;
+                            }
+                        }
+                    }
+
+                    match quota_res {
+                        Ok((_, used, limit, reset, detailed_quota)) => {
+                            {
+                                let mut cfg = bg_cfg.write();
+                                if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id) {
+                                    acc.quota_used = used;
+                                    acc.quota_limit = limit;
+                                    acc.quota_reset = reset;
+                                    acc.claude_gpt_percent = detailed_quota.claude_gpt_percent;
+                                    acc.claude_gpt_reset = detailed_quota.claude_gpt_reset;
+                                    acc.claude_gpt_weekly_percent = detailed_quota.claude_gpt_weekly_percent;
+                                    acc.claude_gpt_weekly_reset = detailed_quota.claude_gpt_weekly_reset;
+                                    acc.gemini_percent = detailed_quota.gemini_percent;
+                                    acc.gemini_reset = detailed_quota.gemini_reset;
+                                    acc.gemini_weekly_percent = detailed_quota.gemini_weekly_percent;
+                                    acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
+                                    acc.error_message = None;
+                                    acc.status = "ACTIVE".to_string();
+                                    if detailed_quota.claude_gpt_percent > 0 {
+                                        acc.tier = "PRO".to_string();
                                     }
                                 }
                                 let _ = cfg.save();
@@ -621,7 +704,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     let mut cfg = bg_cfg.write();
                                     if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id) {
                                         acc.status = "ERROR".to_string();
-                                        // Do not deactivate account permanently on transient token failure
                                         acc.error_message = Some(format!("Authentication failed: {}", err_str));
                                     }
                                     let _ = cfg.save();
@@ -734,7 +816,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 use i_slint_backend_winit::winit::platform::wayland::WindowAttributesExtWayland;
                 use i_slint_backend_winit::winit::platform::x11::WindowAttributesExtX11;
                 let attrs = WindowAttributesExtWayland::with_name(attrs, "aroxy", "aroxy");
-                WindowAttributesExtX11::with_name(attrs, "aroxy", "aroxy")
+                let attrs = WindowAttributesExtX11::with_name(attrs, "aroxy", "aroxy");
+                let icon_bytes = include_bytes!("../assets/icons/tray_32x32.rgba");
+                if let Ok(icon) = i_slint_backend_winit::winit::window::Icon::from_rgba(icon_bytes.to_vec(), 32, 32) {
+                    attrs.with_window_icon(Some(icon))
+                } else {
+                    attrs
+                }
             }
             #[cfg(not(target_os = "linux"))]
             {
@@ -744,6 +832,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Ok(backend) = backend_builder.build() {
             let _ = slint::platform::set_platform(Box::new(backend));
         }
+        let _ = slint::set_xdg_app_id("aroxy");
     }
 
     // Launch Slint GUI

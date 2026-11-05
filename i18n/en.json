@@ -246,5 +246,9 @@
   "lbl_checking_updates": "Checking updates...",
   "lbl_update_available": "Update Available",
   "lbl_latest_version": "Latest Version",
-  "lbl_sending": "Sending..."
+  "lbl_sending": "Sending...",
+  "lbl_tokens_upper": "TOKENS",
+  "lbl_active_upper": "ACTIVE",
+  "lbl_antifraud_badge": "Anti-fraud: ±15% Jitter",
+  "lbl_antifraud_desc": "Intervals and checks are staggered to prevent anti-bot detection"
 }

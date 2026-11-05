@@ -289,6 +289,8 @@ pub struct AppConfig {
     pub active_account_refresh_mins: u32,
     #[serde(default = "default_pool_refresh_mins")]
     pub pool_account_refresh_mins: u32,
+    #[serde(default = "default_jitter_percent")]
+    pub cadence_jitter_percent: u8,
     #[serde(default = "default_true")]
     pub show_logs_tab: bool,
     #[serde(default = "default_true")]
@@ -350,6 +352,10 @@ fn default_pool_refresh_mins() -> u32 {
     15
 }
 
+fn default_jitter_percent() -> u8 {
+    15
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -378,6 +384,7 @@ impl Default for AppConfig {
             quota_protection_threshold: 5,
             active_account_refresh_mins: 2,
             pool_account_refresh_mins: 15,
+            cadence_jitter_percent: 15,
             show_logs_tab: true,
             show_stats_tab: true,
             hide_about_tab: false,
@@ -598,17 +605,51 @@ impl AppConfig {
         (folder, total_size)
     }
 
+    pub fn calculate_jittered_secs(base_mins: u32, jitter_percent: u8) -> u64 {
+        let base_secs = (base_mins.max(1) as u64) * 60;
+        if jitter_percent == 0 {
+            return base_secs;
+        }
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .subsec_nanos();
+        let mut x = nanos ^ (nanos << 13) ^ (nanos >> 17) ^ (nanos << 5);
+        if x == 0 { x = 1234567; }
+        let range = (jitter_percent as u32 * 2) + 1;
+        let pct_offset = ((x % range) as i32) - (jitter_percent as i32);
+        let factor = 1.0 + (pct_offset as f64 / 100.0);
+        let jittered = ((base_secs as f64) * factor).round() as u64;
+        jittered.max(20)
+    }
+
+    pub fn random_delay_ms(min_ms: u64, max_ms: u64) -> u64 {
+        if min_ms >= max_ms {
+            return min_ms;
+        }
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .subsec_nanos();
+        let mut x = nanos ^ (nanos << 7) ^ (nanos >> 11) ^ (nanos << 3);
+        if x == 0 { x = 7654321; }
+        min_ms + ((x as u64) % (max_ms - min_ms + 1))
+    }
+
     pub fn localize_reset_str(raw: &str, is_ru: bool, is_zh: bool) -> String {
         let clean = raw.trim()
+            .trim_start_matches("Reset: in ")
+            .trim_start_matches("Reset: ")
             .trim_start_matches("in ")
             .trim_start_matches("через ")
-            .trim_start_matches("约 ");
+            .trim_start_matches("约 ")
+            .trim();
         if is_ru {
-            clean.replace('d', "д").replace('h', "ч").replace('m', "м")
+            format!("через {}", clean.replace('d', "д").replace('h', "ч").replace('m', "м"))
         } else if is_zh {
             clean.replace('d', "天").replace('h', "小时").replace('m', "分")
         } else {
-            clean.to_string()
+            format!("in {}", clean)
         }
     }
 

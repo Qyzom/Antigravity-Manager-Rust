@@ -30,8 +30,16 @@ chmod +x "$APPDIR/AppRun"
 
 VERSION="${1:-0.0.4}"
 echo "==> AppDir structure prepared at $APPDIR"
+RUNTIME_FLAG=""
+if [ -f "target/runtime-x86_64" ]; then
+    RUNTIME_FLAG="--runtime-file target/runtime-x86_64"
+fi
+
 if command -v appimagetool &> /dev/null; then
-    appimagetool "$APPDIR" "Aroxy-${VERSION}-x86_64.AppImage"
+    appimagetool $RUNTIME_FLAG "$APPDIR" "Aroxy-${VERSION}-x86_64.AppImage"
+    echo "==> AppImage created successfully: Aroxy-${VERSION}-x86_64.AppImage"
+elif [ -f "target/squashfs-root/AppRun" ]; then
+    ARCH=x86_64 target/squashfs-root/AppRun --no-appstream $RUNTIME_FLAG "$APPDIR" "Aroxy-${VERSION}-x86_64.AppImage"
     echo "==> AppImage created successfully: Aroxy-${VERSION}-x86_64.AppImage"
 else
     echo "Notice: appimagetool not found locally. Ready for CI packaging."

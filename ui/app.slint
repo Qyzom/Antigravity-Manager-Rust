@@ -308,6 +308,10 @@ export struct I18nData {
     lbl_update_available: string,
     lbl_latest_version: string,
     lbl_sending: string,
+    lbl_tokens_upper: string,
+    lbl_active_upper: string,
+    lbl_antifraud_badge: string,
+    lbl_antifraud_desc: string,
 }
 
 component NavItem inherits Rectangle {
@@ -1182,7 +1186,7 @@ export component MainWindow inherits Window {
                                     ActionButton {
                                         text: root.i18n.btn_add_token;
                                         is_primary: true;
-                                        min-width: 100px;
+                                        width: 120px;
                                         horizontal-stretch: 0;
                                         clicked => { root.add_account(); }
                                     }
@@ -1238,10 +1242,22 @@ export component MainWindow inherits Window {
                                         ActionButton { custom_height: 26px; text: "60m"; is_primary: root.pool_account_refresh_mins == 60; is_accent: root.pool_account_refresh_mins == 60; clicked => { root.set_pool_refresh_cadence(60); } }
                                     }
                                 }
+
+                                Rectangle { height: 1px; background: #27272a; }
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        Rectangle { width: 6px; height: 6px; border-radius: 3px; background: #10b981; y: 4px; }
+                                        Text { text: root.i18n.lbl_antifraud_badge; font-size: 11px; font-weight: 600; color: #10b981; }
+                                    }
+                                    Text { text: root.i18n.lbl_antifraud_desc; font-size: 10px; color: #71717a; }
+                                }
                             }
                         }
 
-                        Text { text: root.i18n.acc_pool_header + " — " + root.healthy_accounts_count + " ACTIVE"; font-size: 11px; font-weight: 700; color: #71717a; }
+                        Text { text: root.i18n.acc_pool_header + " — " + root.healthy_accounts_count + " " + root.i18n.lbl_active_upper; font-size: 11px; font-weight: 700; color: #71717a; }
 
                         // Account Cards
                         for acc in root.accounts: Rectangle {
@@ -2132,7 +2148,7 @@ export component MainWindow inherits Window {
                                             path_seg3: root.stat_chart1_path3;
                                             color_seg3: #f59e0b;
                                             center_title: root.total_tokens;
-                                            center_subtitle: "TOKENS";
+                                            center_subtitle: root.i18n.lbl_tokens_upper;
                                         }
 
                                         VerticalLayout {
@@ -2241,7 +2257,7 @@ export component MainWindow inherits Window {
                                 HorizontalLayout {
                                     alignment: space-between;
                                     Text { text: root.i18n.lbl_stat_model_share; font-size: 12px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
-                                    Text { text: root.stat_model_distribution; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
+                                    Text { text: "Claude " + root.stat_claude_pct + "% · Gemini " + root.stat_gemini_pct + "%"; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
                                 }
 
                                 // Interactive Distribution Bars for Claude & Gemini Models

@@ -246,5 +246,9 @@
   "lbl_checking_updates": "正在检查更新...",
   "lbl_update_available": "发现新版本",
   "lbl_latest_version": "已是最新版本",
-  "lbl_sending": "发送中..."
+  "lbl_sending": "发送中...",
+  "lbl_tokens_upper": "代币",
+  "lbl_active_upper": "活跃",
+  "lbl_antifraud_badge": "防封禁: ±15% 随机抖动",
+  "lbl_antifraud_desc": "错峰间隔执行以防止机器人行为检测"
 }

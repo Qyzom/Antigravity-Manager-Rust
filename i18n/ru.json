@@ -53,8 +53,8 @@
   "sec_timeouts": "Таймауты протокола и Keepalive",
   "lbl_port": "Порт прокси",
   "lbl_host": "Хост привязки",
-  "lbl_timeout": "Таймаут запроса к апстриму (сек)",
-  "lbl_heartbeat": "Интервал SSE Keepalive / Ping (сек)",
+  "lbl_timeout": "Таймаут апстрима (сек)",
+  "lbl_heartbeat": "Интервал Keepalive (сек)",
   "lbl_failover": "Бесшовный переход при 429 (Zero-Downtime)",
   "logs_title": "Логи трафика и инспектор запросов",
   "logs_subtitle": "Просмотр HTTP запросов, заголовков, времени ответа и ошибок",
@@ -246,5 +246,9 @@
   "lbl_checking_updates": "Проверка обновлений...",
   "lbl_update_available": "Доступно обновление",
   "lbl_latest_version": "Актуальная версия",
-  "lbl_sending": "Отправка..."
+  "lbl_sending": "Отправка...",
+  "lbl_tokens_upper": "ТОКЕНЫ",
+  "lbl_active_upper": "АКТИВНО",
+  "lbl_antifraud_badge": "Антифрод: ±15% рандомизация",
+  "lbl_antifraud_desc": "Интервалы и вызовы разнесены во времени от бот-детекции"
 }
