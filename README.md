@@ -38,7 +38,7 @@
 
 ### Overview & Philosophy
 
-**AMR (Antigravity Manager Rust)** is a cross-platform local AI protocol proxy and load balancer written in pure Rust. It transforms multiple upstream accounts into unified local endpoints compatible with **OpenAI** (`/v1/chat/completions`, `/v1/models`), **Anthropic Claude** (`/v1/messages`), and development environments like Cursor, Claude Code, NextChat, and DeepSeek Harness.
+**AMR (Antigravity Manager Rust)** is a cross-platform local AI protocol proxy and load balancer written in pure Rust. It transforms multiple upstream accounts into unified local endpoints compatible with **OpenAI** (`/v1/chat/completions`, `/v1/models`) and **Anthropic Claude** (`/v1/messages`), supporting modern AI coding tools and agents including **Roo Code**, **Claude Code**, **Cline**, **Cursor**, **Codex**, **OpenCode**, and **Continue.dev**.
 
 > [!NOTE]
 > **Scope & Functional Boundaries:**  
@@ -166,16 +166,37 @@ export ANTHROPIC_API_KEY="sk-amr-local-proxy"
 claude
 ```
 
-#### 2. Cursor IDE
+#### 2. Roo Code / Cline (VS Code Extension)
+- **API Provider:** `OpenAI Compatible`
+- **Base URL:** `http://127.0.0.1:8045/v1`
+- **API Key:** `sk-amr-local-proxy`
+- **Model ID:** `claude-3-7-sonnet`, `gemini-2.5-pro`, or `claude-3-5-sonnet`
+
+#### 3. Cursor IDE
 - **Settings** -> **Models** -> **OpenAI API Key**: `sk-amr-local-proxy`
 - **Override OpenAI Base URL**: `http://127.0.0.1:8045/v1`
 - Supported models: `claude-3-7-sonnet`, `claude-3-7-sonnet-high`, `gemini-2.5-pro`, `gemini-2.5-flash`
 
-#### 3. DeepSeek Harness / NextChat / OpenWebUI
+#### 4. Continue.dev
+```json
+{
+  "models": [
+    {
+      "title": "AMR Claude 3.7",
+      "provider": "openai",
+      "model": "claude-3-7-sonnet",
+      "apiBase": "http://127.0.0.1:8045/v1",
+      "apiKey": "sk-amr-local-proxy"
+    }
+  ]
+}
+```
+
+#### 5. DeepSeek Harness / NextChat / OpenWebUI
 - **Base URL**: `http://127.0.0.1:8045/v1`
 - **API Key**: `sk-amr-local-proxy`
 
-#### 4. Python OpenAI SDK
+#### 6. Python OpenAI SDK
 ```python
 from openai import OpenAI
 
