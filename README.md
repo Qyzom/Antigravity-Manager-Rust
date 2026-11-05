@@ -41,9 +41,9 @@
 **AMR (Antigravity Manager Rust)** is a cross-platform local AI protocol proxy and load balancer written in pure Rust. It transforms multiple upstream accounts into unified local endpoints compatible with **OpenAI** (`/v1/chat/completions`, `/v1/models`) and **Anthropic Claude** (`/v1/messages`), supporting modern AI coding tools and agents including **Roo Code**, **Claude Code**, **Cline**, **Cursor**, **Codex**, **OpenCode**, and **Continue.dev**.
 
 > [!NOTE]
-> **Scope & Functional Boundaries:**  
-> AMR is exclusively a network-level HTTP proxy and protocol emulator (`127.0.0.1:8045`). It handles protocol translation, quota balancing, token stream pacing, and telemetry-free proxy dispatch.  
-> AMR **does not** manage or swap accounts locally on your disk, IDE storage, or host configuration, and will never do so — dedicated local helper scripts exist that handle local credential swapping much better. AMR operates strictly over HTTP network connections.
+> **Focused Scope vs All-in-One "Combines":**  
+> AMR is purpose-built strictly for high-throughput protocol emulation, proxying, and quota-aware routing.  
+> AMR **is not and will not become a bloated all-in-one combine**: it does not hook into local IDE process memory, does not modify local SQLite/LevelDB editor storage, and does not inject cookies. Dedicated local helper scripts already handle local disk credentials much better. AMR does one thing with uncompromising efficiency: fast, stable, zero-telemetry API proxying (`127.0.0.1:8045`).
 
 ---
 
@@ -72,6 +72,7 @@
 | Specification | AntigravityManager (Draculabo) | Antigravity-Manager (lbjlaq) | AMR |
 | :--- | :---: | :---: | :---: |
 | **Tech Stack** | TypeScript, Electron 37, Node.js 24 | Rust, Tauri v2, WebKitGTK | **Pure Rust (Tokio, Axum, Slint 1.9)** |
+| **Tracked Repository Files** | 2,597 files | 598 files | **61 files** |
 | **GUI RAM (RSS)** | ~220 – 380 MB | ~120 – 180 MB | **~22 MB** |
 | **Headless / Daemon Mode** | Not supported | Not supported | **Supported (~2.5 MB RAM)** |
 | **Cold Startup Latency** | 3.5 – 5.0 s | 1.5 – 2.2 s | **< 60 ms** |
@@ -239,6 +240,14 @@ cargo build --release --bin amr
 ./packaging/linux/build_deb.sh 0.1.0
 ./packaging/linux/build_rpm.sh 0.1.0
 ```
+
+---
+
+### Maintenance & Release Philosophy
+
+- **Cumulative, Milestone Releases:** AMR intentionally avoids the pattern of churning out dozens of fragmented micro-releases every week (*"a patch of a patch holding a patch"*). We believe software should be thoroughly tested and reliable before distribution.
+- **Periods of Silence are Normal:** Absence of commits for a few weeks or months is completely normal and indicates a mature, stable engine that requires zero intervention. You can confidently download and use AMR knowing it is stable.
+- **Explicit Lifecycle Transparency:** If the maintainer ever decides to discontinue active development in the future, the repository will be transparently transitioned to **Archived** status on GitHub rather than left in an unmaintained or ambiguous state.
 
 ---
 
