@@ -239,7 +239,7 @@
     "btn_default": "5% (Default)",
     "opt_percent": "Percent (%)",
     "opt_fraction": "Fraction (0-1)",
-    "about_app_desc": "Version 0.0.4 · AI Protocol Proxy & Quota Dispatcher",
+    "about_app_desc": "Version 0.1.0 · AI Protocol Proxy & Quota Dispatcher",
     "about_spec_title": "SOFTWARE STACK & SPECIFICATIONS",
     "about_spec_runtime": "Core Proxy Runtime",
     "about_spec_transport": "HTTP Network Transport",

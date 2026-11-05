@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/icons/logo_256.png" alt="AMR Logo" width="110" />
+<img src="assets/logo.png" alt="AMR Logo" width="110" />
 
 # AMR (Antigravity Manager Rust)
 
@@ -38,7 +38,7 @@
 
 ### Overview & Philosophy
 
-**AMR (Antigravity Manager Rust)** is a cross-platform local AI protocol proxy and load balancer written in pure Rust. It transforms multiple upstream accounts into unified local endpoints compatible with **OpenAI** (`/v1/chat/completions`, `/v1/models`, `/v1/usage`), **Anthropic Claude** (`/v1/messages`), and development environments like Cursor, Claude Code, NextChat, and DeepSeek Harness.
+**AMR (Antigravity Manager Rust)** is a cross-platform local AI protocol proxy and load balancer written in pure Rust. It transforms multiple upstream accounts into unified local endpoints compatible with **OpenAI** (`/v1/chat/completions`, `/v1/models`), **Anthropic Claude** (`/v1/messages`), and development environments like Cursor, Claude Code, NextChat, and DeepSeek Harness.
 
 > [!NOTE]
 > **Scope & Functional Boundaries:**  
@@ -58,10 +58,9 @@
 
 ### Key Features
 
-- **Multi-Protocol Translation:** Bidirectional conversion between OpenAI, Claude, and Google Cloud Code PA formats with thinking/reasoning preservation.
+- **Multi-Protocol Translation:** Bidirectional conversion between OpenAI and Anthropic Claude protocols with full thinking/reasoning preservation (with upstream Google Cloud Code Pa API mapping).
 - **Dual-Mode Reasoning Configuration:** Handles both suffix naming conventions (`-low`, `-medium`, `-high`, `(low)`) and native protocol parameters (`reasoning_effort`, `thinking`).
-- **Quota-Aware Load Balancing:** Dynamic quota accounting with automatic 429 failover, sticky session affinity for prompt KV cache reuse, and configurable emergency reserve thresholds.
-- **OpenAI Billing & Usage Emulation:** Compatible with client applications querying `/v1/dashboard/billing/subscription`, `/v1/dashboard/billing/usage`, and `/v1/usage`.
+- **Quota-Aware Load Balancing:** Dynamic quota accounting with automatic 429 failover, sticky session affinity, and configurable emergency reserve thresholds.
 - **Hardware Isolation Profiles:** Distinct device IDs and machine GUIDs per upstream account, with optional randomized jitter (+-15%) for network cadence smoothing.
 - **Request Inspector & Disk Logging:** Searchable HTTP traffic log with per-request latency, token counts (Prompt, Completion, Thinking), status codes, and payload inspector.
 - **Internationalization (i18n):** Complete localization in English, Russian, and Chinese across all UI tabs, tray menus, and system notifications.
@@ -76,13 +75,12 @@
 | **GUI RAM (RSS)** | ~220 – 380 MB | ~120 – 180 MB | **~22 MB** |
 | **Headless / Daemon Mode** | Not supported | Not supported | **Supported (~2.5 MB RAM)** |
 | **Cold Startup Latency** | 3.5 – 5.0 s | 1.5 – 2.2 s | **< 60 ms** |
-| **Package Size** | ~95 MB (AppImage) | ~45 MB (+ WebKitGTK runtime) | **~12 MB (Standalone AppImage)** |
+| **Package Size** | ~95 MB (AppImage) | ~45 MB (+ WebKitGTK runtime) | **~14 MB (AppImage)** |
 | **Web Runtime Dependency** | Bundled Chromium | System WebKitGTK | **None (Native OpenGL / FemtoVG)** |
 | **Telemetry Packages** | Sentry, Microsoft Clarity, OpenTelemetry | None | **None** |
 | **License** | MIT License | CC-BY-NC-SA-4.0 | **MIT License** |
 | **SSE Heartbeat Frame Injection** | Raw upstream SSE | Raw upstream SSE | **Auto-injected (`: ping\n\n`)** |
 | **Stream Micro-Chunk Pacing** | Raw upstream chunks | Raw upstream chunks | **Sub-token configurable pacing** |
-| **OpenAI `/v1/usage` Emulation** | No | No | **Yes** |
 | **Reasoning Effort Support** | Partial suffixes | Suffixes | **Suffixes + Native Protocol** |
 
 > *\* Real-world benchmarks performed on **Arch Linux** under identical test conditions.*  
@@ -96,10 +94,10 @@ Pre-built binaries and distribution packages for AMR `v0.1.0` are available on t
 
 | OS / Format | Package File | Description |
 | :--- | :--- | :--- |
-| **Linux (AppImage)** | `AMR-0.1.0-x86_64.AppImage` | Standalone portable executable (runs on any modern Linux) |
+| **Linux (AppImage)** | `AMR-0.1.0-x86_64.AppImage` | Portable executable (runs on any modern Linux) |
 | **Linux (Debian / Ubuntu)** | `AMR_0.1.0_amd64.deb` | Standard `.deb` package with system desktop & menu integration |
 | **Linux (Fedora / RHEL)** | `AMR-0.1.0-1.x86_64.rpm` | Standard `.rpm` package with system desktop & menu integration |
-| **Windows 10 / 11** | `AMR-0.1.0-x86_64.exe` | Standalone portable executable with system tray support |
+| **Windows 10 / 11** | `AMR-0.1.0-x86_64.exe` | Portable executable with system tray support |
 
 ---
 

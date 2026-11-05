@@ -239,7 +239,7 @@
     "btn_default": "5% (默认)",
     "opt_percent": "百分比 (%)",
     "opt_fraction": "数值 (0-1)",
-    "about_app_desc": "版本 0.0.4 · AI 协议代理与配额分发器",
+    "about_app_desc": "版本 0.1.0 · AI 协议代理与配额分发器",
     "about_spec_title": "软件架构与技术规范",
     "about_spec_runtime": "核心代理运行时",
     "about_spec_transport": "网络传输引擎",
