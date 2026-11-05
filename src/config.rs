@@ -1,18 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+use crate::i18n::{get_translations, Language};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum RoutingStrategy {
+    #[default]
     QuotaAware,
     RoundRobin,
     Failover,
-}
-
-impl Default for RoutingStrategy {
-    fn default() -> Self {
-        Self::QuotaAware
-    }
 }
 
 impl RoutingStrategy {
@@ -41,17 +37,12 @@ impl RoutingStrategy {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum CacheAffinityMode {
     CacheFirst,       // Maximum KV cache reuse: pins session strictly to account until rate-limited or depleted
+    #[default]
     Balanced,         // Hybrid: sticky session, but rotates smoothly if other accounts have > threshold more quota
     AggressiveSpread, // Quota leveling: rotates across healthy accounts on every request
-}
-
-impl Default for CacheAffinityMode {
-    fn default() -> Self {
-        Self::Balanced
-    }
 }
 
 impl CacheAffinityMode {
@@ -295,8 +286,10 @@ pub struct AppConfig {
     pub show_logs_tab: bool,
     #[serde(default = "default_true")]
     pub show_stats_tab: bool,
-    #[serde(default)]
-    pub hide_about_tab: bool,
+    #[serde(default = "default_true")]
+    pub show_about_tab: bool,
+    #[serde(default = "default_true")]
+    pub enable_billing_emulation: bool,
     #[serde(default = "default_true")]
     pub check_updates_startup: bool,
     #[serde(default)]
@@ -341,7 +334,7 @@ fn default_fingerprint() -> String {
 }
 
 fn default_protection_threshold() -> u8 {
-    5
+    10
 }
 
 fn default_active_refresh_mins() -> u32 {
@@ -381,13 +374,14 @@ impl Default for AppConfig {
             request_timeout_secs: 120,
             heartbeat_interval_secs: 12,
             default_fingerprint: "Claude Code 2.x".to_string(),
-            quota_protection_threshold: 5,
+            quota_protection_threshold: 10,
             active_account_refresh_mins: 2,
             pool_account_refresh_mins: 15,
             cadence_jitter_percent: 15,
             show_logs_tab: true,
             show_stats_tab: true,
-            hide_about_tab: false,
+            show_about_tab: true,
+            enable_billing_emulation: true,
             check_updates_startup: true,
             clear_logs_on_exit: false,
             master_api_key: "sk-aroxy-v1-master-key".to_string(),
@@ -487,9 +481,20 @@ impl AppConfig {
                 && m.id != "gemini-2.5-flash"
                 && m.id != "gemini-2.5-flash-thinking"
                 && m.id != "gemini-2.5-pro"
+                && !m.id.ends_with("-low")
+                && !m.id.ends_with("-medium")
+                && !m.id.ends_with("-high")
+                && !m.id.ends_with("-no-thinking")
+                && !m.id.ends_with(" (low)")
+                && !m.id.ends_with(" (medium)")
+                && !m.id.ends_with(" (high)")
+                && !m.id.ends_with(" (no-thinking)")
         });
 
         for m in &mut self.models {
+            let (base_id, _) = crate::proxy::router::parse_model_and_reasoning(&m.id, None);
+            m.id = base_id;
+
             if m.id == "claude-sonnet-5-5-high" || m.id == "claude-sonnet-5-5" || m.id == "claude-3-7-sonnet" {
                 m.id = "claude-sonnet-5-5".to_string();
                 m.display_name = "Claude Sonnet 5.5".to_string();
@@ -509,7 +514,7 @@ impl AppConfig {
                 m.display_name = "Claude Opus 4.6".to_string();
                 m.provider = "anthropic".to_string();
                 m.supports_thinking = false;
-            } else if m.id == "gemini-3.8-flash-high" || m.id == "gemini-3.8-flash-tiered" || m.id == "gemini-2.5-flash-thinking" || m.id == "gemini-2.5-flash" || m.id == "gemini-3.8-flash" {
+            } else if m.id == "gemini-3.8-flash-high" || m.id == "gemini-3.8-flash-medium" || m.id == "gemini-3.8-flash-low" || m.id == "gemini-3.8-flash-tiered" || m.id == "gemini-2.5-flash-thinking" || m.id == "gemini-2.5-flash" || m.id == "gemini-3.8-flash" {
                 m.id = "gemini-3.8-flash".to_string();
                 m.display_name = "Gemini 3.8 Flash".to_string();
                 m.provider = "gemini".to_string();
@@ -654,25 +659,13 @@ impl AppConfig {
     }
 
     pub fn format_quota_label(&self, pct: i32) -> String {
-        let is_ru = self.language.eq_ignore_ascii_case("ru");
-        let is_zh = self.language.eq_ignore_ascii_case("zh");
+        let lang = Language::from_str_code(&self.language);
+        let t = get_translations(lang);
         if self.quota_display_mode == "fraction" {
             let frac = (pct as f64) / 100.0;
-            if is_ru {
-                format!("{:.2} Осталось", frac)
-            } else if is_zh {
-                format!("{:.2} 剩余", frac)
-            } else {
-                format!("{:.2} Remaining", frac)
-            }
+            format!("{:.2} {}", frac, t.lbl_remaining)
         } else {
-            if is_ru {
-                format!("{}% Доступно", pct)
-            } else if is_zh {
-                format!("{}% 可用", pct)
-            } else {
-                format!("{}% Available", pct)
-            }
+            format!("{}% {}", pct, t.lbl_available)
         }
     }
 
@@ -886,6 +879,9 @@ impl AppConfig {
             // If reasoning clones are NOT grouped into base models, expose clones
             if !self.group_reasoning_clones && self.expose_reasoning_variants && m.supports_thinking {
                 for (suffix, label) in [
+                    ("-low", "Low Effort"),
+                    ("-medium", "Medium Effort"),
+                    ("-high", "High Effort"),
                     (" (low)", "Low Effort"),
                     (" (medium)", "Medium Effort"),
                     (" (high)", "High Effort"),

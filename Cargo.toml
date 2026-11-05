@@ -1,11 +1,11 @@
 [package]
 name = "aroxy"
-version = "0.0.4"
+version = "0.1.0"
 edition = "2021"
 authors = ["Qyzom <t0lotsmail@gmail.com>"]
 description = "Ultra-lightweight high-performance AI API proxy & protocol emulator with Slint UI"
 license = "MIT"
-repository = "https://github.com/Qyzom/Aroxy"
+repository = "https://github.com/Qyzom/Antigravity-Proxy-Rust"
 
 [dependencies]
 # GUI

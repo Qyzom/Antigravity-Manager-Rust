@@ -31,7 +31,7 @@ jobs:
         shell: bash
         run: |
           RAW_VER="${GITHUB_REF_NAME#v}"
-          VERSION="${RAW_VER:-0.0.3}"
+          VERSION="${RAW_VER:-0.1.0}"
           echo "Packaging Linux AppImage for version $VERSION"
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
           chmod +x appimagetool
@@ -60,7 +60,7 @@ jobs:
         shell: bash
         run: |
           RAW_VER="${GITHUB_REF_NAME#v}"
-          VERSION="${RAW_VER:-0.0.3}"
+          VERSION="${RAW_VER:-0.1.0}"
           echo "Packaging Windows EXE for version $VERSION"
           cp target/release/aroxy.exe "Aroxy-${VERSION}-x86_64.exe"
 

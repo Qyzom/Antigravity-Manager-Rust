@@ -28,7 +28,7 @@ exec "$HERE/usr/bin/aroxy" "$@"
 EOF
 chmod +x "$APPDIR/AppRun"
 
-VERSION="${1:-0.0.4}"
+VERSION="${1:-0.1.0}"
 echo "==> AppDir structure prepared at $APPDIR"
 RUNTIME_FLAG=""
 if [ -f "target/runtime-x86_64" ]; then

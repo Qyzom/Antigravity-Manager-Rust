@@ -88,11 +88,33 @@ pub fn normalize_antigravity_upstream_model(requested: &str) -> &'static str {
         } else {
             "claude-sonnet-5-5-high"
         }
-    } else if clean.contains("argon") || clean.contains("pro") {
+    } else if clean.contains("argon") {
+        "gemini-4-argon"
+    } else if clean.contains("pro") {
         "gemini-2.5-pro"
     } else {
         "gemini-3.8-flash-tiered"
     }
+}
+
+pub fn extract_clean_error_message(raw: &str) -> String {
+    if let Ok(val) = serde_json::from_str::<Value>(raw) {
+        if let Some(msg) = val.pointer("/error/message").and_then(|m| m.as_str()) {
+            if let Ok(inner) = serde_json::from_str::<Value>(msg) {
+                if let Some(inner_msg) = inner.pointer("/error/message").and_then(|m| m.as_str()) {
+                    return inner_msg.to_string();
+                }
+                if let Some(inner_msg) = inner.get("message").and_then(|m| m.as_str()) {
+                    return inner_msg.to_string();
+                }
+            }
+            return msg.to_string();
+        }
+        if let Some(msg) = val.get("message").and_then(|m| m.as_str()) {
+            return msg.to_string();
+        }
+    }
+    raw.to_string()
 }
 
 #[derive(Debug, Deserialize)]
@@ -549,15 +571,16 @@ pub async fn fetch_models_and_quota(
                         }
 
                         let clean_id = match id.as_str() {
-                            "claude-sonnet-5-5-high" | "claude-sonnet-5-5" => "claude-sonnet-5-5".to_string(),
+                            "claude-sonnet-5-5-high" | "claude-sonnet-5-5" | "claude-3-7-sonnet" => "claude-sonnet-5-5".to_string(),
                             "claude-opus-5-5-high" | "claude-opus-5-5" => "claude-opus-5-5".to_string(),
                             "claude-sonnet-4-6" => "claude-sonnet-4-6".to_string(),
                             "claude-opus-4-6-thinking" | "claude-opus-4-6" => "claude-opus-4-6".to_string(),
-                            "claude-3-7-sonnet" => "claude-sonnet-5-5".to_string(),
-                            "gemini-3.8-flash-high" | "gemini-3.8-flash-tiered" => "gemini-3.8-flash".to_string(),
-                            "gemini-2.5-flash-thinking" | "gemini-2.5-flash" => "gemini-3.8-flash".to_string(),
-                            "gemini-2.5-pro" => "gemini-4-argon".to_string(),
-                            other => other.to_string(),
+                            "gemini-3.8-flash-high" | "gemini-3.8-flash-medium" | "gemini-3.8-flash-low" | "gemini-3.8-flash-tiered" | "gemini-3.8-flash" | "gemini-2.5-flash-thinking" | "gemini-2.5-flash" => "gemini-3.8-flash".to_string(),
+                            "gemini-4-argon" | "gemini-2.5-pro" => "gemini-4-argon".to_string(),
+                            other => {
+                                let (base, _) = crate::proxy::router::parse_model_and_reasoning(other, None);
+                                base
+                            }
                         };
 
                         let disp_name = match clean_id.as_str() {
@@ -737,7 +760,16 @@ pub fn build_antigravity_payload(
     // Configure thinking / reasoning according to model architecture and user selection
     match reasoning_effort {
         Some(ReasoningEffort::Off) => {
-            // Explicitly off: do not attach thinkingConfig to payload
+            if target_model.contains("argon") {
+                gen_config["thinkingConfig"] = serde_json::json!({
+                    "thinkingLevel": "OFF",
+                    "thinkingBudget": 0
+                });
+            } else if target_model.contains("flash") {
+                gen_config["thinkingConfig"] = serde_json::json!({
+                    "thinkingBudget": 0
+                });
+            }
         }
         Some(ReasoningEffort::Low) => {
             if target_model.contains("argon") {
@@ -818,6 +850,16 @@ pub fn build_antigravity_payload(
                 } else if target_model.ends_with("-high") {
                     gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingBudget": 16384 });
                 }
+            }
+        }
+    }
+
+    // Enforce maxOutputTokens > thinkingBudget for Claude and reasoning models
+    if let Some(budget) = gen_config.get("thinkingConfig").and_then(|tc| tc.get("thinkingBudget")).and_then(|b| b.as_i64()) {
+        if budget > 0 {
+            let current_max = gen_config.get("maxOutputTokens").and_then(|m| m.as_i64()).unwrap_or(0);
+            if current_max <= budget {
+                gen_config["maxOutputTokens"] = serde_json::json!(budget + 1024);
             }
         }
     }
@@ -952,7 +994,16 @@ pub fn build_antigravity_payload_from_claude(
 
     match reasoning_effort {
         Some(ReasoningEffort::Off) => {
-            // Off: do not attach thinkingConfig
+            if target_model.contains("argon") {
+                gen_config["thinkingConfig"] = serde_json::json!({
+                    "thinkingLevel": "OFF",
+                    "thinkingBudget": 0
+                });
+            } else if target_model.contains("flash") {
+                gen_config["thinkingConfig"] = serde_json::json!({
+                    "thinkingBudget": 0
+                });
+            }
         }
         Some(ReasoningEffort::Low) => {
             if target_model.contains("argon") {
@@ -1005,6 +1056,16 @@ pub fn build_antigravity_payload_from_claude(
     if !gen_config.as_object().unwrap().contains_key("thinkingConfig") {
         if let Some(temp) = req.get("temperature").and_then(|v| v.as_f64()) {
             gen_config["temperature"] = serde_json::json!(temp);
+        }
+    }
+
+    // Enforce maxOutputTokens > thinkingBudget for Claude and reasoning models
+    if let Some(budget) = gen_config.get("thinkingConfig").and_then(|tc| tc.get("thinkingBudget")).and_then(|b| b.as_i64()) {
+        if budget > 0 {
+            let current_max = gen_config.get("maxOutputTokens").and_then(|m| m.as_i64()).unwrap_or(0);
+            if current_max <= budget {
+                gen_config["maxOutputTokens"] = serde_json::json!(budget + 1024);
+            }
         }
     }
 

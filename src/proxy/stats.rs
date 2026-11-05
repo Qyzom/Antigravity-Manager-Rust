@@ -16,9 +16,15 @@ pub struct LogItem {
     pub model: String,
     pub status: u16,
     pub tokens: u64,
+    #[serde(default)]
+    pub prompt_tokens: u64,
+    #[serde(default)]
+    pub completion_tokens: u64,
     pub latency_ms: u64,
     #[serde(default)]
     pub account: String,
+    #[serde(default)]
+    pub reasoning_effort: String,
     #[serde(default)]
     pub request_headers: String,
     #[serde(default)]
@@ -55,6 +61,12 @@ pub struct ProxyStats {
     pub logging_enabled: AtomicBool,
     pub max_log_capacity: AtomicUsize,
     pub recent_logs: RwLock<VecDeque<LogItem>>,
+}
+
+impl Default for ProxyStats {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ProxyStats {
@@ -169,10 +181,12 @@ impl ProxyStats {
             "",
             "",
             "",
+            "",
             None,
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn record_detailed_request(
         &self,
         method: &str,
@@ -182,6 +196,45 @@ impl ProxyStats {
         tokens: u64,
         latency_ms: u64,
         account: &str,
+        reasoning_effort: &str,
+        request_headers: &str,
+        request_body: &str,
+        response_body: &str,
+        error_msg: Option<&str>,
+    ) {
+        let prompt_est = (tokens as f64 * 0.45) as u64;
+        let completion_est = (tokens as f64 * 0.40) as u64;
+        self.record_detailed_request_exact(
+            method,
+            path,
+            model,
+            status,
+            tokens,
+            prompt_est,
+            completion_est,
+            latency_ms,
+            account,
+            reasoning_effort,
+            request_headers,
+            request_body,
+            response_body,
+            error_msg,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn record_detailed_request_exact(
+        &self,
+        method: &str,
+        path: &str,
+        model: &str,
+        status: u16,
+        tokens: u64,
+        prompt_tokens: u64,
+        completion_tokens: u64,
+        latency_ms: u64,
+        account: &str,
+        reasoning_effort: &str,
         request_headers: &str,
         request_body: &str,
         response_body: &str,
@@ -195,11 +248,9 @@ impl ProxyStats {
         }
 
         self.total_tokens.fetch_add(tokens, Ordering::Relaxed);
-        let prompt_est = (tokens as f64 * 0.45) as u64;
-        let completion_est = (tokens as f64 * 0.40) as u64;
-        let thinking_est = tokens.saturating_sub(prompt_est + completion_est);
-        self.prompt_tokens.fetch_add(prompt_est, Ordering::Relaxed);
-        self.completion_tokens.fetch_add(completion_est, Ordering::Relaxed);
+        let thinking_est = tokens.saturating_sub(prompt_tokens + completion_tokens);
+        self.prompt_tokens.fetch_add(prompt_tokens, Ordering::Relaxed);
+        self.completion_tokens.fetch_add(completion_tokens, Ordering::Relaxed);
         self.thinking_tokens.fetch_add(thinking_est, Ordering::Relaxed);
 
         self.total_latency_ms.fetch_add(latency_ms, Ordering::Relaxed);
@@ -209,7 +260,7 @@ impl ProxyStats {
         }
 
         // Periodically save stats to stats.json
-        if self.total_requests.load(Ordering::Relaxed) % 5 == 0 {
+        if self.total_requests.load(Ordering::Relaxed).is_multiple_of(5) {
             self.save_persistent_stats();
         }
 
@@ -223,8 +274,11 @@ impl ProxyStats {
                 model: model.to_string(),
                 status,
                 tokens,
+                prompt_tokens,
+                completion_tokens,
                 latency_ms,
                 account: account.to_string(),
+                reasoning_effort: reasoning_effort.to_string(),
                 request_headers: request_headers.to_string(),
                 request_body: request_body.to_string(),
                 response_body: response_body.to_string(),
@@ -256,7 +310,7 @@ impl ProxyStats {
         let reqs = self.total_requests.load(Ordering::Relaxed);
         let tokens = self.total_tokens.load(Ordering::Relaxed);
         let total_lat = self.total_latency_ms.load(Ordering::Relaxed);
-        let avg_lat = if reqs > 0 { total_lat / reqs } else { 0 };
+        let avg_lat = total_lat.checked_div(reqs).unwrap_or(0);
         (reqs, tokens, avg_lat)
     }
 
@@ -268,7 +322,7 @@ impl ProxyStats {
         let completion = self.completion_tokens.load(Ordering::Relaxed);
         let thinking = self.thinking_tokens.load(Ordering::Relaxed);
         let total_lat = self.total_latency_ms.load(Ordering::Relaxed);
-        let avg_lat = if reqs > 0 { total_lat / reqs } else { 0 };
+        let avg_lat = total_lat.checked_div(reqs).unwrap_or(0);
         let max_lat = self.max_latency_ms.load(Ordering::Relaxed);
         (reqs, success, errors, prompt, completion, thinking, avg_lat, max_lat)
     }

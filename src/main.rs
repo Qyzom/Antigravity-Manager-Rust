@@ -90,6 +90,76 @@ fn full_circle_path(cx: f64, cy: f64, r: f64) -> String {
     format!("M {:.1} {:.1} A {:.1} {:.1} 0 1 1 {:.1} {:.1} A {:.1} {:.1} 0 1 1 {:.1} {:.1}", cx, cy - r, r, r, cx, cy + r, r, r, cx, cy - r)
 }
 
+fn get_display_models(cfg: &AppConfig) -> Vec<ModelItemData> {
+    let mut result = Vec::new();
+    let mut seen_ids = std::collections::HashSet::new();
+
+    for m in &cfg.models {
+        let (base_id, _) = aroxy::proxy::router::parse_model_and_reasoning(&m.id, None);
+
+        if cfg.group_reasoning_clones {
+            // Grouping ON: Only show unique base flagship models
+            if seen_ids.insert(base_id.clone()) {
+                let disp_name = match base_id.as_str() {
+                    "claude-sonnet-5-5" => "Claude Sonnet 5.5",
+                    "claude-opus-5-5" => "Claude Opus 5.5",
+                    "claude-sonnet-4-6" => "Claude Sonnet 4.6",
+                    "claude-opus-4-6" => "Claude Opus 4.6",
+                    "gemini-4-argon" => "Gemini 4 Argon",
+                    "gemini-3.8-flash" => "Gemini 3.8 Flash",
+                    _ => &m.display_name,
+                };
+                result.push(ModelItemData {
+                    id: base_id.into(),
+                    display_name: disp_name.to_string().into(),
+                    provider: m.provider.clone().into(),
+                    tier: m.tier.clone().into(),
+                    is_enabled: m.is_enabled,
+                    supports_thinking: m.supports_thinking,
+                });
+            }
+        } else {
+            // Grouping OFF: Show base model + unique clones (-low, -medium, -high)
+            if seen_ids.insert(base_id.clone()) {
+                let disp_name = match base_id.as_str() {
+                    "claude-sonnet-5-5" => "Claude Sonnet 5.5",
+                    "claude-opus-5-5" => "Claude Opus 5.5",
+                    "claude-sonnet-4-6" => "Claude Sonnet 4.6",
+                    "claude-opus-4-6" => "Claude Opus 4.6",
+                    "gemini-4-argon" => "Gemini 4 Argon",
+                    "gemini-3.8-flash" => "Gemini 3.8 Flash",
+                    _ => &m.display_name,
+                };
+                result.push(ModelItemData {
+                    id: base_id.clone().into(),
+                    display_name: disp_name.to_string().into(),
+                    provider: m.provider.clone().into(),
+                    tier: m.tier.clone().into(),
+                    is_enabled: m.is_enabled,
+                    supports_thinking: m.supports_thinking,
+                });
+
+                if m.supports_thinking {
+                    for (suffix, label) in [("-low", "Low"), ("-medium", "Medium"), ("-high", "High")] {
+                        let clone_id = format!("{}{}", base_id, suffix);
+                        if seen_ids.insert(clone_id.clone()) {
+                            result.push(ModelItemData {
+                                id: clone_id.into(),
+                                display_name: format!("{} ({})", disp_name, label).into(),
+                                provider: m.provider.clone().into(),
+                                tier: m.tier.clone().into(),
+                                is_enabled: m.is_enabled,
+                                supports_thinking: true,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    result
+}
+
 fn apply_translations(ui: &MainWindow, lang: Language) {
     let t = get_translations(lang);
     let i18n_struct = I18nData {
@@ -183,6 +253,17 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_show_stats: t.lbl_show_stats.into(),
         lbl_hide_about: t.lbl_hide_about.into(),
         lbl_hide_about_desc: t.lbl_hide_about_desc.into(),
+        lbl_billing_emulation: t.lbl_billing_emulation.into(),
+        lbl_billing_emulation_desc: t.lbl_billing_emulation_desc.into(),
+        lbl_reasoning_effort: t.lbl_reasoning_effort.into(),
+        lbl_reasoning_default: t.lbl_reasoning_default.into(),
+        lbl_reasoning_off: t.lbl_reasoning_off.into(),
+        lbl_reasoning_low: t.lbl_reasoning_low.into(),
+        lbl_reasoning_medium: t.lbl_reasoning_medium.into(),
+        lbl_reasoning_high: t.lbl_reasoning_high.into(),
+        lbl_jitter_percent: t.lbl_jitter_percent.into(),
+        lbl_inspector_prompt_tok: t.lbl_inspector_prompt_tok.into(),
+        lbl_inspector_comp_tok: t.lbl_inspector_comp_tok.into(),
         lbl_added_at: t.lbl_added_at.into(),
         lbl_check_updates: t.lbl_check_updates.into(),
         lbl_clear_logs_exit: t.lbl_clear_logs_exit.into(),
@@ -354,8 +435,34 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_active_upper: t.lbl_active_upper.into(),
         lbl_antifraud_badge: t.lbl_antifraud_badge.into(),
         lbl_antifraud_desc: t.lbl_antifraud_desc.into(),
+        lbl_total: t.lbl_total.into(),
+        lbl_proxy_engine_online: t.lbl_proxy_engine_online.into(),
+        lbl_auto_selected: t.lbl_auto_selected.into(),
+        lbl_just_now: t.lbl_just_now.into(),
+        lbl_auto_device_id: t.lbl_auto_device_id.into(),
+        lbl_upstream_models_suffix: t.lbl_upstream_models_suffix.into(),
+        lbl_empty_response: t.lbl_empty_response.into(),
+        lbl_test_default_prompt: t.lbl_test_default_prompt.clone().into(),
+        lbl_test_response_placeholder: t.lbl_test_response_placeholder.into(),
+        test_status_ready: t.test_status_ready.clone().into(),
+        test_status_dispatching: t.test_status_dispatching.into(),
+        test_status_waiting_token: t.test_status_waiting_token.into(),
+        test_status_cancelled: t.test_status_cancelled.into(),
+        test_status_error: t.test_status_error.into(),
+        test_status_success: t.test_status_success.into(),
+        test_err_request_prefix: t.test_err_request_prefix.into(),
+        lbl_acc_claude_5h: t.lbl_acc_claude_5h.into(),
+        lbl_acc_claude_week: t.lbl_acc_claude_week.into(),
+        lbl_acc_gemini_5h: t.lbl_acc_gemini_5h.into(),
+        lbl_acc_gemini_week: t.lbl_acc_gemini_week.into(),
+        lbl_tray_show: t.lbl_tray_show.into(),
+        lbl_tray_exit: t.lbl_tray_exit.into(),
+        lbl_tray_tooltip: t.lbl_tray_tooltip.into(),
+        lbl_config_files_hint: t.lbl_config_files_hint.into(),
     };
     ui.set_github_update_status(t.btn_check_updates.clone().into());
+    ui.set_test_prompt(t.lbl_test_default_prompt.clone().into());
+    ui.set_test_status(t.test_status_ready.clone().into());
     ui.set_i18n(i18n_struct);
     ui.set_current_language(lang.to_index());
 }
@@ -451,8 +558,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let balancer_arc = Arc::new(aroxy::proxy::balancer::LoadBalancer::new());
     let cfg_version = Arc::new(AtomicU64::new(1));
     let (stop_sender, stop_receiver) = watch::channel(false);
+    let (proxy_enable_tx, mut proxy_enable_rx) = watch::channel(true);
 
-    let proxy_running = Arc::new(AtomicBool::new(true));
+    let proxy_running = Arc::new(AtomicBool::new(false));
 
     // Spawn proxy server in background
     let s_cfg = Arc::clone(&config_arc);
@@ -460,15 +568,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let s_balancer = Arc::clone(&balancer_arc);
     let s_ver = Arc::clone(&cfg_version);
     let mut s_stop_rx = stop_receiver.clone();
+    let p_running_srv = Arc::clone(&proxy_running);
 
     tokio::spawn(async move {
-        let (host, port) = {
-            let cfg = s_cfg.read();
-            (cfg.host.clone(), cfg.port)
-        };
-        let addr = format!("{}:{}", host, port);
-        log::info!("Starting Aroxy core server on http://{}", addr);
-
         let client = reqwest::Client::builder()
             .tcp_nodelay(true)
             .tcp_keepalive(Some(Duration::from_secs(30)))
@@ -479,7 +581,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or_default();
 
         let state = AppState {
-            config: s_cfg,
+            config: s_cfg.clone(),
             stats: s_stats,
             balancer: s_balancer,
             http_client: client,
@@ -487,25 +589,81 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             proxy_clients: Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new())),
         };
 
-        let app = create_proxy_router(state);
-        let listener = match tokio::net::TcpListener::bind(&addr).await {
-            Ok(l) => l,
-            Err(e) => {
-                log::error!("Failed to bind to {}: {}", addr, e);
-                return;
+        loop {
+            if *s_stop_rx.borrow() {
+                break;
             }
-        };
 
-        let server = axum::serve(listener, app);
-        tokio::select! {
-            res = server => {
-                if let Err(e) = res {
-                    log::error!("Server error: {}", e);
+            if !*proxy_enable_rx.borrow_and_update() {
+                p_running_srv.store(false, Ordering::SeqCst);
+                tokio::select! {
+                    _ = proxy_enable_rx.changed() => {
+                        continue;
+                    }
+                    _ = s_stop_rx.changed() => {
+                        break;
+                    }
                 }
             }
-            _ = s_stop_rx.changed() => {
-                log::info!("Aroxy server received shutdown signal.");
+
+            let (host, port) = {
+                let cfg = s_cfg.read();
+                (cfg.host.clone(), cfg.port)
+            };
+            let addr = format!("{}:{}", host, port);
+            log::info!("Starting Aroxy core server on http://{}", addr);
+
+            // Resilient bind: retry with backoff if port is temporarily in TIME_WAIT / in use
+            let mut listener_opt = None;
+            for attempt in 1..=10 {
+                match tokio::net::TcpListener::bind(&addr).await {
+                    Ok(l) => {
+                        listener_opt = Some(l);
+                        break;
+                    }
+                    Err(e) => {
+                        log::warn!("Bind attempt {} failed for {}: {}. Retrying in 300ms...", attempt, addr, e);
+                        tokio::time::sleep(Duration::from_millis(300)).await;
+                    }
+                }
             }
+
+            let listener = match listener_opt {
+                Some(l) => {
+                    log::info!("Aroxy core server successfully bound and listening on http://{}", addr);
+                    p_running_srv.store(true, Ordering::SeqCst);
+                    l
+                }
+                None => {
+                    log::error!("Aroxy failed to bind to {} after 10 attempts", addr);
+                    p_running_srv.store(false, Ordering::SeqCst);
+                    tokio::select! {
+                        _ = proxy_enable_rx.changed() => continue,
+                        _ = s_stop_rx.changed() => break,
+                    }
+                }
+            };
+
+            let app = create_proxy_router(state.clone());
+            let server = axum::serve(listener, app);
+
+            tokio::select! {
+                res = server => {
+                    if let Err(e) = res {
+                        log::error!("Aroxy server error: {}", e);
+                    }
+                }
+                _ = proxy_enable_rx.changed() => {
+                    log::info!("Aroxy server shutting down listener per user toggle.");
+                }
+                _ = s_stop_rx.changed() => {
+                    log::info!("Aroxy server received application shutdown signal.");
+                    break;
+                }
+            }
+
+            p_running_srv.store(false, Ordering::SeqCst);
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
     });
 
@@ -839,6 +997,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let main_window = MainWindow::new()?;
     let window_handle = main_window.as_weak();
 
+    // System Tray Instance Holder
+    let tray_holder: Rc<std::cell::RefCell<Option<SystemTray>>> = Rc::new(std::cell::RefCell::new(None));
+    {
+        let initial_lang = Language::from_str_code(&config_arc.read().language);
+        let t_init = get_translations(initial_lang);
+        let w_tray = window_handle.clone();
+        if let Ok(tray) = SystemTray::new(&t_init.lbl_tray_show, &t_init.lbl_tray_exit, &t_init.lbl_tray_tooltip, move |action| match action {
+            TrayAction::Show | TrayAction::Toggle => {
+                if let Some(w) = w_tray.upgrade() {
+                    let _ = w.show();
+                }
+            }
+            TrayAction::Exit => {
+                std::process::exit(0);
+            }
+        }) {
+            *tray_holder.borrow_mut() = Some(tray);
+        }
+    }
+
     // Accounts model
     let accounts_model = Rc::new(VecModel::<AccountData>::default());
     main_window.set_accounts(ModelRc::from(accounts_model.clone()));
@@ -871,7 +1049,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_hide_sidebar_brand(cfg.hide_sidebar_brand);
         main_window.set_show_logs_tab(cfg.show_logs_tab);
         main_window.set_show_stats_tab(cfg.show_stats_tab);
-        main_window.set_hide_about_tab(cfg.hide_about_tab);
+        main_window.set_show_about_tab(cfg.show_about_tab);
+        main_window.set_enable_billing_emulation(cfg.enable_billing_emulation);
+        main_window.set_cadence_jitter_percent(cfg.cadence_jitter_percent as i32);
         main_window.set_setting_check_updates(cfg.check_updates_startup);
         main_window.set_setting_clear_logs_exit(cfg.clear_logs_on_exit);
         main_window.set_quota_protection_threshold(cfg.quota_protection_threshold as i32);
@@ -896,7 +1076,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_config_folder_path(f_path.to_string_lossy().to_string().into());
         let size_mb = (f_size as f64) / (1024.0 * 1024.0);
         let size_display = if size_mb < 0.1 {
-            format!("{} KB", (f_size + 1023) / 1024)
+            format!("{} KB", f_size.div_ceil(1024))
         } else {
             format!("{:.1} MB", size_mb)
         };
@@ -936,21 +1116,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
         }
 
-        let filtered_models = if cfg.group_reasoning_clones {
-            cfg.models.iter().filter(|m| !m.id.ends_with("-low") && !m.id.ends_with("-medium") && !m.id.ends_with("-high")).collect::<Vec<_>>()
-        } else {
-            cfg.models.iter().collect::<Vec<_>>()
-        };
-
-        for m in filtered_models {
-            models_model.push(ModelItemData {
-                id: m.id.clone().into(),
-                display_name: m.display_name.clone().into(),
-                provider: m.provider.clone().into(),
-                tier: m.tier.clone().into(),
-                is_enabled: m.is_enabled,
-                supports_thinking: m.supports_thinking,
-            });
+        for m in get_display_models(&cfg) {
+            models_model.push(m);
         }
 
         main_window.set_global_claude_percent(cfg.aggregate_claude_gpt_percent());
@@ -999,34 +1166,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(h) = h_grp.upgrade() {
             h.set_group_reasoning_clones(next_val);
             let cfg = c_grp.read();
-            let filtered_models = if next_val {
-                cfg.models.iter().filter(|m| !m.id.ends_with("-low") && !m.id.ends_with("-medium") && !m.id.ends_with("-high")).collect::<Vec<_>>()
-            } else {
-                cfg.models.iter().collect::<Vec<_>>()
-            };
-            m_grp.set_vec(
-                filtered_models
-                    .into_iter()
-                    .map(|m| ModelItemData {
-                        id: m.id.clone().into(),
-                        display_name: m.display_name.clone().into(),
-                        provider: m.provider.clone().into(),
-                        tier: m.tier.clone().into(),
-                        is_enabled: m.is_enabled,
-                        supports_thinking: m.supports_thinking,
-                    })
-                    .collect::<Vec<_>>(),
-            );
+            m_grp.set_vec(get_display_models(&cfg));
         }
         v_grp.fetch_add(1, Ordering::SeqCst);
     });
 
     // Toggle proxy server state
     let p_running = Arc::clone(&proxy_running);
+    let p_enable_tx = proxy_enable_tx.clone();
     let h_weak = window_handle.clone();
     main_window.on_toggle_proxy(move || {
         let current = p_running.load(Ordering::SeqCst);
         let next = !current;
+        let _ = p_enable_tx.send(next);
         p_running.store(next, Ordering::SeqCst);
         if let Some(h) = h_weak.upgrade() {
             h.set_proxy_running(next);
@@ -1382,8 +1534,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 h.set_info_account_gemini_week_pct(acc.gemini_weekly_percent);
                 h.set_info_account_gemini_week_reset(acc.gemini_weekly_reset.clone().into());
                 h.set_info_account_fingerprint(acc.fingerprint.clone().into());
-                h.set_info_account_models(format!("{} upstream models available", cfg.models.len()).into());
-                h.set_info_account_added_at(format_elapsed_time(acc.added_at.unwrap_or(0), Language::from_str_code(&cfg.language)).into());
+                let lang = Language::from_str_code(&cfg.language);
+                let t = get_translations(lang);
+                h.set_info_account_models(format!("{} {}", cfg.models.len(), t.lbl_upstream_models_suffix).into());
+                h.set_info_account_added_at(format_elapsed_time(acc.added_at.unwrap_or(0), lang).into());
                 h.set_info_account_error(acc.error_message.clone().unwrap_or_default().into());
                 h.set_show_account_info(true);
             }
@@ -1497,7 +1651,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .build()
                 .unwrap_or_default();
             let res = client
-                .get("https://api.github.com/repos/Qyzom/Aroxy/releases/latest")
+                .get("https://api.github.com/repos/Qyzom/Antigravity-Proxy-Rust/releases/latest")
                 .header("User-Agent", "Aroxy-Client")
                 .send()
                 .await;
@@ -1556,13 +1710,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Open Test Model Dialog callback
     let h_test_dlg = window_handle.clone();
+    let c_test_dlg = Arc::clone(&config_arc);
     main_window.on_open_test_dialog(move |model_id_slint| {
         if let Some(h) = h_test_dlg.upgrade() {
+            let lang = Language::from_str_code(&c_test_dlg.read().language);
+            let t = get_translations(lang);
             h.set_test_model_id(model_id_slint);
-            h.set_test_status("Ready".into());
+            h.set_test_status(t.test_status_ready.into());
             h.set_test_latency("0 ms".into());
             h.set_test_tokens("0".into());
             h.set_test_response("".into());
+            h.set_test_reasoning_effort_index(0);
+            if h.get_test_prompt().is_empty() {
+                h.set_test_prompt(t.lbl_test_default_prompt.into());
+            }
             h.set_show_test_dialog(true);
         }
     });
@@ -1573,10 +1734,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Cancel test callback
     let cancel_flag = Arc::clone(&test_cancelled);
     let h_cancel = window_handle.clone();
+    let c_cancel = Arc::clone(&config_arc);
     main_window.on_cancel_test_request(move || {
         cancel_flag.store(true, Ordering::SeqCst);
         if let Some(h) = h_cancel.upgrade() {
-            h.set_test_status("Cancelled".into());
+            let lang = Language::from_str_code(&c_cancel.read().language);
+            let t = get_translations(lang);
+            h.set_test_status(t.test_status_cancelled.into());
             h.set_test_running(false);
         }
     });
@@ -1584,13 +1748,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Execute test request callback
     let h_test_exec = window_handle.clone();
     let port_test = config_arc.read().port;
+    let c_test_exec = Arc::clone(&config_arc);
     let cancel_exec = Arc::clone(&test_cancelled);
     main_window.on_execute_test_request(move || {
         if let Some(h) = h_test_exec.upgrade() {
+            let lang = Language::from_str_code(&c_test_exec.read().language);
+            let t = get_translations(lang);
             cancel_exec.store(false, Ordering::SeqCst);
             h.set_test_running(true);
-            h.set_test_status("Dispatching...".into());
-            h.set_test_response("Waiting for first token...".into());
+            h.set_test_status(t.test_status_dispatching.into());
+            h.set_test_response(t.test_status_waiting_token.into());
 
             let prompt = h.get_test_prompt().to_string();
             let model = h.get_test_model_id().to_string();
@@ -1598,9 +1765,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let max_tok: u64 = h.get_test_max_tokens().to_string().parse().unwrap_or(2048);
             let temp: f64 = h.get_test_temperature().to_string().parse().unwrap_or(0.7);
             let is_stream = h.get_test_stream();
+            let effort_idx = h.get_test_reasoning_effort_index();
+            let reasoning_effort = match effort_idx {
+                1 => Some("none"),
+                2 => Some("low"),
+                3 => Some("medium"),
+                4 => Some("high"),
+                _ => None,
+            };
 
             let h_async = h_test_exec.clone();
             let cancel_ref = Arc::clone(&cancel_exec);
+            let c_async_err = Arc::clone(&c_test_exec);
 
             tokio::spawn(async move {
                 let start = std::time::Instant::now();
@@ -1611,13 +1787,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap_or_default();
 
                 let test_url = format!("http://127.0.0.1:{}/v1/chat/completions", port_test);
-                let req_payload = serde_json::json!({
+                let mut req_payload = serde_json::json!({
                     "model": model,
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": temp,
                     "max_tokens": max_tok,
                     "stream": is_stream
                 });
+                if let Some(effort) = reasoning_effort {
+                    req_payload["reasoning_effort"] = serde_json::json!(effort);
+                }
 
                 if cancel_ref.load(Ordering::SeqCst) {
                     return;
@@ -1627,74 +1806,121 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Ok(resp) => {
                         let status_code = resp.status();
                         let lat = start.elapsed().as_millis();
-                        let body_text = resp.text().await.unwrap_or_default();
 
                         if cancel_ref.load(Ordering::SeqCst) {
                             return;
                         }
 
-                        let (content_text, tokens) = if is_stream {
-                            // Parse SSE stream chunks data: {...}
+                        if !status_code.is_success() {
+                            let body_text = resp.text().await.unwrap_or_default();
+                            let clean_err = antigravity::extract_clean_error_message(&body_text);
+                            let err_msg = format!("Error ({}): {}", status_code.as_u16(), clean_err);
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(ui) = h_async.upgrade() {
+                                    let reason = status_code.canonical_reason().unwrap_or("Error");
+                                    ui.set_test_status(format!("{} {}", status_code.as_u16(), reason).into());
+                                    ui.set_test_latency(format!("{} ms", lat).into());
+                                    ui.set_test_tokens("0".into());
+                                    ui.set_test_response(err_msg.into());
+                                    ui.set_test_running(false);
+                                }
+                            });
+                            return;
+                        }
+
+                        if is_stream {
+                            use futures_util::StreamExt;
+                            let mut stream = resp.bytes_stream();
                             let mut full_text = String::new();
+                            let mut buffer = String::new();
                             let mut total_tok: u64 = 0;
-                            for line in body_text.lines() {
-                                let trimmed = line.trim();
-                                if let Some(rest) = trimmed.strip_prefix("data:") {
-                                    let json_part = rest.trim();
-                                    if json_part == "[DONE]" {
-                                        continue;
-                                    }
-                                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_part) {
-                                        if let Some(delta) = val.pointer("/choices/0/delta/content").and_then(|c| c.as_str()) {
-                                            full_text.push_str(delta);
-                                        }
-                                        if let Some(usage_tok) = val.pointer("/usage/total_tokens").and_then(|t| t.as_u64()) {
-                                            total_tok = usage_tok;
+
+                            while let Some(chunk_res) = stream.next().await {
+                                if cancel_ref.load(Ordering::SeqCst) {
+                                    return;
+                                }
+                                if let Ok(chunk_bytes) = chunk_res {
+                                    if let Ok(s) = std::str::from_utf8(&chunk_bytes) {
+                                        buffer.push_str(s);
+                                        while let Some(pos) = buffer.find("\n\n") {
+                                            let event = buffer[..pos].to_string();
+                                            buffer = buffer[pos + 2..].to_string();
+                                            for line in event.lines() {
+                                                if let Some(data) = line.strip_prefix("data:") {
+                                                    let trimmed = data.trim();
+                                                    if trimmed == "[DONE]" {
+                                                        break;
+                                                    }
+                                                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                                                        if let Some(delta) = val.pointer("/choices/0/delta/content").and_then(|c| c.as_str()) {
+                                                            full_text.push_str(delta);
+                                                            let current_text = full_text.clone();
+                                                            let h_delta = h_async.clone();
+                                                            let _ = slint::invoke_from_event_loop(move || {
+                                                                if let Some(ui) = h_delta.upgrade() {
+                                                                    ui.set_test_response(current_text.into());
+                                                                }
+                                                            });
+                                                        }
+                                                        if let Some(usage_tok) = val.pointer("/usage/total_tokens").and_then(|t| t.as_u64()) {
+                                                            total_tok = usage_tok;
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
-                            if full_text.is_empty() {
-                                if status_code.is_success() {
-                                    ("(stream completed with no text delta)".to_string(), 0)
-                                } else {
-                                    (format!("Error ({}): {}", status_code.as_u16(), body_text), 0)
-                                }
+
+                            if total_tok == 0 {
+                                total_tok = (full_text.split_whitespace().count() as u64).max(1);
+                            }
+                            let final_lat = start.elapsed().as_millis();
+                            let final_text = if full_text.is_empty() {
+                                "(stream completed with no text delta)".to_string()
                             } else {
-                                if total_tok == 0 {
-                                    total_tok = (full_text.split_whitespace().count() as u64).max(1);
+                                full_text
+                            };
+
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(ui) = h_async.upgrade() {
+                                    ui.set_test_status(format!("{} OK", status_code.as_u16()).into());
+                                    ui.set_test_latency(format!("{} ms", final_lat).into());
+                                    ui.set_test_tokens(total_tok.to_string().into());
+                                    ui.set_test_response(final_text.into());
+                                    ui.set_test_running(false);
                                 }
-                                (full_text, total_tok)
-                            }
-                        } else if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&body_text) {
-                            if status_code.is_success() {
+                            });
+                        } else {
+                            let body_text = resp.text().await.unwrap_or_default();
+                            let final_lat = start.elapsed().as_millis();
+                            let (content_text, tokens) = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&body_text) {
                                 let text = parsed["choices"][0]["message"]["content"].as_str().unwrap_or(&body_text).to_string();
                                 let tok = parsed["usage"]["total_tokens"].as_u64().unwrap_or(45);
                                 (text, tok)
                             } else {
-                                let err_msg = parsed.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).unwrap_or(&body_text);
-                                (format!("Error ({}): {}", status_code.as_u16(), err_msg), 0)
-                            }
-                        } else {
-                            (body_text, 0)
-                        };
+                                (body_text, 0)
+                            };
 
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(ui) = h_async.upgrade() {
-                                let reason = status_code.canonical_reason().unwrap_or(if status_code.is_success() { "OK" } else { "Error" });
-                                ui.set_test_status(format!("{} {}", status_code.as_u16(), reason).into());
-                                ui.set_test_latency(format!("{} ms", lat).into());
-                                ui.set_test_tokens(tokens.to_string().into());
-                                ui.set_test_response(content_text.into());
-                                ui.set_test_running(false);
-                            }
-                        });
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(ui) = h_async.upgrade() {
+                                    ui.set_test_status(format!("{} OK", status_code.as_u16()).into());
+                                    ui.set_test_latency(format!("{} ms", final_lat).into());
+                                    ui.set_test_tokens(tokens.to_string().into());
+                                    ui.set_test_response(content_text.into());
+                                    ui.set_test_running(false);
+                                }
+                            });
+                        }
                     }
                     Err(e) => {
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(ui) = h_async.upgrade() {
-                                ui.set_test_status("Error".into());
-                                ui.set_test_response(format!("Request error: {}", e).into());
+                                let lang = Language::from_str_code(&c_async_err.read().language);
+                                let t = get_translations(lang);
+                                ui.set_test_status(t.test_status_error.into());
+                                ui.set_test_response(format!("{}{}", t.test_err_request_prefix, e).into());
                                 ui.set_test_running(false);
                             }
                         });
@@ -1716,6 +1942,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     h.set_modal_log_method(item.method.clone().into());
                     h.set_modal_log_path(item.path.clone().into());
                     h.set_modal_log_model(item.model.clone().into());
+                    h.set_modal_log_effort(item.reasoning_effort.clone().into());
                     h.set_modal_log_status(if item.status == 200 { "200 OK".into() } else { format!("{} Error", item.status).into() });
                     h.set_modal_log_tokens(item.tokens.to_string().into());
                     h.set_modal_log_latency(format!("{} ms", item.latency_ms).into());
@@ -1742,12 +1969,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Language switcher callback
     let c_lang = Arc::clone(&config_arc);
     let h_lang = window_handle.clone();
+    let tray_lang = Rc::clone(&tray_holder);
     main_window.on_set_language(move |idx| {
         let lang = Language::from_index(idx);
         {
             let mut cfg = c_lang.write();
             cfg.language = lang.to_code().to_string();
             let _ = cfg.save();
+        }
+        let t = get_translations(lang);
+        if let Some(tray) = tray_lang.borrow().as_ref() {
+            tray.update_labels(&t.lbl_tray_show, &t.lbl_tray_exit, &t.lbl_tray_tooltip);
         }
         if let Some(h) = h_lang.upgrade() {
             apply_translations(&h, lang);
@@ -1961,15 +2193,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let c_abt = Arc::clone(&config_arc);
     let h_abt = window_handle.clone();
-    main_window.on_toggle_hide_about_tab(move || {
+    main_window.on_toggle_show_about_tab(move || {
         let next_val = {
             let mut cfg = c_abt.write();
-            cfg.hide_about_tab = !cfg.hide_about_tab;
+            cfg.show_about_tab = !cfg.show_about_tab;
             let _ = cfg.save();
-            cfg.hide_about_tab
+            cfg.show_about_tab
         };
         if let Some(h) = h_abt.upgrade() {
-            h.set_hide_about_tab(next_val);
+            h.set_show_about_tab(next_val);
+        }
+    });
+
+    let c_bill = Arc::clone(&config_arc);
+    let h_bill = window_handle.clone();
+    main_window.on_toggle_billing_emulation(move || {
+        let next_val = {
+            let mut cfg = c_bill.write();
+            cfg.enable_billing_emulation = !cfg.enable_billing_emulation;
+            let _ = cfg.save();
+            cfg.enable_billing_emulation
+        };
+        if let Some(h) = h_bill.upgrade() {
+            h.set_enable_billing_emulation(next_val);
+        }
+    });
+
+    let c_jitter = Arc::clone(&config_arc);
+    let h_jitter = window_handle.clone();
+    main_window.on_set_cadence_jitter_percent(move |val| {
+        {
+            let mut cfg = c_jitter.write();
+            cfg.cadence_jitter_percent = val.clamp(5, 50) as u8;
+            let _ = cfg.save();
+        }
+        if let Some(h) = h_jitter.upgrade() {
+            h.set_cadence_jitter_percent(val);
         }
     });
 
@@ -2009,7 +2268,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             h.set_total_requests("0".into());
             h.set_avg_latency("0 ms".into());
             h.set_stat_success_rate("100%".into());
+            h.set_stat_success_pct(100);
             h.set_stat_error_count("0".into());
+            h.set_stat_error_pct(0);
             h.set_stat_max_latency("0 ms".into());
             h.set_stat_prompt_pct(0);
             h.set_stat_comp_pct(0);
@@ -2021,8 +2282,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             h.set_stat_chart1_path3("".into());
             h.set_stat_chart2_path_succ("".into());
             h.set_stat_chart2_path_err("".into());
-            h.set_stat_chart3_path1("".into());
-            h.set_stat_chart3_path2("".into());
         }
     });
 
@@ -2032,11 +2291,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     main_window.on_open_github_repo(move || {
-        open_in_system("https://github.com/qyzom/aroxy");
+        open_in_system("https://github.com/Qyzom/Antigravity-Proxy-Rust");
     });
 
     main_window.on_open_github_releases(move || {
-        open_in_system("https://github.com/qyzom/aroxy/releases");
+        open_in_system("https://github.com/Qyzom/Antigravity-Proxy-Rust/releases");
     });
 
     let c_pport = Arc::clone(&config_arc);
@@ -2151,35 +2410,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // Initialize System Tray
-    let w_tray = window_handle.clone();
-    let _tray = SystemTray::new(move |action| match action {
-        TrayAction::Show => {
-            if let Some(w) = w_tray.upgrade() {
-                let _ = w.show();
-            }
-        }
-        TrayAction::Toggle => {
-            if let Some(w) = w_tray.upgrade() {
-                let _ = w.show();
-            }
-        }
-        TrayAction::Exit => {
-            std::process::exit(0);
-        }
-    });
-
     // Periodic UI stats and state updater timer
     let timer = slint::Timer::default();
     let s_timer = Arc::clone(&stats_arc);
     let c_timer = Arc::clone(&config_arc);
     let v_timer = Arc::clone(&cfg_version);
     let states_timer = Arc::clone(&account_update_states);
+    let p_running_timer = Arc::clone(&proxy_running);
     let mut last_seen_version: u64 = 0;
     let w_timer = window_handle.clone();
 
     timer.start(slint::TimerMode::Repeated, Duration::from_millis(500), move || {
         if let Some(w) = w_timer.upgrade() {
+            w.set_proxy_running(p_running_timer.load(Ordering::SeqCst));
             let (reqs, tokens, avg_lat) = s_timer.get_metrics();
             w.set_total_requests(reqs.to_string().into());
             w.set_total_tokens(tokens.to_string().into());
@@ -2205,13 +2448,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             w.set_stat_comp_pct(c_pct);
             w.set_stat_think_pct(t_pct);
 
-            let succ_rate = if reqs > 0 {
-                format!("{:.1}%", (succ as f64 / reqs as f64) * 100.0)
+            let (succ_pct, err_pct, succ_rate) = if reqs > 0 {
+                let s = (succ as f64 / reqs as f64) * 100.0;
+                let e = (errs as f64 / reqs as f64) * 100.0;
+                (s.round() as i32, e.round() as i32, format!("{:.1}%", s))
             } else {
-                "100%".to_string()
+                (100, 0, "100%".to_string())
             };
             w.set_stat_success_rate(succ_rate.into());
+            w.set_stat_success_pct(succ_pct);
             w.set_stat_error_count(errs.to_string().into());
+            w.set_stat_error_pct(err_pct);
             w.set_stat_max_latency(format!("{} ms", max_lat).into());
 
             // Circular Vector Charts
@@ -2244,7 +2491,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // Chart 3: Model Traffic Share
-            w.set_stat_chart3_path_bg(full_circle_path(cx, cy, r).into());
             let (claude_pct, gemini_pct) = {
                 let logs_guard = s_timer.recent_logs.read().ok();
                 if let Some(ref logs) = logs_guard {
@@ -2270,9 +2516,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             w.set_stat_claude_pct(claude_pct);
             w.set_stat_gemini_pct(gemini_pct);
-            let cl_deg = (claude_pct as f64) * 3.6;
-            w.set_stat_chart3_path1(arc_svg_path(cx, cy, r, 0.0, cl_deg).into());
-            w.set_stat_chart3_path2(arc_svg_path(cx, cy, r, cl_deg, 359.8).into());
 
             // Sync accounts & models if changed
             let current_version = v_timer.load(Ordering::Relaxed);
@@ -2340,25 +2583,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
-                let filtered_models = if cfg.group_reasoning_clones {
-                    cfg.models.iter().filter(|m| !m.id.ends_with("-low") && !m.id.ends_with("-medium") && !m.id.ends_with("-high")).collect::<Vec<_>>()
-                } else {
-                    cfg.models.iter().collect::<Vec<_>>()
-                };
-
-                models_model.set_vec(
-                    filtered_models
-                        .into_iter()
-                        .map(|m| ModelItemData {
-                            id: m.id.clone().into(),
-                            display_name: m.display_name.clone().into(),
-                            provider: m.provider.clone().into(),
-                            tier: m.tier.clone().into(),
-                            is_enabled: m.is_enabled,
-                            supports_thinking: m.supports_thinking,
-                        })
-                        .collect::<Vec<_>>(),
-                );
+                models_model.set_vec(get_display_models(&cfg));
 
                 w.set_global_claude_percent(cfg.aggregate_claude_gpt_percent());
                 w.set_global_claude_label(cfg.format_claude_quota().into());

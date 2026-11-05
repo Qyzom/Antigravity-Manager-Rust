@@ -725,4 +725,119 @@ mod tests {
         // Invalid JWT
         assert_eq!(extract_email_from_jwt("random-junk"), None);
     }
+
+    #[test]
+    fn test_stream_usage_chunk_and_smoothing() {
+        use aroxy::proxy::mappers::openai::{create_stream_chunk_with_usage, create_stream_usage_chunk, OpenAIUsage};
+        use aroxy::proxy::stream::emit_smooth_chunks;
+
+        let usage = OpenAIUsage {
+            prompt_tokens: 15,
+            completion_tokens: 42,
+            total_tokens: 57,
+            prompt_tokens_details: None,
+            completion_tokens_details: None,
+        };
+
+        // 1. Verify usage chunk format for DeepSeek Harness / OpenAI standard
+        let chunk_with_usage = create_stream_chunk_with_usage("chatcmpl-123", "gemini-3.8-flash", None, None, Some("stop"), Some(usage.clone()));
+        assert!(chunk_with_usage.contains("\"prompt_tokens\":15"));
+        assert!(chunk_with_usage.contains("\"completion_tokens\":42"));
+        assert!(chunk_with_usage.contains("\"finish_reason\":\"stop\""));
+
+        let final_usage_chunk = create_stream_usage_chunk("chatcmpl-123", "gemini-3.8-flash", usage);
+        assert!(final_usage_chunk.contains("\"prompt_tokens\":15"));
+        assert!(final_usage_chunk.contains("\"choices\":[]"));
+
+        // 2. Verify smooth micro-chunking for natural streaming UI rendering
+        let text = "fn calculate_fast_matrix_multiplication(a: &[f64], b: &[f64]) -> Vec<f64> {";
+        let smooth = emit_smooth_chunks(text);
+        assert!(smooth.len() >= 3);
+        assert_eq!(smooth.concat(), text);
+    }
+
+    #[test]
+    fn test_model_deduplication_and_grouping() {
+        use aroxy::config::{AppConfig, ModelCatalogItem};
+
+        let mut cfg = AppConfig::default();
+        // Simulate corrupted config with clones and duplicates
+        cfg.models.push(ModelCatalogItem {
+            id: "gemini-3.8-flash-medium".into(),
+            display_name: "Gemini 3.8 Flash (Medium)".into(),
+            provider: "gemini".into(),
+            tier: "PRO".into(),
+            is_enabled: true,
+            supports_thinking: true,
+        });
+        cfg.models.push(ModelCatalogItem {
+            id: "gemini-3.8-flash-low".into(),
+            display_name: "Gemini 3.8 Flash (Low)".into(),
+            provider: "gemini".into(),
+            tier: "PRO".into(),
+            is_enabled: true,
+            supports_thinking: true,
+        });
+
+        cfg.sanitize_models();
+        // After sanitization, only 6 unique flagship models remain
+        assert_eq!(cfg.models.len(), 6);
+        assert!(cfg.models.iter().any(|m| m.id == "gemini-3.8-flash"));
+        assert!(!cfg.models.iter().any(|m| m.id == "gemini-3.8-flash-medium"));
+    }
+
+    #[tokio::test]
+    async fn test_billing_and_usage_emulation() {
+        use aroxy::config::AppConfig;
+        use aroxy::proxy::server::{create_proxy_router, AppState};
+        use aroxy::proxy::stats::ProxyStats;
+        use axum::http::{Request, StatusCode};
+        use std::sync::atomic::Ordering;
+        use std::sync::Arc;
+        use tower::ServiceExt;
+
+        let stats = Arc::new(ProxyStats::new());
+        stats.total_tokens.store(500_000, Ordering::Relaxed);
+        let config = Arc::new(parking_lot::RwLock::new(AppConfig::default()));
+        let balancer = Arc::new(aroxy::proxy::balancer::LoadBalancer::new());
+        let http_client = reqwest::Client::new();
+        let cfg_version = Arc::new(std::sync::atomic::AtomicU64::new(1));
+        let proxy_clients = Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new()));
+
+        let state = AppState {
+            config: config.clone(),
+            stats: stats.clone(),
+            balancer,
+            http_client,
+            cfg_version,
+            proxy_clients,
+        };
+
+        let app = create_proxy_router(state);
+
+        // 1. Subscription query
+        let req_sub = Request::builder()
+            .uri("/v1/dashboard/billing/subscription")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let resp_sub = app.clone().oneshot(req_sub).await.unwrap();
+        assert_eq!(resp_sub.status(), StatusCode::OK);
+
+        // 2. Usage query
+        let req_usage = Request::builder()
+            .uri("/v1/dashboard/billing/usage")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let resp_usage = app.clone().oneshot(req_usage).await.unwrap();
+        assert_eq!(resp_usage.status(), StatusCode::OK);
+
+        // 3. When disabled, returns 404
+        config.write().enable_billing_emulation = false;
+        let req_off = Request::builder()
+            .uri("/v1/dashboard/billing/subscription")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let resp_off = app.oneshot(req_off).await.unwrap();
+        assert_eq!(resp_off.status(), StatusCode::NOT_FOUND);
+    }
 }

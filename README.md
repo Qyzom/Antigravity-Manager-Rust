@@ -11,7 +11,7 @@
 [![Rust](https://img.shields.io/badge/Rust-2021_Edition-orange.svg)](https://www.rust-lang.org/)
 [![Slint](https://img.shields.io/badge/UI-Slint_1.9-blueviolet.svg)](https://slint.dev/)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-brightgreen.svg)]()
-[![Release](https://img.shields.io/github/v/release/Qyzom/Aroxy?color=teal)](https://github.com/Qyzom/Aroxy/releases)
+[![Release](https://img.shields.io/github/v/release/Qyzom/Antigravity-Proxy-Rust?color=teal)](https://github.com/Qyzom/Antigravity-Proxy-Rust/releases)
 
 </div>
 
@@ -74,7 +74,7 @@ Every upstream account is paired with an independent, persistent `DeviceProfile`
 
 ## 📊 Technical Comparison
 
-| Metric / Feature | Typical Webview Wrappers | **Aroxy (v0.0.3)** |
+| Metric / Feature | Typical Webview Wrappers | **Aroxy (v0.1.0)** |
 | :--- | :---: | :---: |
 | **GUI Framework** | Electron / Tauri (Chromium / WebKit) | **Slint Native (FemtoVG / OpenGL)** |
 | **Process Memory** | ~250 – 500 MB RAM | **~22 MB RAM** |
@@ -93,20 +93,20 @@ Every upstream account is paired with an independent, persistent `DeviceProfile`
 ### Standalone Release Binaries
 
 Aroxy produces exactly two standalone portable binaries without external dependencies:
-- **Linux:** `Aroxy-0.0.3-x86_64.AppImage`
-- **Windows:** `Aroxy-0.0.3-x86_64.exe`
+- **Linux:** `Aroxy-0.1.0-x86_64.AppImage`
+- **Windows:** `Aroxy-0.1.0-x86_64.exe`
 
 ### Running Aroxy
 
 ```bash
 # Launch native GUI workstation
-./Aroxy-0.0.3-x86_64.AppImage
+./Aroxy-0.1.0-x86_64.AppImage
 
 # Run in headless daemon mode (servers, CI, Docker)
-./Aroxy-0.0.3-x86_64.AppImage --headless --port 8045
+./Aroxy-0.1.0-x86_64.AppImage --headless --port 8045
 
 # Specify custom listen port
-./Aroxy-0.0.3-x86_64.AppImage --port 9000
+./Aroxy-0.1.0-x86_64.AppImage --port 9000
 ```
 
 ### Client Integration Examples
@@ -148,3 +148,8 @@ claude
 
 Distributed under the permissive **MIT License**. See [LICENSE](LICENSE) for details.  
 Copyright © 2026 Qyzom.
+
+### Typography & Fonts
+The Aroxy workstation interface and visual branding utilize the **Unbounded** typeface family.  
+Unbounded is an open-source variable font designed by NaN and licensed under the [SIL Open Font License, Version 1.1](http://scripts.sil.org/OFL).  
+Copyright © 2022 The Unbounded Project Authors.

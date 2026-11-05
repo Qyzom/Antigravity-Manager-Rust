@@ -4,7 +4,7 @@ use crate::proxy::mappers::claude::ClaudeMessageResponse;
 use crate::proxy::mappers::openai::*;
 use crate::proxy::router::*;
 use crate::proxy::stats::ProxyStats;
-use crate::proxy::stream::{pass_through_stream, process_claude_to_openai_stream};
+use crate::proxy::stream::{pass_through_stream, process_claude_to_openai_stream, StreamLoggingContext};
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::{header, HeaderMap, StatusCode};
@@ -72,6 +72,18 @@ pub fn create_proxy_router(state: AppState) -> Router {
         .route("/chat/completions/", post(chat_completions))
         .route("/v1/messages", post(claude_messages))
         .route("/v1/messages/", post(claude_messages))
+        .route("/v1/dashboard/billing/subscription", get(billing_subscription))
+        .route("/v1/dashboard/billing/subscription/", get(billing_subscription))
+        .route("/dashboard/billing/subscription", get(billing_subscription))
+        .route("/dashboard/billing/subscription/", get(billing_subscription))
+        .route("/v1/dashboard/billing/usage", get(billing_usage))
+        .route("/v1/dashboard/billing/usage/", get(billing_usage))
+        .route("/dashboard/billing/usage", get(billing_usage))
+        .route("/dashboard/billing/usage/", get(billing_usage))
+        .route("/v1/usage", get(billing_usage))
+        .route("/v1/usage/", get(billing_usage))
+        .route("/usage", get(billing_usage))
+        .route("/usage/", get(billing_usage))
         .route("/oauth/callback", get(oauth_callback))
         .layer(CorsLayer::permissive())
         .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
@@ -228,7 +240,53 @@ async fn oauth_callback(
 }
 
 async fn health_check() -> impl IntoResponse {
-    (StatusCode::OK, Json(json!({"status": "ok", "service": "Aroxy", "version": "0.0.3"})))
+    (StatusCode::OK, Json(json!({"status": "ok", "service": "Aroxy", "version": env!("CARGO_PKG_VERSION")})))
+}
+
+async fn billing_subscription(State(state): State<AppState>) -> Response {
+    if !state.config.read().enable_billing_emulation {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    let hard_limit = 1000.0f64;
+    let resp = json!({
+        "object": "billing_subscription",
+        "has_payment_method": true,
+        "canceled": false,
+        "currency": "USD",
+        "access_until": 1893456000,
+        "soft_limit": 800.0,
+        "hard_limit": hard_limit,
+        "system_hard_limit": hard_limit,
+        "soft_limit_usd": 800.0,
+        "hard_limit_usd": hard_limit,
+        "system_hard_limit_usd": hard_limit,
+        "plan": {
+            "title": "Aroxy Enterprise Unlimited",
+            "id": "enterprise"
+        },
+        "account_name": "Aroxy User"
+    });
+
+    Json(resp).into_response()
+}
+
+async fn billing_usage(State(state): State<AppState>) -> Response {
+    if !state.config.read().enable_billing_emulation {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    let total_tokens = state.stats.total_tokens.load(std::sync::atomic::Ordering::Relaxed);
+    let total_cost_cents = ((total_tokens as f64 / 1_000_000.0) * 50.0).round() as u64;
+
+    let resp = json!({
+        "object": "list",
+        "total_usage": total_cost_cents,
+        "total_tokens": total_tokens,
+        "daily_costs": []
+    });
+
+    Json(resp).into_response()
 }
 
 async fn list_models(State(state): State<AppState>) -> impl IntoResponse {
@@ -340,6 +398,13 @@ async fn execute_chat_request(
 
     let (base_clean, reasoning_effort) = parse_model_and_reasoning(requested_model, native_effort);
     let (target_model, effective_effort) = crate::proxy::router::resolve_model_with_effort(&base_clean, account, reasoning_effort);
+    let effort_str = match effective_effort {
+        Some(crate::proxy::router::ReasoningEffort::Off) => "off",
+        Some(crate::proxy::router::ReasoningEffort::Low) => "low",
+        Some(crate::proxy::router::ReasoningEffort::Medium) => "medium",
+        Some(crate::proxy::router::ReasoningEffort::High) => "high",
+        None => "off",
+    };
 
     // If upstream is Antigravity (Google Cloud Code Pa), convert and forward
     if account.provider == "antigravity" {
@@ -395,36 +460,38 @@ async fn execute_chat_request(
         let mut is_auth_error = status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
 
         // If auth error occurred and account has a refresh token, automatically refresh on the fly and retry!
-        if is_auth_error && account.refresh_token.is_some() {
-            log::info!("Upstream token expired for {}, attempting automatic refresh", account.name);
-            if let Ok(tok_res) = crate::proxy::antigravity::refresh_token(&state.http_client, account.refresh_token.as_ref().unwrap()).await {
-                let fresh_token = tok_res.access_token;
-                {
-                    let mut cfg = state.config.write();
-                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
-                        acc.api_key = fresh_token.clone();
-                        if tok_res.refresh_token.is_some() {
-                            acc.refresh_token = tok_res.refresh_token;
+        if is_auth_error {
+            if let Some(ref rt) = account.refresh_token {
+                log::info!("Upstream token expired for {}, attempting automatic refresh", account.name);
+                if let Ok(tok_res) = crate::proxy::antigravity::refresh_token(&state.http_client, rt).await {
+                    let fresh_token = tok_res.access_token;
+                    {
+                        let mut cfg = state.config.write();
+                        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
+                            acc.api_key = fresh_token.clone();
+                            if tok_res.refresh_token.is_some() {
+                                acc.refresh_token = tok_res.refresh_token;
+                            }
+                            acc.status = "ACTIVE".to_string();
+                            acc.error_message = None;
                         }
-                        acc.status = "ACTIVE".to_string();
-                        acc.error_message = None;
+                        let _ = cfg.save();
                     }
-                    let _ = cfg.save();
-                }
-                state.cfg_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    state.cfg_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-                for endpoint_url in crate::proxy::antigravity::STREAM_ENDPOINTS {
-                    let mut retry_headers = reqwest::header::HeaderMap::new();
-                    retry_headers.insert("authorization", format!("Bearer {}", fresh_token).parse().unwrap());
-                    retry_headers.insert("User-Agent", crate::proxy::antigravity::OFFICIAL_USER_AGENT.parse().unwrap());
-                    retry_headers.insert("Content-Type", "application/json".parse().unwrap());
+                    for endpoint_url in crate::proxy::antigravity::STREAM_ENDPOINTS {
+                        let mut retry_headers = reqwest::header::HeaderMap::new();
+                        retry_headers.insert("authorization", format!("Bearer {}", fresh_token).parse().unwrap());
+                        retry_headers.insert("User-Agent", crate::proxy::antigravity::OFFICIAL_USER_AGENT.parse().unwrap());
+                        retry_headers.insert("Content-Type", "application/json".parse().unwrap());
 
-                    if let Ok(retry_res) = state.http_client.post(endpoint_url).headers(retry_headers).json(&payload_json).send().await {
-                        status = retry_res.status();
-                        is_auth_error = status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
-                        res = retry_res;
-                        if status.is_success() {
-                            break;
+                        if let Ok(retry_res) = state.http_client.post(endpoint_url).headers(retry_headers).json(&payload_json).send().await {
+                            status = retry_res.status();
+                            is_auth_error = status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
+                            res = retry_res;
+                            if status.is_success() {
+                                break;
+                            }
                         }
                     }
                 }
@@ -435,11 +502,7 @@ async fn execute_chat_request(
             let err_text = res.text().await.unwrap_or_default();
             let lat = start_time.elapsed().as_millis() as u64;
 
-            let error_msg = if let Ok(parsed) = serde_json::from_str::<Value>(&err_text) {
-                parsed.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).unwrap_or(&err_text).to_string()
-            } else {
-                err_text.clone()
-            };
+            let error_msg = crate::proxy::antigravity::extract_clean_error_message(&err_text);
 
             let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
             state.stats.record_detailed_request(
@@ -450,6 +513,7 @@ async fn execute_chat_request(
                 0,
                 lat,
                 &account.name,
+                effort_str,
                 "Content-Type: application/json",
                 &req_body_str,
                 &err_text,
@@ -509,21 +573,23 @@ async fn execute_chat_request(
 
         if is_streaming {
             let stream_id = format!("chatcmpl-{}", uuid::Uuid::new_v4().simple());
-            let mapped_stream = crate::proxy::stream::process_antigravity_to_openai_stream(Box::pin(res.bytes_stream()), stream_id, target_model);
-            let lat = start_time.elapsed().as_millis() as u64;
             let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
-            state.stats.record_detailed_request(
-                "POST",
-                "/v1/chat/completions (stream)",
-                requested_model,
-                200,
-                150,
-                lat,
-                &account.name,
-                "Content-Type: application/json; Accept: text/event-stream",
-                &req_body_str,
-                "[Server-Sent Events Stream Established]",
-                None,
+            let log_ctx = StreamLoggingContext {
+                stats: state.stats.clone(),
+                method: "POST",
+                path: "/v1/chat/completions (stream)",
+                model: requested_model.to_string(),
+                account_name: account.name.clone(),
+                reasoning_effort: effort_str.to_string(),
+                request_headers: "Content-Type: application/json; Accept: text/event-stream".to_string(),
+                request_body: req_body_str,
+                start_time,
+            };
+            let mapped_stream = crate::proxy::stream::process_antigravity_to_openai_stream(
+                Box::pin(res.bytes_stream()),
+                stream_id,
+                target_model,
+                Some(log_ctx),
             );
 
             let req_id = format!("req_{}", uuid::Uuid::new_v4().simple());
@@ -534,7 +600,6 @@ async fn execute_chat_request(
                 .header("x-accel-buffering", "no")
                 .header("x-request-id", req_id)
                 .header("openai-organization", "user-personal")
-                .header("openai-processing-ms", lat.to_string())
                 .header("openai-version", "2020-10-01")
                 .body(Body::from_stream(mapped_stream))
                 .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
@@ -621,14 +686,17 @@ async fn execute_chat_request(
             let lat = start_time.elapsed().as_millis() as u64;
             let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
             let resp_body_str = serde_json::to_string_pretty(&oai_resp).unwrap_or_default();
-            state.stats.record_detailed_request(
+            state.stats.record_detailed_request_exact(
                 "POST",
                 "/v1/chat/completions",
                 requested_model,
                 200,
                 in_tok + out_tok,
+                in_tok,
+                out_tok,
                 lat,
                 &account.name,
+                effort_str,
                 "Content-Type: application/json",
                 &req_body_str,
                 &resp_body_str,
@@ -667,11 +735,7 @@ async fn execute_chat_request(
             let err_text = res.text().await.unwrap_or_default();
             let lat = start_time.elapsed().as_millis() as u64;
 
-            let error_msg = if let Ok(parsed) = serde_json::from_str::<Value>(&err_text) {
-                parsed.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).unwrap_or(&err_text).to_string()
-            } else {
-                err_text.clone()
-            };
+            let error_msg = crate::proxy::antigravity::extract_clean_error_message(&err_text);
 
             let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
             state.stats.record_detailed_request(
@@ -682,6 +746,7 @@ async fn execute_chat_request(
                 0,
                 lat,
                 &account.name,
+                effort_str,
                 "Content-Type: application/json",
                 &req_body_str,
                 &err_text,
@@ -737,21 +802,23 @@ async fn execute_chat_request(
 
         if is_streaming {
             let stream_id = format!("chatcmpl-{}", uuid::Uuid::new_v4().simple());
-            let mapped_stream = process_claude_to_openai_stream(Box::pin(res.bytes_stream()), stream_id, target_model);
-            let lat = start_time.elapsed().as_millis() as u64;
             let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
-            state.stats.record_detailed_request(
-                "POST",
-                "/v1/chat/completions (stream)",
-                requested_model,
-                200,
-                150,
-                lat,
-                &account.name,
-                "Content-Type: application/json; Accept: text/event-stream",
-                &req_body_str,
-                "[Server-Sent Events Stream Established]",
-                None,
+            let log_ctx = StreamLoggingContext {
+                stats: state.stats.clone(),
+                method: "POST",
+                path: "/v1/chat/completions (stream)",
+                model: requested_model.to_string(),
+                account_name: account.name.clone(),
+                reasoning_effort: effort_str.to_string(),
+                request_headers: "Content-Type: application/json; Accept: text/event-stream".to_string(),
+                request_body: req_body_str,
+                start_time,
+            };
+            let mapped_stream = process_claude_to_openai_stream(
+                Box::pin(res.bytes_stream()),
+                stream_id,
+                target_model,
+                Some(log_ctx),
             );
 
             let req_id = format!("req_{}", uuid::Uuid::new_v4().simple());
@@ -762,7 +829,6 @@ async fn execute_chat_request(
                 .header("x-accel-buffering", "no")
                 .header("x-request-id", req_id)
                 .header("openai-organization", "user-personal")
-                .header("openai-processing-ms", lat.to_string())
                 .header("openai-version", "2020-10-01")
                 .body(Body::from_stream(mapped_stream))
                 .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
@@ -818,9 +884,19 @@ async fn execute_chat_request(
         let is_429 = status == StatusCode::TOO_MANY_REQUESTS;
 
         if is_streaming && status.is_success() {
-            let stream = pass_through_stream(Box::pin(res.bytes_stream()));
-            let lat = start_time.elapsed().as_millis() as u64;
-            state.stats.record_request("POST", "/v1/chat/completions (stream)", requested_model, 200, 100, lat);
+            let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
+            let log_ctx = StreamLoggingContext {
+                stats: state.stats.clone(),
+                method: "POST",
+                path: "/v1/chat/completions (stream)",
+                model: requested_model.to_string(),
+                account_name: account.name.clone(),
+                reasoning_effort: effort_str.to_string(),
+                request_headers: "Content-Type: application/json; Accept: text/event-stream".to_string(),
+                request_body: req_body_str,
+                start_time,
+            };
+            let stream = pass_through_stream(Box::pin(res.bytes_stream()), Some(log_ctx));
 
             let r = Response::builder()
                 .header(header::CONTENT_TYPE, "text/event-stream; charset=utf-8")
@@ -940,6 +1016,13 @@ async fn execute_claude_request(
         payload.get("thinking").and_then(|t| t.get("type")).and_then(|v| v.as_str()),
     );
     let (target_model, effective_effort) = crate::proxy::router::resolve_model_with_effort(&base_clean, account, reasoning_effort);
+    let effort_str = match effective_effort {
+        Some(crate::proxy::router::ReasoningEffort::Off) => "off",
+        Some(crate::proxy::router::ReasoningEffort::Low) => "low",
+        Some(crate::proxy::router::ReasoningEffort::Medium) => "medium",
+        Some(crate::proxy::router::ReasoningEffort::High) => "high",
+        None => "off",
+    };
 
     if account.provider == "antigravity" {
         let payload_json = crate::proxy::antigravity::build_antigravity_payload_from_claude(
@@ -993,36 +1076,38 @@ async fn execute_claude_request(
         let is_429 = status == StatusCode::TOO_MANY_REQUESTS;
         let mut is_auth_error = status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
 
-        if is_auth_error && account.refresh_token.is_some() {
-            log::info!("Claude token expired for {}, attempting automatic refresh", account.name);
-            if let Ok(tok_res) = crate::proxy::antigravity::refresh_token(&state.http_client, account.refresh_token.as_ref().unwrap()).await {
-                let fresh_token = tok_res.access_token;
-                {
-                    let mut cfg = state.config.write();
-                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
-                        acc.api_key = fresh_token.clone();
-                        if tok_res.refresh_token.is_some() {
-                            acc.refresh_token = tok_res.refresh_token;
+        if is_auth_error {
+            if let Some(ref rt) = account.refresh_token {
+                log::info!("Claude token expired for {}, attempting automatic refresh", account.name);
+                if let Ok(tok_res) = crate::proxy::antigravity::refresh_token(&state.http_client, rt).await {
+                    let fresh_token = tok_res.access_token;
+                    {
+                        let mut cfg = state.config.write();
+                        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
+                            acc.api_key = fresh_token.clone();
+                            if tok_res.refresh_token.is_some() {
+                                acc.refresh_token = tok_res.refresh_token;
+                            }
+                            acc.status = "ACTIVE".to_string();
+                            acc.error_message = None;
                         }
-                        acc.status = "ACTIVE".to_string();
-                        acc.error_message = None;
+                        let _ = cfg.save();
                     }
-                    let _ = cfg.save();
-                }
-                state.cfg_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    state.cfg_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-                for endpoint_url in crate::proxy::antigravity::STREAM_ENDPOINTS {
-                    let mut retry_headers = reqwest::header::HeaderMap::new();
-                    retry_headers.insert("authorization", format!("Bearer {}", fresh_token).parse().unwrap());
-                    retry_headers.insert("User-Agent", crate::proxy::antigravity::OFFICIAL_USER_AGENT.parse().unwrap());
-                    retry_headers.insert("Content-Type", "application/json".parse().unwrap());
+                    for endpoint_url in crate::proxy::antigravity::STREAM_ENDPOINTS {
+                        let mut retry_headers = reqwest::header::HeaderMap::new();
+                        retry_headers.insert("authorization", format!("Bearer {}", fresh_token).parse().unwrap());
+                        retry_headers.insert("User-Agent", crate::proxy::antigravity::OFFICIAL_USER_AGENT.parse().unwrap());
+                        retry_headers.insert("Content-Type", "application/json".parse().unwrap());
 
-                    if let Ok(retry_res) = state.http_client.post(endpoint_url).headers(retry_headers).json(&payload_json).send().await {
-                        status = retry_res.status();
-                        is_auth_error = status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
-                        res = retry_res;
-                        if status.is_success() {
-                            break;
+                        if let Ok(retry_res) = state.http_client.post(endpoint_url).headers(retry_headers).json(&payload_json).send().await {
+                            status = retry_res.status();
+                            is_auth_error = status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
+                            res = retry_res;
+                            if status.is_success() {
+                                break;
+                            }
                         }
                     }
                 }
@@ -1033,11 +1118,7 @@ async fn execute_claude_request(
             let err_text = res.text().await.unwrap_or_default();
             let lat = start_time.elapsed().as_millis() as u64;
 
-            let error_msg = if let Ok(parsed) = serde_json::from_str::<Value>(&err_text) {
-                parsed.get("error").and_then(|e| e.get("message")).and_then(|m| m.as_str()).unwrap_or(&err_text).to_string()
-            } else {
-                err_text.clone()
-            };
+            let error_msg = crate::proxy::antigravity::extract_clean_error_message(&err_text);
 
             let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
             state.stats.record_detailed_request(
@@ -1048,6 +1129,7 @@ async fn execute_claude_request(
                 0,
                 lat,
                 &account.name,
+                effort_str,
                 "Content-Type: application/json",
                 &req_body_str,
                 &err_text,
@@ -1086,25 +1168,23 @@ async fn execute_claude_request(
 
         if is_streaming {
             let stream_id = format!("msg_{}", uuid::Uuid::new_v4().simple());
+            let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
+            let log_ctx = StreamLoggingContext {
+                stats: state.stats.clone(),
+                method: "POST",
+                path: "/v1/messages (stream)",
+                model: requested_model.to_string(),
+                account_name: account.name.clone(),
+                reasoning_effort: effort_str.to_string(),
+                request_headers: "Content-Type: application/json; Accept: text/event-stream".to_string(),
+                request_body: req_body_str,
+                start_time,
+            };
             let mapped_stream = crate::proxy::stream::process_antigravity_to_claude_stream(
                 Box::pin(res.bytes_stream()),
                 stream_id,
                 target_model,
-            );
-            let lat = start_time.elapsed().as_millis() as u64;
-            let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
-            state.stats.record_detailed_request(
-                "POST",
-                "/v1/messages (stream)",
-                requested_model,
-                200,
-                150,
-                lat,
-                &account.name,
-                "Content-Type: application/json",
-                &req_body_str,
-                "(SSE Stream Transferred)",
-                None,
+                Some(log_ctx),
             );
 
             let r = Response::builder()
@@ -1189,14 +1269,17 @@ async fn execute_claude_request(
             let lat = start_time.elapsed().as_millis() as u64;
             let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
             let resp_body_str = serde_json::to_string_pretty(&claude_resp).unwrap_or_default();
-            state.stats.record_detailed_request(
+            state.stats.record_detailed_request_exact(
                 "POST",
                 "/v1/messages",
                 requested_model,
                 200,
+                in_tok + out_tok,
+                in_tok,
                 out_tok,
                 lat,
                 &account.name,
+                effort_str,
                 "Content-Type: application/json",
                 &req_body_str,
                 &resp_body_str,
@@ -1227,22 +1310,19 @@ async fn execute_claude_request(
         let is_429 = status == StatusCode::TOO_MANY_REQUESTS;
 
         if is_streaming && status.is_success() {
-            let stream = pass_through_stream(Box::pin(res.bytes_stream()));
-            let lat = start_time.elapsed().as_millis() as u64;
             let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
-            state.stats.record_detailed_request(
-                "POST",
-                "/v1/messages (stream)",
-                requested_model,
-                200,
-                150,
-                lat,
-                &account.name,
-                "Content-Type: application/json",
-                &req_body_str,
-                "(SSE Stream Transferred)",
-                None,
-            );
+            let log_ctx = StreamLoggingContext {
+                stats: state.stats.clone(),
+                method: "POST",
+                path: "/v1/messages (stream)",
+                model: requested_model.to_string(),
+                account_name: account.name.clone(),
+                reasoning_effort: effort_str.to_string(),
+                request_headers: "Content-Type: application/json; Accept: text/event-stream".to_string(),
+                request_body: req_body_str,
+                start_time,
+            };
+            let stream = pass_through_stream(Box::pin(res.bytes_stream()), Some(log_ctx));
 
             let r = Response::builder()
                 .header(header::CONTENT_TYPE, "text/event-stream; charset=utf-8")

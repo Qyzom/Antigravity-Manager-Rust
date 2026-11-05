@@ -119,6 +119,17 @@ pub fn create_stream_chunk(
     reasoning: Option<&str>,
     finish_reason: Option<&str>,
 ) -> String {
+    create_stream_chunk_with_usage(id, model, content, reasoning, finish_reason, None)
+}
+
+pub fn create_stream_chunk_with_usage(
+    id: &str,
+    model: &str,
+    content: Option<&str>,
+    reasoning: Option<&str>,
+    finish_reason: Option<&str>,
+    usage: Option<OpenAIUsage>,
+) -> String {
     let chunk = OpenAIStreamChunk {
         id: id.to_string(),
         object: "chat.completion.chunk".to_string(),
@@ -137,7 +148,26 @@ pub fn create_stream_chunk(
             logprobs: None,
             finish_reason: finish_reason.map(|s| s.to_string()),
         }],
-        usage: None,
+        usage,
+    };
+
+    let json = serde_json::to_string(&chunk).unwrap_or_default();
+    format!("data: {}\n\n", json)
+}
+
+pub fn create_stream_usage_chunk(
+    id: &str,
+    model: &str,
+    usage: OpenAIUsage,
+) -> String {
+    let chunk = OpenAIStreamChunk {
+        id: id.to_string(),
+        object: "chat.completion.chunk".to_string(),
+        created: chrono::Utc::now().timestamp() as u64,
+        model: model.to_string(),
+        system_fingerprint: "fp_44709d6fcb".to_string(),
+        choices: vec![],
+        usage: Some(usage),
     };
 
     let json = serde_json::to_string(&chunk).unwrap_or_default();

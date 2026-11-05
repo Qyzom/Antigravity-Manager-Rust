@@ -16,15 +16,24 @@ pub struct SystemTray {
 }
 
 impl SystemTray {
-    pub fn new<F>(on_action: F) -> Result<Self, Box<dyn std::error::Error>>
+    pub fn new<F>(
+        show_text: &str,
+        exit_text: &str,
+        tooltip: &str,
+        on_action: F,
+    ) -> Result<Self, Box<dyn std::error::Error>>
     where
         F: Fn(TrayAction) + Send + Sync + 'static,
     {
-        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let show_title = show_text.to_string();
+        let exit_title = exit_text.to_string();
+        let tip_title = tooltip.to_string();
+
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
             let tray_menu = Menu::new();
-            let show_item = MenuItem::new("Show Aroxy", true, None);
+            let show_item = MenuItem::new(&show_title, true, None);
             let show_item_id = show_item.id().clone();
-            let exit_item = MenuItem::new("Exit", true, None);
+            let exit_item = MenuItem::new(&exit_title, true, None);
             let exit_item_id = exit_item.id().clone();
 
             tray_menu.append(&show_item).map_err(|e| e.to_string())?;
@@ -34,7 +43,7 @@ impl SystemTray {
 
             let tray_icon = TrayIconBuilder::new()
                 .with_menu(Box::new(tray_menu))
-                .with_tooltip("Aroxy — AI Proxy")
+                .with_tooltip(&tip_title)
                 .with_icon(icon)
                 .build()
                 .map_err(|e| e.to_string())?;
@@ -82,6 +91,12 @@ impl SystemTray {
             Ok(Err(e)) => Err(e.into()),
             Err(_) => Err("System tray service not available".into()),
         }
+    }
+
+    pub fn update_labels(&self, show_text: &str, exit_text: &str, tooltip: &str) {
+        self.show_item.set_text(show_text);
+        self.exit_item.set_text(exit_text);
+        let _ = self._tray_icon.set_tooltip(Some(tooltip));
     }
 }
 
