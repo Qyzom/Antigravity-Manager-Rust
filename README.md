@@ -85,21 +85,21 @@
 | **Reasoning Effort Support** | Partial suffixes | Suffixes | **Suffixes + Native Protocol** |
 
 > *\* Real-world benchmarks performed on **Arch Linux** under identical test conditions.*  
-> *\* Software versions tested: AMR `v0.1.0` vs AntigravityManager `v0.30.0` (Draculabo) vs Antigravity-Manager `v5.0.0` (lbjlaq).*
+> *\* Software versions tested: AMR `v0.1.1` vs AntigravityManager `v0.30.0` (Draculabo) vs Antigravity-Manager `v5.0.0` (lbjlaq).*
 
 ---
 
 ### Downloads
 
-Pre-built binaries and distribution packages for AMR `v0.1.0` (x86_64 and native ARM64) are available on the [**Releases**](https://github.com/Qyzom/Antigravity-Manager-Rust/releases/latest) page:
+Pre-built binaries and distribution packages for AMR `v0.1.1` (x86_64 and native ARM64) are available on the [**Releases**](https://github.com/Qyzom/Antigravity-Manager-Rust/releases/latest) page:
 
 | OS / Format | Architecture | Package File | Description |
 | :--- | :---: | :--- | :--- |
-| **Linux (AppImage)** | `x86_64` | `AMR-0.1.0-x86_64.AppImage` | Portable executable (runs on any modern Linux) |
-| **Linux (Debian / Ubuntu)** | `x86_64` / `arm64` | `AMR_0.1.0_amd64.deb`<br/>`AMR_0.1.0_arm64.deb` | Standard `.deb` package with system desktop & menu integration |
-| **Linux (Fedora / RHEL)** | `x86_64` / `aarch64` | `AMR-0.1.0-1.x86_64.rpm`<br/>`AMR-0.1.0-1.aarch64.rpm` | Standard `.rpm` package with system desktop & menu integration |
-| **Windows 10 / 11** | `x86_64` | `AMR-0.1.0-x86_64.exe` | Portable 64-bit executable with system tray support |
-| **Windows on ARM** | `arm64` | `AMR-0.1.0-arm64.exe` | Native ARM64 executable for Snapdragon X Elite / Surface Pro |
+| **Linux (AppImage)** | `x86_64` | `AMR-0.1.1-x86_64.AppImage` | Portable executable (runs on any modern Linux) |
+| **Linux (Debian / Ubuntu)** | `x86_64` / `arm64` | `AMR_0.1.1_amd64.deb`<br/>`AMR_0.1.1_arm64.deb` | Standard `.deb` package with system desktop & menu integration |
+| **Linux (Fedora / RHEL)** | `x86_64` / `aarch64` | `AMR-0.1.1-1.x86_64.rpm`<br/>`AMR-0.1.1-1.aarch64.rpm` | Standard `.rpm` package with system desktop & menu integration |
+| **Windows 10 / 11** | `x86_64` | `AMR-0.1.1-x86_64.exe` | Portable 64-bit executable with system tray support |
+| **Windows on ARM** | `arm64` | `AMR-0.1.1-arm64.exe` | Native ARM64 executable for Snapdragon X Elite / Surface Pro |
 
 ---
 
@@ -108,33 +108,33 @@ Pre-built binaries and distribution packages for AMR `v0.1.0` (x86_64 and native
 #### Linux (AppImage)
 
 ```bash
-chmod +x AMR-0.1.0-x86_64.AppImage
+chmod +x AMR-0.1.1-x86_64.AppImage
 
 # Launch GUI:
-./AMR-0.1.0-x86_64.AppImage
+./AMR-0.1.1-x86_64.AppImage
 
 # Launch in headless daemon mode:
-./AMR-0.1.0-x86_64.AppImage --headless --port 8045
+./AMR-0.1.1-x86_64.AppImage --headless --port 8045
 
 # Start minimized to system tray:
-./AMR-0.1.0-x86_64.AppImage --start-minimized
+./AMR-0.1.1-x86_64.AppImage --start-minimized
 ```
 
 #### Linux (Debian / Ubuntu)
 
 ```bash
-sudo dpkg -i AMR_0.1.0_amd64.deb
+sudo dpkg -i AMR_0.1.1_amd64.deb
 ```
 
 #### Linux (Fedora / RHEL)
 
 ```bash
-sudo rpm -i AMR-0.1.0-1.x86_64.rpm
+sudo rpm -i AMR-0.1.1-1.x86_64.rpm
 ```
 
 #### Windows
 
-Download `AMR-0.1.0-x86_64.exe` and execute it. AMR automatically integrates with the system tray and offers automatic startup on login.
+Download `AMR-0.1.1-x86_64.exe` and execute it. AMR automatically integrates with the system tray and offers automatic startup on login.
 
 ---
 

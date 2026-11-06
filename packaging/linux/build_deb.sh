@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-VERSION="${1:-0.1.0}"
+VERSION="${1:-0.1.1}"
 ARCH="${2:-amd64}"
 DEB_DIR="target/deb_pkg"
 rm -rf "$DEB_DIR"

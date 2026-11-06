@@ -232,7 +232,7 @@ async fn oauth_callback(
                 <h2>Account Connected</h2>
                 <p>Authorized as <strong>{}</strong> (Tier: {})</p>
                 <p>Antigravity quota and active models have been synchronized with AMR.<br>You can close this tab and return to the application.</p>
-                <div class="badge">AMR v0.1.0</div>
+                <div class="badge">AMR v0.1.1</div>
             </div>
         </body>
         </html>
