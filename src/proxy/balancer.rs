@@ -52,11 +52,46 @@ impl std::fmt::Display for RoutingError {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HealthStage {
+    Healthy,       // Level 0: 0 failures, fully active
+    SoftPause,     // Level 1: 1 failure, ~3s pause (±15% jitter)
+    Backoff,       // Level 2: 2 failures, ~15s pause (±15% jitter)
+    Cooldown,      // Level 3: 3 failures, ~60s pause (±15% jitter)
+    Quarantine,    // Level 4+: 4+ failures, ~300s quarantine (±15% jitter)
+    Probing,       // Timer expired, in trial probe mode (auto-heal on next success)
+}
+
+#[derive(Debug, Clone)]
+pub struct AccountHealthRecord {
+    pub failure_count: u32,
+    pub cooldown_until: Option<Instant>,
+    pub stage: HealthStage,
+    pub total_failures: u64,
+    pub total_successes: u64,
+    pub last_failure_time: Option<Instant>,
+}
+
+impl Default for AccountHealthRecord {
+    fn default() -> Self {
+        Self {
+            failure_count: 0,
+            cooldown_until: None,
+            stage: HealthStage::Healthy,
+            total_failures: 0,
+            total_successes: 0,
+            last_failure_time: None,
+        }
+    }
+}
+
 pub struct LoadBalancer {
     /// Active session pin mappings: session_id -> (account_id, last_access_time)
     session_bindings: Arc<RwLock<HashMap<String, (String, Instant)>>>,
     /// Cooldown tracker: account_id -> cooldown_expiry
     account_cooldowns: Arc<RwLock<HashMap<String, Instant>>>,
+    /// Account health and adaptive exponential backoff tracker: account_id -> AccountHealthRecord
+    account_health: Arc<RwLock<HashMap<String, AccountHealthRecord>>>,
     /// Round-robin counter
     rr_counter: AtomicU64,
     /// Metrics
@@ -76,6 +111,7 @@ impl LoadBalancer {
         Self {
             session_bindings: Arc::new(RwLock::new(HashMap::new())),
             account_cooldowns: Arc::new(RwLock::new(HashMap::new())),
+            account_health: Arc::new(RwLock::new(HashMap::new())),
             rr_counter: AtomicU64::new(0),
             total_routed: AtomicU64::new(0),
             cache_hits: AtomicU64::new(0),
@@ -147,9 +183,48 @@ impl LoadBalancer {
         format!("ctx-{:016x}", hasher.finish())
     }
 
-    /// Mark account in temporary cooldown on rate-limit (429) or transient 5xx error
-    pub fn mark_cooldown(&self, account_id: &str, duration_secs: u64) {
-        let expiry = Instant::now() + std::time::Duration::from_secs(duration_secs);
+    /// Record a failure on an account (e.g. 429 Too Many Requests or 5xx).
+    /// Advances through the adaptive exponential backoff ladder (3s -> 15s -> 60s -> 300s quarantine)
+    /// with randomized jitter (default ±15%) to prevent synthetic machine periodicities.
+    pub fn record_failure(&self, account_id: &str, status_code: u16, max_quarantine_secs: u64, jitter_pct: u8) {
+        let now = Instant::now();
+        let (expiry, _stage, _count) = {
+            let mut health_map = self.account_health.write();
+            let record = health_map.entry(account_id.to_string()).or_default();
+            record.failure_count += 1;
+            record.total_failures += 1;
+            record.last_failure_time = Some(now);
+
+            // Exponential Backoff Ladder:
+            // Failure 1: ~3s
+            // Failure 2: ~15s
+            // Failure 3: ~60s
+            // Failure 4+: max_quarantine_secs (default 300s)
+            let (base_secs, stage) = match record.failure_count {
+                1 => (3.0f64, HealthStage::SoftPause),
+                2 => (15.0f64, HealthStage::Backoff),
+                3 => (60.0f64, HealthStage::Cooldown),
+                _ => (max_quarantine_secs.max(120) as f64, HealthStage::Quarantine),
+            };
+
+            // Apply randomized jitter (e.g. ±15%)
+            let jitter_ratio = (jitter_pct as f64).clamp(0.0, 50.0) / 100.0;
+            let factor = 1.0 + (fastrand::f64() * 2.0 - 1.0) * jitter_ratio;
+            let final_secs = (base_secs * factor).max(1.0);
+            let expiry = now + std::time::Duration::from_secs_f64(final_secs);
+
+            record.stage = stage;
+            record.cooldown_until = Some(expiry);
+
+            log::warn!(
+                "[LoadBalancer] Account {} failure #{} (status: {}). Entering {:?} for {:.2}s (base: {:.0}s, jitter ±{}%)",
+                account_id, record.failure_count, status_code, stage, final_secs, base_secs, jitter_pct
+            );
+
+            (expiry, stage, record.failure_count)
+        };
+
+        // Mirror in legacy account_cooldowns for fast lookups
         {
             let mut cds = self.account_cooldowns.write();
             cds.insert(account_id.to_string(), expiry);
@@ -162,6 +237,49 @@ impl LoadBalancer {
         }
 
         self.failover_rotations.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Record successful response on an account.
+    /// Auto-heals the account: resets the failure count and restores to Healthy stage.
+    pub fn record_success(&self, account_id: &str) {
+        let mut health_map = self.account_health.write();
+        if let Some(record) = health_map.get_mut(account_id) {
+            record.total_successes += 1;
+            if record.failure_count > 0 || record.stage != HealthStage::Healthy {
+                log::info!(
+                    "[LoadBalancer] Auto-Heal triggered for account {}: trial probe succeeded! Resetting failure counter (was {}) to 0. Restored to Healthy.",
+                    account_id, record.failure_count
+                );
+                record.failure_count = 0;
+                record.stage = HealthStage::Healthy;
+                record.cooldown_until = None;
+            }
+        }
+        let mut cds = self.account_cooldowns.write();
+        cds.remove(account_id);
+    }
+
+    /// Mark account in temporary cooldown on rate-limit (429) or transient 5xx error
+    pub fn mark_cooldown(&self, account_id: &str, duration_secs: u64) {
+        self.record_failure(account_id, 429, duration_secs, 15);
+    }
+
+    /// Retrieve live health status of an account: (HealthStage, failure_count, remaining_cooldown_secs)
+    pub fn get_health_status(&self, account_id: &str) -> (HealthStage, u32, Option<u64>) {
+        let now = Instant::now();
+        let health_map = self.account_health.read();
+        if let Some(record) = health_map.get(account_id) {
+            if let Some(until) = record.cooldown_until {
+                if until > now {
+                    let remaining = until.duration_since(now).as_secs();
+                    return (record.stage, record.failure_count, Some(remaining));
+                } else if record.failure_count > 0 {
+                    // Timer has expired: account is in Probing stage (ready for 1 trial request)
+                    return (HealthStage::Probing, record.failure_count, None);
+                }
+            }
+        }
+        (HealthStage::Healthy, 0, None)
     }
 
     /// Select optimal upstream account with cache affinity, quota balancing, model capability, and failover
@@ -227,36 +345,44 @@ impl LoadBalancer {
             };
         }
 
-        // 2. Filter healthy accounts (not in cooldown, active)
-        let mut healthy_accounts: Vec<UpstreamAccount> = {
+        // 2. Evaluate Account Health & Probing Eligibility
+        let (healthy_zero_fail, probing_accounts) = {
+            let health_map = self.account_health.read();
             let cds = self.account_cooldowns.read();
-            quota_eligible
-                .iter()
-                .filter(|a| {
-                    if !a.is_active {
-                        return false;
+            let mut zero_fail = Vec::new();
+            let mut probing = Vec::new();
+
+            for acc in quota_eligible {
+                if !acc.is_active {
+                    continue;
+                }
+                // Check if account is currently cooling down in ladder
+                if let Some(exp) = cds.get(&acc.id) {
+                    if *exp > now {
+                        continue; // Active backoff ladder cooldown: skip to protect account!
                     }
-                    if let Some(exp) = cds.get(&a.id) {
-                        if *exp > now {
-                            return false; // Still cooling down
-                        }
+                }
+                // If cooldown expired, check failure count:
+                if let Some(rec) = health_map.get(&acc.id) {
+                    if rec.failure_count > 0 {
+                        probing.push(acc);
+                        continue;
                     }
-                    true
-                })
-                .cloned()
-                .collect()
+                }
+                zero_fail.push(acc);
+            }
+            (zero_fail, probing)
         };
 
-        // If all eligible accounts are in cooldown, clear expired cooldowns and take any eligible
-        if healthy_accounts.is_empty() {
-            let mut cds = self.account_cooldowns.write();
-            cds.clear();
-            healthy_accounts = quota_eligible;
-        }
-
-        if healthy_accounts.is_empty() {
+        // Prefer clean healthy accounts first. If none available, dispatch to probing account for trial recovery.
+        let healthy_accounts = if !healthy_zero_fail.is_empty() {
+            healthy_zero_fail
+        } else if !probing_accounts.is_empty() {
+            log::info!("[LoadBalancer] All active accounts have prior failures; dispatching to trial probing account to test auto-heal");
+            probing_accounts
+        } else {
             return Err(RoutingError::AllCoolingDown);
-        }
+        };
 
         // Apply Quota Protection Threshold:
         // Accounts with remaining quota <= threshold (default 5%) are held in reserve

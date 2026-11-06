@@ -1267,9 +1267,10 @@ export component MainWindow inherits Window {
                                         VerticalLayout {
                                             alignment: center;
                                             Badge {
-                                                text: acc.status == "ACTIVE" ? root.i18n.lbl_status_active : (acc.status == "ERROR" ? root.i18n.lbl_status_error : root.i18n.lbl_status_disabled);
+                                                text: acc.status == "ACTIVE" ? root.i18n.lbl_status_active : (acc.status == "ERROR" ? root.i18n.lbl_status_error : (acc.status == "DISABLED" ? root.i18n.lbl_status_disabled : acc.status));
                                                 is_green: acc.status == "ACTIVE";
                                                 is_danger: acc.status == "ERROR";
+                                                is_amber: acc.status != "ACTIVE" && acc.status != "ERROR" && acc.status != "DISABLED";
                                             }
                                         }
                                         if acc.proxy_url != "": VerticalLayout {

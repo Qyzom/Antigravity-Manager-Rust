@@ -286,6 +286,8 @@ pub struct AppConfig {
     pub cooldown_on_429: bool,
     #[serde(default = "default_cooldown_duration")]
     pub cooldown_duration_secs: u64,
+    #[serde(default = "default_jitter_percent")]
+    pub cooldown_jitter_percent: u8,
     #[serde(default = "default_true")]
     pub request_jitter: bool,
     #[serde(default = "default_active_refresh_mins")]
@@ -396,6 +398,7 @@ impl Default for AppConfig {
             lock_production_endpoints: true,
             cooldown_on_429: true,
             cooldown_duration_secs: 300,
+            cooldown_jitter_percent: 15,
             request_jitter: true,
             active_account_refresh_mins: 2,
             pool_account_refresh_mins: 15,

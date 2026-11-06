@@ -845,4 +845,57 @@ mod tests {
         let resp_off = app.oneshot(req_off).await.unwrap();
         assert_eq!(resp_off.status(), StatusCode::NOT_FOUND);
     }
+
+    #[test]
+    fn test_exponential_ladder_backoff_and_auto_heal() {
+        use amr::proxy::balancer::{HealthStage, LoadBalancer};
+
+        let balancer = LoadBalancer::new();
+        let acc_id = "test-acc-ladder";
+
+        // Initial state: Healthy
+        let (stage, count, rem) = balancer.get_health_status(acc_id);
+        assert_eq!(stage, HealthStage::Healthy);
+        assert_eq!(count, 0);
+        assert!(rem.is_none());
+
+        // Step 1: First 429 -> SoftPause (~3s)
+        balancer.record_failure(acc_id, 429, 300, 15);
+        let (stage, count, rem) = balancer.get_health_status(acc_id);
+        assert_eq!(stage, HealthStage::SoftPause);
+        assert_eq!(count, 1);
+        assert!(rem.is_some());
+        assert!(rem.unwrap() <= 5);
+
+        // Step 2: Second 429 -> Backoff (~15s)
+        balancer.record_failure(acc_id, 429, 300, 15);
+        let (stage, count, rem) = balancer.get_health_status(acc_id);
+        assert_eq!(stage, HealthStage::Backoff);
+        assert_eq!(count, 2);
+        assert!(rem.is_some());
+        assert!(rem.unwrap() >= 10 && rem.unwrap() <= 20);
+
+        // Step 3: Third 429 -> Cooldown (~60s)
+        balancer.record_failure(acc_id, 429, 300, 15);
+        let (stage, count, rem) = balancer.get_health_status(acc_id);
+        assert_eq!(stage, HealthStage::Cooldown);
+        assert_eq!(count, 3);
+        assert!(rem.is_some());
+        assert!(rem.unwrap() >= 45 && rem.unwrap() <= 75);
+
+        // Step 4: Fourth 429 -> Quarantine (~300s)
+        balancer.record_failure(acc_id, 429, 300, 15);
+        let (stage, count, rem) = balancer.get_health_status(acc_id);
+        assert_eq!(stage, HealthStage::Quarantine);
+        assert_eq!(count, 4);
+        assert!(rem.is_some());
+        assert!(rem.unwrap() >= 240 && rem.unwrap() <= 360);
+
+        // Step 5: Successful response -> Auto-Heal resets everything back to Healthy!
+        balancer.record_success(acc_id);
+        let (stage, count, rem) = balancer.get_health_status(acc_id);
+        assert_eq!(stage, HealthStage::Healthy);
+        assert_eq!(count, 0);
+        assert!(rem.is_none());
+    }
 }

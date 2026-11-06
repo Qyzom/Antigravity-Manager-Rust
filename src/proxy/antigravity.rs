@@ -6,8 +6,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
 
-pub const OFFICIAL_HUB_VERSION: &str = "2.23.1";
-pub const OFFICIAL_HUB_CL: &str = "998881661";
+pub const OFFICIAL_HUB_VERSION: &str = "2.28.1";
+pub const OFFICIAL_HUB_CL: &str = "1000353293";
 
 pub fn get_official_hub_user_agent() -> String {
     let os_type = match std::env::consts::OS {
@@ -892,7 +892,7 @@ pub fn build_antigravity_payload(
         "clientInfo": {
             "clientType": "ANTIGRAVITY",
             "ideType": "ANTIGRAVITY",
-            "ideVersion": "1.107.0",
+            "ideVersion": OFFICIAL_HUB_VERSION,
             "platform": os_platform
         }
     })
@@ -1108,7 +1108,7 @@ pub fn build_antigravity_payload_from_claude(
         "clientInfo": {
             "clientType": "ANTIGRAVITY",
             "ideType": "ANTIGRAVITY",
-            "ideVersion": "1.107.0",
+            "ideVersion": OFFICIAL_HUB_VERSION,
             "platform": os_platform
         }
     })

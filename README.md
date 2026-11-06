@@ -161,6 +161,33 @@ Options:
 
 AMR listens on `http://127.0.0.1:8045` by default:
 
+---
+
+### Stealth, Anti-Detection & Upstream Emulation Architecture
+
+AMR provides a specialized anti-detection engine designed to replicate genuine Google Antigravity communication 1-to-1:
+
+1. **Authentic Binary Signatures & Client Metadata:**
+   - **Go SDK Header:** Emulates the official Go language server runtime via `X-Goog-Api-Client: gl-go/1.28.0 gdcl/0.1.0`.
+   - **Client Info Payload:** Injects official IDE telemetry into requests (`clientType: "ANTIGRAVITY"`, `ideType: "ANTIGRAVITY"`, `ideVersion: "2.28.1"`).
+   - **Production Endpoint Enforcement:** Locks requests strictly to production API gateways (`cloudcode-pa.googleapis.com`), preventing suspicious flapping to internal Google sandboxes (`daily-cloudcode-pa`, `.sandbox.googleapis.com`).
+
+2. **Adaptive Exponential Backoff Ladder (Anti-429 Protection):**
+   - When an account receives an HTTP 429 (`Too Many Requests`), it is never hammered in rapid retry loops. Instead, AMR steps the account through an adaptive backoff ladder:
+     - **Level 1 (Soft Pause):** ~3s pause (±15% jitter).
+     - **Level 2 (Backoff):** ~15s pause (±15% jitter).
+     - **Level 3 (Cooldown):** ~60s pause (±15% jitter).
+     - **Level 4 (Quarantine):** ~300s quarantine (±15% jitter).
+   - While an account is in cooldown, the load balancer automatically routes traffic to other healthy accounts.
+
+3. **Auto-Heal Probing:**
+   - Once an account's backoff timer expires, it enters a **Probing** state. AMR safely routes a single trial request to the account. Upon a successful response (HTTP 200), Auto-Heal is triggered: the failure counter is reset to zero, and the account returns to full `Healthy` status.
+
+4. **Randomized Timing Jitter (±15% Spread):**
+   - Applies randomized micro-delays (15–45 ms) and ±15% backoff variations to destroy synthetic machine periodicities and avoid bot-detection heuristics.
+
+---
+
 #### 1. Claude Code CLI
 ```bash
 export ANTHROPIC_BASE_URL="http://127.0.0.1:8045"

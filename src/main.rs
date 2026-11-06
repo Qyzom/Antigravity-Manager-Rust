@@ -2771,6 +2771,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let timer = slint::Timer::default();
     let s_timer = Arc::clone(&stats_arc);
     let c_timer = Arc::clone(&config_arc);
+    let b_timer = Arc::clone(&balancer_arc);
     let v_timer = Arc::clone(&cfg_version);
     let states_timer = Arc::clone(&account_update_states);
     let p_running_timer = Arc::clone(&proxy_running);
@@ -2955,6 +2956,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 w.set_global_gemini_weekly_label(cfg.format_gemini_weekly_quota().into());
                 w.set_global_gemini_weekly_reset(cfg.nearest_gemini_weekly_reset().into());
                 w.set_healthy_accounts_count(cfg.accounts.iter().filter(|a| a.is_active).count() as i32);
+            }
+
+            // Real-time Adaptive Backoff Ladder & Auto-Heal status sync
+            for idx in 0..accounts_model.row_count() {
+                if let Some(mut row) = accounts_model.row_data(idx) {
+                    let (h_stage, _f_count, rem_opt) = b_timer.get_health_status(row.id.as_str());
+                    let expected_status: slint::SharedString = match h_stage {
+                        amr::proxy::balancer::HealthStage::Healthy => {
+                            let cfg = c_timer.read();
+                            if let Some(acc) = cfg.accounts.iter().find(|a| a.id == row.id.as_str()) {
+                                acc.status.clone().into()
+                            } else {
+                                continue;
+                            }
+                        }
+                        amr::proxy::balancer::HealthStage::SoftPause => format!("PAUSE ({}s)", rem_opt.unwrap_or(3)).into(),
+                        amr::proxy::balancer::HealthStage::Backoff => format!("BACKOFF ({}s)", rem_opt.unwrap_or(15)).into(),
+                        amr::proxy::balancer::HealthStage::Cooldown => format!("COOLDOWN ({}s)", rem_opt.unwrap_or(60)).into(),
+                        amr::proxy::balancer::HealthStage::Quarantine => format!("QUARANTINE ({}s)", rem_opt.unwrap_or(300)).into(),
+                        amr::proxy::balancer::HealthStage::Probing => "PROBING (1 TRY)".into(),
+                    };
+                    if row.status != expected_status {
+                        row.status = expected_status;
+                        accounts_model.set_row_data(idx, row);
+                    }
+                }
             }
 
             let logs = s_timer.get_recent_logs();
