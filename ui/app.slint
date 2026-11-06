@@ -176,6 +176,18 @@ export struct I18nData {
     btn_copy_key: string,
     btn_regenerate_key: string,
     lbl_quota_protection_desc: string,
+    sec_stealth: string,
+    lbl_spoof_go_sdk: string,
+    lbl_spoof_go_sdk_desc: string,
+    lbl_inject_ide_metadata: string,
+    lbl_inject_ide_metadata_desc: string,
+    lbl_lock_prod_endpoints: string,
+    lbl_lock_prod_endpoints_desc: string,
+    lbl_cooldown_429: string,
+    lbl_cooldown_429_desc: string,
+    lbl_cooldown_duration: string,
+    lbl_request_jitter: string,
+    lbl_request_jitter_desc: string,
     lbl_failover_desc: string,
     opt_cache_first: string,
     opt_cache_balanced: string,
@@ -659,6 +671,12 @@ export component MainWindow inherits Window {
     in-out property <int> setting_timeout_secs: 120;
     in-out property <int> setting_heartbeat_secs: 12;
     in-out property <int> quota_protection_threshold: 5;
+    in-out property <bool> stealth_spoof_go: true;
+    in-out property <bool> stealth_inject_ide: true;
+    in-out property <bool> stealth_lock_prod: true;
+    in-out property <bool> stealth_cooldown_429: true;
+    in-out property <int> stealth_cooldown_duration: 300;
+    in-out property <bool> stealth_request_jitter: true;
 
     // Refresh Cadence
     in-out property <int> active_account_refresh_mins: 2;
@@ -732,6 +750,12 @@ export component MainWindow inherits Window {
     callback set_imbalance_threshold(int);
     callback toggle_failover_429();
     callback set_quota_protection_threshold(int);
+    callback toggle_stealth_spoof_go();
+    callback toggle_stealth_inject_ide();
+    callback toggle_stealth_lock_prod();
+    callback toggle_stealth_cooldown_429();
+    callback set_stealth_cooldown_duration(int);
+    callback toggle_stealth_request_jitter();
     callback set_active_refresh_cadence(int);
     callback set_pool_refresh_cadence(int);
     callback toggle_show_logs();
@@ -1733,6 +1757,136 @@ export component MainWindow inherits Window {
                                         text: root.i18n.lbl_quota_protection_desc;
                                         font-size: 10px;
                                         color: #a1a1aa;
+                                    }
+                                }
+                            }
+
+                            // Stealth & Anti-Detection Spoofing Card
+                            Rectangle {
+                                background: #18181b;
+                                border-radius: 8px;
+                                border-width: 1px;
+                                border-color: #27272a;
+
+                                VerticalLayout {
+                                    padding: 10px;
+                                    spacing: 8px;
+
+                                    Text { text: root.i18n.sec_stealth; font-size: 11px; font-weight: 700; color: #10b981; }
+
+                                    // Item 1: Go SDK Spoofing
+                                    HorizontalLayout {
+                                        alignment: space-between;
+                                        VerticalLayout {
+                                            spacing: 1px;
+                                            Text { text: root.i18n.lbl_spoof_go_sdk; font-size: 11px; font-weight: 600; color: #fafafa; }
+                                            Text { text: root.i18n.lbl_spoof_go_sdk_desc; font-size: 10px; color: #71717a; }
+                                        }
+                                        VerticalLayout {
+                                            alignment: center;
+                                            ToggleSwitch {
+                                                checked: root.stealth_spoof_go;
+                                                toggled => { root.toggle_stealth_spoof_go(); }
+                                            }
+                                        }
+                                    }
+
+                                    // Item 2: Inject IDE Metadata
+                                    HorizontalLayout {
+                                        alignment: space-between;
+                                        VerticalLayout {
+                                            spacing: 1px;
+                                            Text { text: root.i18n.lbl_inject_ide_metadata; font-size: 11px; font-weight: 600; color: #fafafa; }
+                                            Text { text: root.i18n.lbl_inject_ide_metadata_desc; font-size: 10px; color: #71717a; }
+                                        }
+                                        VerticalLayout {
+                                            alignment: center;
+                                            ToggleSwitch {
+                                                checked: root.stealth_inject_ide;
+                                                toggled => { root.toggle_stealth_inject_ide(); }
+                                            }
+                                        }
+                                    }
+
+                                    // Item 3: Lock Production Endpoints
+                                    HorizontalLayout {
+                                        alignment: space-between;
+                                        VerticalLayout {
+                                            spacing: 1px;
+                                            Text { text: root.i18n.lbl_lock_prod_endpoints; font-size: 11px; font-weight: 600; color: #fafafa; }
+                                            Text { text: root.i18n.lbl_lock_prod_endpoints_desc; font-size: 10px; color: #71717a; }
+                                        }
+                                        VerticalLayout {
+                                            alignment: center;
+                                            ToggleSwitch {
+                                                checked: root.stealth_lock_prod;
+                                                toggled => { root.toggle_stealth_lock_prod(); }
+                                            }
+                                        }
+                                    }
+
+                                    // Item 4: Cooldown on 429
+                                    HorizontalLayout {
+                                        alignment: space-between;
+                                        VerticalLayout {
+                                            spacing: 1px;
+                                            Text { text: root.i18n.lbl_cooldown_429; font-size: 11px; font-weight: 600; color: #fafafa; }
+                                            Text { text: root.i18n.lbl_cooldown_429_desc; font-size: 10px; color: #71717a; }
+                                        }
+                                        VerticalLayout {
+                                            alignment: center;
+                                            ToggleSwitch {
+                                                checked: root.stealth_cooldown_429;
+                                                toggled => { root.toggle_stealth_cooldown_429(); }
+                                            }
+                                        }
+                                    }
+
+                                    // Item 5: Cooldown Duration Selector
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        Text { text: root.i18n.lbl_cooldown_duration + ":"; font-size: 10px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
+                                        ActionButton {
+                                            text: "60s";
+                                            is_primary: root.stealth_cooldown_duration == 60;
+                                            is_accent: root.stealth_cooldown_duration == 60;
+                                            clicked => { root.set_stealth_cooldown_duration(60); }
+                                        }
+                                        ActionButton {
+                                            text: "180s (3m)";
+                                            is_primary: root.stealth_cooldown_duration == 180;
+                                            is_accent: root.stealth_cooldown_duration == 180;
+                                            clicked => { root.set_stealth_cooldown_duration(180); }
+                                        }
+                                        ActionButton {
+                                            text: "300s (5m)";
+                                            is_primary: root.stealth_cooldown_duration == 300;
+                                            is_accent: root.stealth_cooldown_duration == 300;
+                                            clicked => { root.set_stealth_cooldown_duration(300); }
+                                        }
+                                        ActionButton {
+                                            text: "600s (10m)";
+                                            is_primary: root.stealth_cooldown_duration == 600;
+                                            is_accent: root.stealth_cooldown_duration == 600;
+                                            clicked => { root.set_stealth_cooldown_duration(600); }
+                                        }
+                                    }
+
+                                    // Item 6: Request Jitter
+                                    HorizontalLayout {
+                                        alignment: space-between;
+                                        VerticalLayout {
+                                            spacing: 1px;
+                                            Text { text: root.i18n.lbl_request_jitter; font-size: 11px; font-weight: 600; color: #fafafa; }
+                                            Text { text: root.i18n.lbl_request_jitter_desc; font-size: 10px; color: #71717a; }
+                                        }
+                                        VerticalLayout {
+                                            alignment: center;
+                                            ToggleSwitch {
+                                                checked: root.stealth_request_jitter;
+                                                toggled => { root.toggle_stealth_request_jitter(); }
+                                            }
+                                        }
                                     }
                                 }
                             }

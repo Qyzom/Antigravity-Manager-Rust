@@ -425,23 +425,45 @@ async fn execute_chat_request(
             (uuid::Uuid::new_v4().to_string(), format!("auth0|user_{}", uuid::Uuid::new_v4().simple()))
         };
 
-        for endpoint_url in crate::proxy::antigravity::STREAM_ENDPOINTS {
+        let (spoof_go, lock_prod, cooldown_429, cooldown_secs, apply_jitter) = {
+            let cfg = state.config.read();
+            (cfg.spoof_go_sdk, cfg.lock_production_endpoints, cfg.cooldown_on_429, cfg.cooldown_duration_secs, cfg.request_jitter)
+        };
+
+        // Apply randomized timing jitter (10-40ms) to prevent synthetic millisecond cadence
+        if apply_jitter {
+            let jitter_ms = fastrand::u64(10..40);
+            tokio::time::sleep(std::time::Duration::from_millis(jitter_ms)).await;
+        }
+
+        let endpoints: &[&str] = if lock_prod {
+            &crate::proxy::antigravity::STREAM_ENDPOINTS[..1]
+        } else {
+            &crate::proxy::antigravity::STREAM_ENDPOINTS[..]
+        };
+
+        for endpoint_url in endpoints {
             let mut req_headers = reqwest::header::HeaderMap::new();
             req_headers.insert("authorization", format!("Bearer {}", req_token).parse().unwrap());
             req_headers.insert("User-Agent", crate::proxy::antigravity::get_official_hub_user_agent().parse().unwrap());
             req_headers.insert("X-Client-Id", client_id.parse().unwrap());
             req_headers.insert("X-Machine-Id", machine_id.parse().unwrap());
-            req_headers.insert("X-Goog-Api-Client", "gl-rust/1.0.0".parse().unwrap());
+            let sdk_hdr = if spoof_go { "gl-go/1.22.7 gdcl/0.1.0" } else { "gl-rust/1.0.0" };
+            req_headers.insert("X-Goog-Api-Client", sdk_hdr.parse().unwrap());
             req_headers.insert("Content-Type", "application/json".parse().unwrap());
 
-            if let Ok(r) = client.post(endpoint_url).headers(req_headers).json(&payload_json).send().await {
+            if let Ok(r) = client.post(*endpoint_url).headers(req_headers).json(&payload_json).send().await {
                 let s = r.status();
                 if s.is_success() {
                     res_opt = Some(r);
                     break;
+                } else if s == StatusCode::TOO_MANY_REQUESTS {
+                    // CRITICAL ANTI-BAN: Never hammer secondary/sandbox endpoints when an account is 429
+                    res_opt = Some(r);
+                    break;
                 } else {
                     res_opt = Some(r);
-                    continue; // Try next endpoint on any non-success (e.g. 429, 404, 503)
+                    continue; // Try next endpoint on transient 5xx/404
                 }
             }
         }
@@ -457,6 +479,10 @@ async fn execute_chat_request(
 
         let mut status = res.status();
         let is_429 = status == StatusCode::TOO_MANY_REQUESTS;
+        if is_429 && cooldown_429 {
+            log::warn!("Rate limit (429) hit for account {}, placing in quarantine cooldown for {}s", account.name, cooldown_secs);
+            state.balancer.mark_cooldown(&account.id, cooldown_secs);
+        }
         let mut is_auth_error = status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
 
         // If auth error occurred and account has a refresh token, automatically refresh on the fly and retry!
@@ -1042,23 +1068,45 @@ async fn execute_claude_request(
             (uuid::Uuid::new_v4().to_string(), format!("auth0|user_{}", uuid::Uuid::new_v4().simple()))
         };
 
-        for endpoint_url in crate::proxy::antigravity::STREAM_ENDPOINTS {
+        let (spoof_go, lock_prod, cooldown_429, cooldown_secs, apply_jitter) = {
+            let cfg = state.config.read();
+            (cfg.spoof_go_sdk, cfg.lock_production_endpoints, cfg.cooldown_on_429, cfg.cooldown_duration_secs, cfg.request_jitter)
+        };
+
+        // Apply randomized timing jitter (10-40ms) to prevent synthetic millisecond cadence
+        if apply_jitter {
+            let jitter_ms = fastrand::u64(10..40);
+            tokio::time::sleep(std::time::Duration::from_millis(jitter_ms)).await;
+        }
+
+        let endpoints: &[&str] = if lock_prod {
+            &crate::proxy::antigravity::STREAM_ENDPOINTS[..1]
+        } else {
+            &crate::proxy::antigravity::STREAM_ENDPOINTS[..]
+        };
+
+        for endpoint_url in endpoints {
             let mut req_headers = reqwest::header::HeaderMap::new();
             req_headers.insert("authorization", format!("Bearer {}", req_token).parse().unwrap());
             req_headers.insert("User-Agent", crate::proxy::antigravity::get_official_hub_user_agent().parse().unwrap());
             req_headers.insert("X-Client-Id", client_id.parse().unwrap());
             req_headers.insert("X-Machine-Id", machine_id.parse().unwrap());
-            req_headers.insert("X-Goog-Api-Client", "gl-rust/1.0.0".parse().unwrap());
+            let sdk_hdr = if spoof_go { "gl-go/1.22.7 gdcl/0.1.0" } else { "gl-rust/1.0.0" };
+            req_headers.insert("X-Goog-Api-Client", sdk_hdr.parse().unwrap());
             req_headers.insert("Content-Type", "application/json".parse().unwrap());
 
-            if let Ok(r) = client.post(endpoint_url).headers(req_headers).json(&payload_json).send().await {
+            if let Ok(r) = client.post(*endpoint_url).headers(req_headers).json(&payload_json).send().await {
                 let s = r.status();
                 if s.is_success() {
                     res_opt = Some(r);
                     break;
+                } else if s == StatusCode::TOO_MANY_REQUESTS {
+                    // CRITICAL ANTI-BAN: Never hammer secondary/sandbox endpoints when an account is 429
+                    res_opt = Some(r);
+                    break;
                 } else {
                     res_opt = Some(r);
-                    continue; // Try next endpoint on any non-success (e.g. 429, 404, 503)
+                    continue; // Try next endpoint on transient 5xx/404
                 }
             }
         }
@@ -1074,6 +1122,10 @@ async fn execute_claude_request(
 
         let mut status = res.status();
         let is_429 = status == StatusCode::TOO_MANY_REQUESTS;
+        if is_429 && cooldown_429 {
+            log::warn!("Rate limit (429) hit for account {}, placing in quarantine cooldown for {}s", account.name, cooldown_secs);
+            state.balancer.mark_cooldown(&account.id, cooldown_secs);
+        }
         let mut is_auth_error = status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
 
         if is_auth_error {

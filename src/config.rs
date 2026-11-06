@@ -276,6 +276,18 @@ pub struct AppConfig {
     pub default_fingerprint: String,
     #[serde(default = "default_protection_threshold")]
     pub quota_protection_threshold: u8,
+    #[serde(default = "default_true")]
+    pub spoof_go_sdk: bool,
+    #[serde(default = "default_true")]
+    pub inject_ide_metadata: bool,
+    #[serde(default = "default_true")]
+    pub lock_production_endpoints: bool,
+    #[serde(default = "default_true")]
+    pub cooldown_on_429: bool,
+    #[serde(default = "default_cooldown_duration")]
+    pub cooldown_duration_secs: u64,
+    #[serde(default = "default_true")]
+    pub request_jitter: bool,
     #[serde(default = "default_active_refresh_mins")]
     pub active_account_refresh_mins: u32,
     #[serde(default = "default_pool_refresh_mins")]
@@ -315,6 +327,10 @@ fn default_imbalance_threshold() -> u32 {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_cooldown_duration() -> u64 {
+    300 // 5 minutes default
 }
 
 fn default_refresh_interval() -> u64 {
@@ -375,6 +391,12 @@ impl Default for AppConfig {
             heartbeat_interval_secs: 12,
             default_fingerprint: "Claude Code 2.x".to_string(),
             quota_protection_threshold: 10,
+            spoof_go_sdk: true,
+            inject_ide_metadata: true,
+            lock_production_endpoints: true,
+            cooldown_on_429: true,
+            cooldown_duration_secs: 300,
+            request_jitter: true,
             active_account_refresh_mins: 2,
             pool_account_refresh_mins: 15,
             cadence_jitter_percent: 15,

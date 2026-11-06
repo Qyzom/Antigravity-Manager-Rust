@@ -436,6 +436,18 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_tray_exit: t.lbl_tray_exit.into(),
         lbl_tray_tooltip: t.lbl_tray_tooltip.into(),
         lbl_config_files_hint: t.lbl_config_files_hint.into(),
+        sec_stealth: t.sec_stealth.into(),
+        lbl_spoof_go_sdk: t.lbl_spoof_go_sdk.into(),
+        lbl_spoof_go_sdk_desc: t.lbl_spoof_go_sdk_desc.into(),
+        lbl_inject_ide_metadata: t.lbl_inject_ide_metadata.into(),
+        lbl_inject_ide_metadata_desc: t.lbl_inject_ide_metadata_desc.into(),
+        lbl_lock_prod_endpoints: t.lbl_lock_prod_endpoints.into(),
+        lbl_lock_prod_endpoints_desc: t.lbl_lock_prod_endpoints_desc.into(),
+        lbl_cooldown_429: t.lbl_cooldown_429.into(),
+        lbl_cooldown_429_desc: t.lbl_cooldown_429_desc.into(),
+        lbl_cooldown_duration: t.lbl_cooldown_duration.into(),
+        lbl_request_jitter: t.lbl_request_jitter.into(),
+        lbl_request_jitter_desc: t.lbl_request_jitter_desc.into(),
     };
     ui.set_github_update_status(t.btn_check_updates.clone().into());
     ui.set_test_prompt(t.lbl_test_default_prompt.clone().into());
@@ -1306,6 +1318,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_setting_check_updates(cfg.check_updates_startup);
         main_window.set_setting_clear_logs_exit(cfg.clear_logs_on_exit);
         main_window.set_quota_protection_threshold(cfg.quota_protection_threshold as i32);
+        main_window.set_stealth_spoof_go(cfg.spoof_go_sdk);
+        main_window.set_stealth_inject_ide(cfg.inject_ide_metadata);
+        main_window.set_stealth_lock_prod(cfg.lock_production_endpoints);
+        main_window.set_stealth_cooldown_429(cfg.cooldown_on_429);
+        main_window.set_stealth_cooldown_duration(cfg.cooldown_duration_secs as i32);
+        main_window.set_stealth_request_jitter(cfg.request_jitter);
         main_window.set_active_account_refresh_mins(cfg.active_account_refresh_mins as i32);
         main_window.set_pool_account_refresh_mins(cfg.pool_account_refresh_mins as i32);
         main_window.set_setting_timeout_secs(cfg.request_timeout_secs as i32);
@@ -2618,6 +2636,89 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         if let Some(h) = h_qpt.upgrade() {
             h.set_quota_protection_threshold(val);
+        }
+    });
+
+    let c_sgo = Arc::clone(&config_arc);
+    let h_sgo = window_handle.clone();
+    main_window.on_toggle_stealth_spoof_go(move || {
+        let new_val = {
+            let mut cfg = c_sgo.write();
+            cfg.spoof_go_sdk = !cfg.spoof_go_sdk;
+            let _ = cfg.save();
+            cfg.spoof_go_sdk
+        };
+        if let Some(h) = h_sgo.upgrade() {
+            h.set_stealth_spoof_go(new_val);
+        }
+    });
+
+    let c_side = Arc::clone(&config_arc);
+    let h_side = window_handle.clone();
+    main_window.on_toggle_stealth_inject_ide(move || {
+        let new_val = {
+            let mut cfg = c_side.write();
+            cfg.inject_ide_metadata = !cfg.inject_ide_metadata;
+            let _ = cfg.save();
+            cfg.inject_ide_metadata
+        };
+        if let Some(h) = h_side.upgrade() {
+            h.set_stealth_inject_ide(new_val);
+        }
+    });
+
+    let c_slock = Arc::clone(&config_arc);
+    let h_slock = window_handle.clone();
+    main_window.on_toggle_stealth_lock_prod(move || {
+        let new_val = {
+            let mut cfg = c_slock.write();
+            cfg.lock_production_endpoints = !cfg.lock_production_endpoints;
+            let _ = cfg.save();
+            cfg.lock_production_endpoints
+        };
+        if let Some(h) = h_slock.upgrade() {
+            h.set_stealth_lock_prod(new_val);
+        }
+    });
+
+    let c_scd = Arc::clone(&config_arc);
+    let h_scd = window_handle.clone();
+    main_window.on_toggle_stealth_cooldown_429(move || {
+        let new_val = {
+            let mut cfg = c_scd.write();
+            cfg.cooldown_on_429 = !cfg.cooldown_on_429;
+            let _ = cfg.save();
+            cfg.cooldown_on_429
+        };
+        if let Some(h) = h_scd.upgrade() {
+            h.set_stealth_cooldown_429(new_val);
+        }
+    });
+
+    let c_scdd = Arc::clone(&config_arc);
+    let h_scdd = window_handle.clone();
+    main_window.on_set_stealth_cooldown_duration(move |dur| {
+        {
+            let mut cfg = c_scdd.write();
+            cfg.cooldown_duration_secs = dur as u64;
+            let _ = cfg.save();
+        }
+        if let Some(h) = h_scdd.upgrade() {
+            h.set_stealth_cooldown_duration(dur);
+        }
+    });
+
+    let c_sjit = Arc::clone(&config_arc);
+    let h_sjit = window_handle.clone();
+    main_window.on_toggle_stealth_request_jitter(move || {
+        let new_val = {
+            let mut cfg = c_sjit.write();
+            cfg.request_jitter = !cfg.request_jitter;
+            let _ = cfg.save();
+            cfg.request_jitter
+        };
+        if let Some(h) = h_sjit.upgrade() {
+            h.set_stealth_request_jitter(new_val);
         }
     });
 

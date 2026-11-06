@@ -878,12 +878,23 @@ pub fn build_antigravity_payload(
     }
 
     let pid = project_id.unwrap_or("aicode-consumers");
+    let os_platform = match std::env::consts::OS {
+        "windows" => "WINDOWS",
+        "macos" => "MACOS",
+        _ => "LINUX",
+    };
     serde_json::json!({
         "project": pid,
         "model": upstream_model,
         "request": inner_request,
         "userAgent": "antigravity",
-        "requestId": format!("req-{}", uuid::Uuid::new_v4().simple())
+        "requestId": format!("req-{}", uuid::Uuid::new_v4().simple()),
+        "clientInfo": {
+            "clientType": "ANTIGRAVITY",
+            "ideType": "ANTIGRAVITY",
+            "ideVersion": "1.107.0",
+            "platform": os_platform
+        }
     })
 }
 
@@ -1083,12 +1094,23 @@ pub fn build_antigravity_payload_from_claude(
     }
 
     let pid = project_id.unwrap_or("aicode-consumers");
+    let os_platform = match std::env::consts::OS {
+        "windows" => "WINDOWS",
+        "macos" => "MACOS",
+        _ => "LINUX",
+    };
     serde_json::json!({
         "project": pid,
         "model": upstream_model,
         "request": inner_request,
         "userAgent": "antigravity",
-        "requestId": format!("req-{}", uuid::Uuid::new_v4().simple())
+        "requestId": format!("req-{}", uuid::Uuid::new_v4().simple()),
+        "clientInfo": {
+            "clientType": "ANTIGRAVITY",
+            "ideType": "ANTIGRAVITY",
+            "ideVersion": "1.107.0",
+            "platform": os_platform
+        }
     })
 }
 
