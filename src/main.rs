@@ -144,6 +144,7 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         tab_accounts: t.tab_accounts.into(),
         tab_models: t.tab_models.into(),
         tab_proxy: t.tab_proxy.into(),
+        tab_spoofing: t.tab_spoofing.into(),
         tab_logs: t.tab_logs.into(),
         tab_stats: t.tab_stats.into(),
         tab_settings: t.tab_settings.into(),
@@ -437,6 +438,16 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_tray_tooltip: t.lbl_tray_tooltip.into(),
         lbl_config_files_hint: t.lbl_config_files_hint.into(),
         sec_stealth: t.sec_stealth.into(),
+        spoofing_title: t.spoofing_title.into(),
+        spoofing_subtitle: t.spoofing_subtitle.into(),
+        lbl_spoof_platform: t.lbl_spoof_platform.into(),
+        lbl_spoof_platform_desc: t.lbl_spoof_platform_desc.into(),
+        lbl_spoof_ide_version: t.lbl_spoof_ide_version.into(),
+        lbl_spoof_ide_version_desc: t.lbl_spoof_ide_version_desc.into(),
+        lbl_cooldown_jitter: t.lbl_cooldown_jitter.into(),
+        lbl_cooldown_jitter_desc: t.lbl_cooldown_jitter_desc.into(),
+        lbl_ladder_backoff_info: t.lbl_ladder_backoff_info.into(),
+        lbl_platform_auto: t.lbl_platform_auto.into(),
         lbl_spoof_go_sdk: t.lbl_spoof_go_sdk.into(),
         lbl_spoof_go_sdk_desc: t.lbl_spoof_go_sdk_desc.into(),
         lbl_inject_ide_metadata: t.lbl_inject_ide_metadata.into(),
@@ -735,10 +746,11 @@ fn capture_and_save_screenshots(target_dir: &str) -> Result<(), Box<dyn std::err
         (1, "accounts.png"),
         (2, "models.png"),
         (3, "balancer.png"),
-        (4, "logs.png"),
-        (5, "stats.png"),
-        (6, "settings.png"),
-        (7, "about.png"),
+        (4, "spoofing.png"),
+        (5, "logs.png"),
+        (6, "stats.png"),
+        (7, "settings.png"),
+        (8, "about.png"),
     ];
 
     main_window.show()?;
@@ -1324,6 +1336,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_stealth_cooldown_429(cfg.cooldown_on_429);
         main_window.set_stealth_cooldown_duration(cfg.cooldown_duration_secs as i32);
         main_window.set_stealth_request_jitter(cfg.request_jitter);
+        main_window.set_stealth_spoof_platform(cfg.spoof_platform.clone().into());
+        main_window.set_stealth_spoof_ide_version(cfg.spoof_ide_version.clone().into());
+        main_window.set_stealth_cooldown_jitter_pct(cfg.cooldown_jitter_percent as i32);
         main_window.set_active_account_refresh_mins(cfg.active_account_refresh_mins as i32);
         main_window.set_pool_account_refresh_mins(cfg.pool_account_refresh_mins as i32);
         main_window.set_setting_timeout_secs(cfg.request_timeout_secs as i32);
@@ -2719,6 +2734,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         if let Some(h) = h_sjit.upgrade() {
             h.set_stealth_request_jitter(new_val);
+        }
+    });
+
+    let c_splat = Arc::clone(&config_arc);
+    let h_splat = window_handle.clone();
+    main_window.on_set_stealth_platform(move |plat| {
+        let plat_str = plat.to_string();
+        {
+            let mut cfg = c_splat.write();
+            cfg.spoof_platform = plat_str.clone();
+            let _ = cfg.save();
+        }
+        if let Some(h) = h_splat.upgrade() {
+            h.set_stealth_spoof_platform(plat_str.into());
+        }
+    });
+
+    let c_side = Arc::clone(&config_arc);
+    let h_side = window_handle.clone();
+    main_window.on_set_stealth_ide_version(move |ver| {
+        let ver_str = ver.to_string();
+        {
+            let mut cfg = c_side.write();
+            cfg.spoof_ide_version = ver_str.clone();
+            let _ = cfg.save();
+        }
+        if let Some(h) = h_side.upgrade() {
+            h.set_stealth_spoof_ide_version(ver_str.into());
+        }
+    });
+
+    let c_scjit = Arc::clone(&config_arc);
+    let h_scjit = window_handle.clone();
+    main_window.on_set_stealth_cooldown_jitter(move |pct| {
+        {
+            let mut cfg = c_scjit.write();
+            cfg.cooldown_jitter_percent = (pct as u8).clamp(0, 50);
+            let _ = cfg.save();
+        }
+        if let Some(h) = h_scjit.upgrade() {
+            h.set_stealth_cooldown_jitter_pct(pct);
         }
     });
 

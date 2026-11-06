@@ -662,6 +662,17 @@ pub fn build_antigravity_payload(
     project_id: Option<&str>,
     reasoning_effort: Option<ReasoningEffort>,
 ) -> Value {
+    build_antigravity_payload_with_meta(req, target_model, project_id, reasoning_effort, None, None)
+}
+
+pub fn build_antigravity_payload_with_meta(
+    req: &OpenAIChatRequest,
+    target_model: &str,
+    project_id: Option<&str>,
+    reasoning_effort: Option<ReasoningEffort>,
+    platform_override: Option<&str>,
+    ide_version_override: Option<&str>,
+) -> Value {
     let upstream_model = normalize_antigravity_upstream_model(target_model);
     let mut contents = Vec::new();
     let mut system_parts = Vec::new();
@@ -878,11 +889,13 @@ pub fn build_antigravity_payload(
     }
 
     let pid = project_id.unwrap_or("aicode-consumers");
-    let os_platform = match std::env::consts::OS {
+    let default_os = match std::env::consts::OS {
         "windows" => "WINDOWS",
         "macos" => "MACOS",
         _ => "LINUX",
     };
+    let os_platform = platform_override.unwrap_or(default_os);
+    let ide_ver = ide_version_override.unwrap_or(OFFICIAL_HUB_VERSION);
     serde_json::json!({
         "project": pid,
         "model": upstream_model,
@@ -892,7 +905,7 @@ pub fn build_antigravity_payload(
         "clientInfo": {
             "clientType": "ANTIGRAVITY",
             "ideType": "ANTIGRAVITY",
-            "ideVersion": OFFICIAL_HUB_VERSION,
+            "ideVersion": ide_ver,
             "platform": os_platform
         }
     })
@@ -903,6 +916,17 @@ pub fn build_antigravity_payload_from_claude(
     target_model: &str,
     project_id: Option<&str>,
     reasoning_effort: Option<ReasoningEffort>,
+) -> Value {
+    build_antigravity_payload_from_claude_with_meta(req, target_model, project_id, reasoning_effort, None, None)
+}
+
+pub fn build_antigravity_payload_from_claude_with_meta(
+    req: &Value,
+    target_model: &str,
+    project_id: Option<&str>,
+    reasoning_effort: Option<ReasoningEffort>,
+    platform_override: Option<&str>,
+    ide_version_override: Option<&str>,
 ) -> Value {
     let upstream_model = normalize_antigravity_upstream_model(target_model);
     let mut contents = Vec::new();
@@ -1094,11 +1118,13 @@ pub fn build_antigravity_payload_from_claude(
     }
 
     let pid = project_id.unwrap_or("aicode-consumers");
-    let os_platform = match std::env::consts::OS {
+    let default_os = match std::env::consts::OS {
         "windows" => "WINDOWS",
         "macos" => "MACOS",
         _ => "LINUX",
     };
+    let os_platform = platform_override.unwrap_or(default_os);
+    let ide_ver = ide_version_override.unwrap_or(OFFICIAL_HUB_VERSION);
     serde_json::json!({
         "project": pid,
         "model": upstream_model,
@@ -1108,7 +1134,7 @@ pub fn build_antigravity_payload_from_claude(
         "clientInfo": {
             "clientType": "ANTIGRAVITY",
             "ideType": "ANTIGRAVITY",
-            "ideVersion": OFFICIAL_HUB_VERSION,
+            "ideVersion": ide_ver,
             "platform": os_platform
         }
     })

@@ -408,11 +408,17 @@ async fn execute_chat_request(
 
     // If upstream is Antigravity (Google Cloud Code Pa), convert and forward
     if account.provider == "antigravity" {
-        let payload_json = crate::proxy::antigravity::build_antigravity_payload(
+        let (platform_str, ide_ver) = {
+            let cfg = state.config.read();
+            (cfg.resolved_platform(), cfg.spoof_ide_version.clone())
+        };
+        let payload_json = crate::proxy::antigravity::build_antigravity_payload_with_meta(
             payload,
             &target_model,
             account.project_id.as_deref(),
             effective_effort,
+            Some(platform_str),
+            Some(&ide_ver),
         );
 
         let client = state.get_client_for_account(account);
@@ -1058,11 +1064,17 @@ async fn execute_claude_request(
     };
 
     if account.provider == "antigravity" {
-        let payload_json = crate::proxy::antigravity::build_antigravity_payload_from_claude(
+        let (platform_str, ide_ver) = {
+            let cfg = state.config.read();
+            (cfg.resolved_platform(), cfg.spoof_ide_version.clone())
+        };
+        let payload_json = crate::proxy::antigravity::build_antigravity_payload_from_claude_with_meta(
             payload,
             &target_model,
             account.project_id.as_deref(),
             effective_effort,
+            Some(platform_str),
+            Some(&ide_ver),
         );
 
         let client = state.get_client_for_account(account);

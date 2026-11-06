@@ -233,6 +233,14 @@ fn default_max_log_entries() -> usize {
     100
 }
 
+fn default_spoof_platform() -> String {
+    "AUTO".to_string()
+}
+
+fn default_spoof_ide_version() -> String {
+    "2.28.1".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub port: u16,
@@ -288,6 +296,10 @@ pub struct AppConfig {
     pub cooldown_duration_secs: u64,
     #[serde(default = "default_jitter_percent")]
     pub cooldown_jitter_percent: u8,
+    #[serde(default = "default_spoof_platform")]
+    pub spoof_platform: String,
+    #[serde(default = "default_spoof_ide_version")]
+    pub spoof_ide_version: String,
     #[serde(default = "default_true")]
     pub request_jitter: bool,
     #[serde(default = "default_active_refresh_mins")]
@@ -399,6 +411,8 @@ impl Default for AppConfig {
             cooldown_on_429: true,
             cooldown_duration_secs: 300,
             cooldown_jitter_percent: 15,
+            spoof_platform: "AUTO".to_string(),
+            spoof_ide_version: "2.28.1".to_string(),
             request_jitter: true,
             active_account_refresh_mins: 2,
             pool_account_refresh_mins: 15,
@@ -467,6 +481,18 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
+    pub fn resolved_platform(&self) -> &'static str {
+        match self.spoof_platform.to_uppercase().as_str() {
+            "LINUX" => "LINUX",
+            "WINDOWS" => "WINDOWS",
+            "MACOS" | "DARWIN" => "MACOS",
+            _ => match std::env::consts::OS {
+                "windows" => "WINDOWS",
+                "macos" => "MACOS",
+                _ => "LINUX",
+            },
+        }
+    }
     pub fn config_path() -> PathBuf {
         let local_cfg = Path::new("amr.json");
         if local_cfg.exists() {

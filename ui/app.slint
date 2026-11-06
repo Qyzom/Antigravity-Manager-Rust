@@ -55,6 +55,7 @@ export struct I18nData {
     tab_accounts: string,
     tab_models: string,
     tab_proxy: string,
+    tab_spoofing: string,
     tab_logs: string,
     tab_stats: string,
     tab_settings: string,
@@ -177,6 +178,16 @@ export struct I18nData {
     btn_regenerate_key: string,
     lbl_quota_protection_desc: string,
     sec_stealth: string,
+    spoofing_title: string,
+    spoofing_subtitle: string,
+    lbl_spoof_platform: string,
+    lbl_spoof_platform_desc: string,
+    lbl_spoof_ide_version: string,
+    lbl_spoof_ide_version_desc: string,
+    lbl_cooldown_jitter: string,
+    lbl_cooldown_jitter_desc: string,
+    lbl_ladder_backoff_info: string,
+    lbl_platform_auto: string,
     lbl_spoof_go_sdk: string,
     lbl_spoof_go_sdk_desc: string,
     lbl_inject_ide_metadata: string,
@@ -677,6 +688,9 @@ export component MainWindow inherits Window {
     in-out property <bool> stealth_cooldown_429: true;
     in-out property <int> stealth_cooldown_duration: 300;
     in-out property <bool> stealth_request_jitter: true;
+    in-out property <string> stealth_spoof_platform: "AUTO";
+    in-out property <string> stealth_spoof_ide_version: "2.28.1";
+    in-out property <int> stealth_cooldown_jitter_pct: 15;
 
     // Refresh Cadence
     in-out property <int> active_account_refresh_mins: 2;
@@ -756,6 +770,9 @@ export component MainWindow inherits Window {
     callback toggle_stealth_cooldown_429();
     callback set_stealth_cooldown_duration(int);
     callback toggle_stealth_request_jitter();
+    callback set_stealth_platform(string);
+    callback set_stealth_ide_version(string);
+    callback set_stealth_cooldown_jitter(int);
     callback set_active_refresh_cadence(int);
     callback set_pool_refresh_cadence(int);
     callback toggle_show_logs();
@@ -843,25 +860,30 @@ export component MainWindow inherits Window {
                     is_active: root.active_tab == 3;
                     clicked => { root.active_tab = 3; }
                 }
-                if root.show_logs_tab: NavItem {
-                    text: root.i18n.tab_logs;
+                NavItem {
+                    text: root.i18n.tab_spoofing;
                     is_active: root.active_tab == 4;
                     clicked => { root.active_tab = 4; }
                 }
-                if root.show_stats_tab: NavItem {
-                    text: root.i18n.tab_stats;
+                if root.show_logs_tab: NavItem {
+                    text: root.i18n.tab_logs;
                     is_active: root.active_tab == 5;
                     clicked => { root.active_tab = 5; }
                 }
-                NavItem {
-                    text: root.i18n.tab_settings;
+                if root.show_stats_tab: NavItem {
+                    text: root.i18n.tab_stats;
                     is_active: root.active_tab == 6;
                     clicked => { root.active_tab = 6; }
                 }
-                if root.show_about_tab: NavItem {
-                    text: root.i18n.tab_about;
+                NavItem {
+                    text: root.i18n.tab_settings;
                     is_active: root.active_tab == 7;
                     clicked => { root.active_tab = 7; }
+                }
+                if root.show_about_tab: NavItem {
+                    text: root.i18n.tab_about;
+                    is_active: root.active_tab == 8;
+                    clicked => { root.active_tab = 8; }
                 }
 
                 Rectangle { }
@@ -885,9 +907,10 @@ export component MainWindow inherits Window {
                             : root.active_tab == 1 ? root.i18n.acc_title
                             : root.active_tab == 2 ? root.i18n.mod_title
                             : root.active_tab == 3 ? root.i18n.proxy_title
-                            : root.active_tab == 4 ? root.i18n.logs_title
-                            : root.active_tab == 5 ? root.i18n.stats_title
-                            : root.active_tab == 6 ? root.i18n.sett_title
+                            : root.active_tab == 4 ? root.i18n.spoofing_title
+                            : root.active_tab == 5 ? root.i18n.logs_title
+                            : root.active_tab == 6 ? root.i18n.stats_title
+                            : root.active_tab == 7 ? root.i18n.sett_title
                             : root.i18n.about_title;
                         font-size: 18px;
                         font-weight: 800;
@@ -898,9 +921,10 @@ export component MainWindow inherits Window {
                             : root.active_tab == 1 ? root.i18n.acc_subtitle
                             : root.active_tab == 2 ? root.i18n.mod_subtitle
                             : root.active_tab == 3 ? root.i18n.proxy_subtitle
-                            : root.active_tab == 4 ? root.i18n.logs_subtitle
-                            : root.active_tab == 5 ? root.i18n.stats_subtitle
-                            : root.active_tab == 6 ? root.i18n.sett_subtitle
+                            : root.active_tab == 4 ? root.i18n.spoofing_subtitle
+                            : root.active_tab == 5 ? root.i18n.logs_subtitle
+                            : root.active_tab == 6 ? root.i18n.stats_subtitle
+                            : root.active_tab == 7 ? root.i18n.sett_subtitle
                             : root.i18n.about_subtitle;
                         font-size: 11px;
                         color: #71717a;
@@ -1762,136 +1786,6 @@ export component MainWindow inherits Window {
                                 }
                             }
 
-                            // Stealth & Anti-Detection Spoofing Card
-                            Rectangle {
-                                background: #18181b;
-                                border-radius: 8px;
-                                border-width: 1px;
-                                border-color: #27272a;
-
-                                VerticalLayout {
-                                    padding: 10px;
-                                    spacing: 8px;
-
-                                    Text { text: root.i18n.sec_stealth; font-size: 11px; font-weight: 700; color: #10b981; }
-
-                                    // Item 1: Go SDK Spoofing
-                                    HorizontalLayout {
-                                        alignment: space-between;
-                                        VerticalLayout {
-                                            spacing: 1px;
-                                            Text { text: root.i18n.lbl_spoof_go_sdk; font-size: 11px; font-weight: 600; color: #fafafa; }
-                                            Text { text: root.i18n.lbl_spoof_go_sdk_desc; font-size: 10px; color: #71717a; }
-                                        }
-                                        VerticalLayout {
-                                            alignment: center;
-                                            ToggleSwitch {
-                                                checked: root.stealth_spoof_go;
-                                                toggled => { root.toggle_stealth_spoof_go(); }
-                                            }
-                                        }
-                                    }
-
-                                    // Item 2: Inject IDE Metadata
-                                    HorizontalLayout {
-                                        alignment: space-between;
-                                        VerticalLayout {
-                                            spacing: 1px;
-                                            Text { text: root.i18n.lbl_inject_ide_metadata; font-size: 11px; font-weight: 600; color: #fafafa; }
-                                            Text { text: root.i18n.lbl_inject_ide_metadata_desc; font-size: 10px; color: #71717a; }
-                                        }
-                                        VerticalLayout {
-                                            alignment: center;
-                                            ToggleSwitch {
-                                                checked: root.stealth_inject_ide;
-                                                toggled => { root.toggle_stealth_inject_ide(); }
-                                            }
-                                        }
-                                    }
-
-                                    // Item 3: Lock Production Endpoints
-                                    HorizontalLayout {
-                                        alignment: space-between;
-                                        VerticalLayout {
-                                            spacing: 1px;
-                                            Text { text: root.i18n.lbl_lock_prod_endpoints; font-size: 11px; font-weight: 600; color: #fafafa; }
-                                            Text { text: root.i18n.lbl_lock_prod_endpoints_desc; font-size: 10px; color: #71717a; }
-                                        }
-                                        VerticalLayout {
-                                            alignment: center;
-                                            ToggleSwitch {
-                                                checked: root.stealth_lock_prod;
-                                                toggled => { root.toggle_stealth_lock_prod(); }
-                                            }
-                                        }
-                                    }
-
-                                    // Item 4: Cooldown on 429
-                                    HorizontalLayout {
-                                        alignment: space-between;
-                                        VerticalLayout {
-                                            spacing: 1px;
-                                            Text { text: root.i18n.lbl_cooldown_429; font-size: 11px; font-weight: 600; color: #fafafa; }
-                                            Text { text: root.i18n.lbl_cooldown_429_desc; font-size: 10px; color: #71717a; }
-                                        }
-                                        VerticalLayout {
-                                            alignment: center;
-                                            ToggleSwitch {
-                                                checked: root.stealth_cooldown_429;
-                                                toggled => { root.toggle_stealth_cooldown_429(); }
-                                            }
-                                        }
-                                    }
-
-                                    // Item 5: Cooldown Duration Selector
-                                    HorizontalLayout {
-                                        spacing: 6px;
-                                        Text { text: root.i18n.lbl_cooldown_duration + ":"; font-size: 10px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
-                                        ActionButton {
-                                            text: "60s";
-                                            is_primary: root.stealth_cooldown_duration == 60;
-                                            is_accent: root.stealth_cooldown_duration == 60;
-                                            clicked => { root.set_stealth_cooldown_duration(60); }
-                                        }
-                                        ActionButton {
-                                            text: "180s (3m)";
-                                            is_primary: root.stealth_cooldown_duration == 180;
-                                            is_accent: root.stealth_cooldown_duration == 180;
-                                            clicked => { root.set_stealth_cooldown_duration(180); }
-                                        }
-                                        ActionButton {
-                                            text: "300s (5m)";
-                                            is_primary: root.stealth_cooldown_duration == 300;
-                                            is_accent: root.stealth_cooldown_duration == 300;
-                                            clicked => { root.set_stealth_cooldown_duration(300); }
-                                        }
-                                        ActionButton {
-                                            text: "600s (10m)";
-                                            is_primary: root.stealth_cooldown_duration == 600;
-                                            is_accent: root.stealth_cooldown_duration == 600;
-                                            clicked => { root.set_stealth_cooldown_duration(600); }
-                                        }
-                                    }
-
-                                    // Item 6: Request Jitter
-                                    HorizontalLayout {
-                                        alignment: space-between;
-                                        VerticalLayout {
-                                            spacing: 1px;
-                                            Text { text: root.i18n.lbl_request_jitter; font-size: 11px; font-weight: 600; color: #fafafa; }
-                                            Text { text: root.i18n.lbl_request_jitter_desc; font-size: 10px; color: #71717a; }
-                                        }
-                                        VerticalLayout {
-                                            alignment: center;
-                                            ToggleSwitch {
-                                                checked: root.stealth_request_jitter;
-                                                toggled => { root.toggle_stealth_request_jitter(); }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
                             // Active Endpoints List
                             Rectangle {
                                 background: #18181b;
@@ -1987,9 +1881,269 @@ export component MainWindow inherits Window {
                         }
 
                     // ==========================================
-                    // TAB 4: TRAFFIC LOGS
+                    // TAB 4: SPOOFING & ANTI-DETECTION
                     // ==========================================
                     if root.active_tab == 4: VerticalLayout {
+                        alignment: start;
+                        spacing: 8px;
+
+                        // Card 1: Official Go SDK & Network Signatures
+                        Rectangle {
+                            background: #18181b;
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: #27272a;
+
+                            VerticalLayout {
+                                padding: 12px;
+                                spacing: 10px;
+
+                                Text { text: "1. Go SDK & Protocol Emulation"; font-size: 12px; font-weight: 700; color: #10b981; }
+
+                                // Go SDK Header
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 1px;
+                                        Text { text: root.i18n.lbl_spoof_go_sdk; font-size: 11px; font-weight: 600; color: #fafafa; }
+                                        Text { text: root.i18n.lbl_spoof_go_sdk_desc; font-size: 10px; color: #71717a; }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        ToggleSwitch {
+                                            checked: root.stealth_spoof_go;
+                                            toggled => { root.toggle_stealth_spoof_go(); }
+                                        }
+                                    }
+                                }
+
+                                // Lock Production Endpoints
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 1px;
+                                        Text { text: root.i18n.lbl_lock_prod_endpoints; font-size: 11px; font-weight: 600; color: #fafafa; }
+                                        Text { text: root.i18n.lbl_lock_prod_endpoints_desc; font-size: 10px; color: #71717a; }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        ToggleSwitch {
+                                            checked: root.stealth_lock_prod;
+                                            toggled => { root.toggle_stealth_lock_prod(); }
+                                        }
+                                    }
+                                }
+
+                                // Request Timing Jitter
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 1px;
+                                        Text { text: root.i18n.lbl_request_jitter; font-size: 11px; font-weight: 600; color: #fafafa; }
+                                        Text { text: root.i18n.lbl_request_jitter_desc; font-size: 10px; color: #71717a; }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        ToggleSwitch {
+                                            checked: root.stealth_request_jitter;
+                                            toggled => { root.toggle_stealth_request_jitter(); }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Card 2: Client Identity & Operating System Platform
+                        Rectangle {
+                            background: #18181b;
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: #27272a;
+
+                            VerticalLayout {
+                                padding: 12px;
+                                spacing: 10px;
+
+                                Text { text: "2. Client Identity & Operating System"; font-size: 12px; font-weight: 700; color: #38bdf8; }
+
+                                // Inject IDE Metadata
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 1px;
+                                        Text { text: root.i18n.lbl_inject_ide_metadata; font-size: 11px; font-weight: 600; color: #fafafa; }
+                                        Text { text: root.i18n.lbl_inject_ide_metadata_desc; font-size: 10px; color: #71717a; }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        ToggleSwitch {
+                                            checked: root.stealth_inject_ide;
+                                            toggled => { root.toggle_stealth_inject_ide(); }
+                                        }
+                                    }
+                                }
+
+                                // Platform Selector
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Text { text: root.i18n.lbl_spoof_platform + ":"; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
+                                    ActionButton {
+                                        text: root.i18n.lbl_platform_auto;
+                                        is_primary: root.stealth_spoof_platform == "AUTO";
+                                        is_accent: root.stealth_spoof_platform == "AUTO";
+                                        clicked => { root.set_stealth_platform("AUTO"); }
+                                    }
+                                    ActionButton {
+                                        text: "Linux";
+                                        is_primary: root.stealth_spoof_platform == "LINUX";
+                                        is_accent: root.stealth_spoof_platform == "LINUX";
+                                        clicked => { root.set_stealth_platform("LINUX"); }
+                                    }
+                                    ActionButton {
+                                        text: "Windows";
+                                        is_primary: root.stealth_spoof_platform == "WINDOWS";
+                                        is_accent: root.stealth_spoof_platform == "WINDOWS";
+                                        clicked => { root.set_stealth_platform("WINDOWS"); }
+                                    }
+                                    ActionButton {
+                                        text: "macOS";
+                                        is_primary: root.stealth_spoof_platform == "MACOS";
+                                        is_accent: root.stealth_spoof_platform == "MACOS";
+                                        clicked => { root.set_stealth_platform("MACOS"); }
+                                    }
+                                }
+
+                                // IDE Version Selector
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Text { text: root.i18n.lbl_spoof_ide_version + ":"; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
+                                    ActionButton {
+                                        text: "2.28.1 (Latest)";
+                                        is_primary: root.stealth_spoof_ide_version == "2.28.1";
+                                        is_accent: root.stealth_spoof_ide_version == "2.28.1";
+                                        clicked => { root.set_stealth_ide_version("2.28.1"); }
+                                    }
+                                    ActionButton {
+                                        text: "2.23.1";
+                                        is_primary: root.stealth_spoof_ide_version == "2.23.1";
+                                        is_accent: root.stealth_spoof_ide_version == "2.23.1";
+                                        clicked => { root.set_stealth_ide_version("2.23.1"); }
+                                    }
+                                    ActionButton {
+                                        text: "1.107.0 (Legacy)";
+                                        is_primary: root.stealth_spoof_ide_version == "1.107.0";
+                                        is_accent: root.stealth_spoof_ide_version == "1.107.0";
+                                        clicked => { root.set_stealth_ide_version("1.107.0"); }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Card 3: Adaptive Exponential Backoff Ladder & Auto-Heal
+                        Rectangle {
+                            background: #18181b;
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: #27272a;
+
+                            VerticalLayout {
+                                padding: 12px;
+                                spacing: 10px;
+
+                                Text { text: "3. Adaptive Backoff Ladder & Auto-Heal (Anti-429)"; font-size: 12px; font-weight: 700; color: #fbbf24; }
+
+                                // Cooldown 429 Toggle
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 1px;
+                                        Text { text: root.i18n.lbl_cooldown_429; font-size: 11px; font-weight: 600; color: #fafafa; }
+                                        Text { text: root.i18n.lbl_cooldown_429_desc; font-size: 10px; color: #71717a; }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        ToggleSwitch {
+                                            checked: root.stealth_cooldown_429;
+                                            toggled => { root.toggle_stealth_cooldown_429(); }
+                                        }
+                                    }
+                                }
+
+                                Text { text: root.i18n.lbl_ladder_backoff_info; font-size: 10px; color: #a1a1aa; }
+
+                                // Jitter Spread Selector
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Text { text: root.i18n.lbl_cooldown_jitter + ":"; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
+                                    ActionButton {
+                                        text: "5%";
+                                        is_primary: root.stealth_cooldown_jitter_pct == 5;
+                                        is_accent: root.stealth_cooldown_jitter_pct == 5;
+                                        clicked => { root.set_stealth_cooldown_jitter(5); }
+                                    }
+                                    ActionButton {
+                                        text: "10%";
+                                        is_primary: root.stealth_cooldown_jitter_pct == 10;
+                                        is_accent: root.stealth_cooldown_jitter_pct == 10;
+                                        clicked => { root.set_stealth_cooldown_jitter(10); }
+                                    }
+                                    ActionButton {
+                                        text: "15% (Default)";
+                                        is_primary: root.stealth_cooldown_jitter_pct == 15;
+                                        is_accent: root.stealth_cooldown_jitter_pct == 15;
+                                        clicked => { root.set_stealth_cooldown_jitter(15); }
+                                    }
+                                    ActionButton {
+                                        text: "20%";
+                                        is_primary: root.stealth_cooldown_jitter_pct == 20;
+                                        is_accent: root.stealth_cooldown_jitter_pct == 20;
+                                        clicked => { root.set_stealth_cooldown_jitter(20); }
+                                    }
+                                    ActionButton {
+                                        text: "25%";
+                                        is_primary: root.stealth_cooldown_jitter_pct == 25;
+                                        is_accent: root.stealth_cooldown_jitter_pct == 25;
+                                        clicked => { root.set_stealth_cooldown_jitter(25); }
+                                    }
+                                }
+
+                                // Max Quarantine Duration
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Text { text: root.i18n.lbl_cooldown_duration + ":"; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
+                                    ActionButton {
+                                        text: "60s";
+                                        is_primary: root.stealth_cooldown_duration == 60;
+                                        is_accent: root.stealth_cooldown_duration == 60;
+                                        clicked => { root.set_stealth_cooldown_duration(60); }
+                                    }
+                                    ActionButton {
+                                        text: "180s (3m)";
+                                        is_primary: root.stealth_cooldown_duration == 180;
+                                        is_accent: root.stealth_cooldown_duration == 180;
+                                        clicked => { root.set_stealth_cooldown_duration(180); }
+                                    }
+                                    ActionButton {
+                                        text: "300s (5m)";
+                                        is_primary: root.stealth_cooldown_duration == 300;
+                                        is_accent: root.stealth_cooldown_duration == 300;
+                                        clicked => { root.set_stealth_cooldown_duration(300); }
+                                    }
+                                    ActionButton {
+                                        text: "600s (10m)";
+                                        is_primary: root.stealth_cooldown_duration == 600;
+                                        is_accent: root.stealth_cooldown_duration == 600;
+                                        clicked => { root.set_stealth_cooldown_duration(600); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ==========================================
+                    // TAB 5: TRAFFIC LOGS
+                    // ==========================================
+                    if root.active_tab == 5: VerticalLayout {
                         alignment: start;
                         spacing: 12px;
 
@@ -2128,9 +2282,9 @@ export component MainWindow inherits Window {
                     }
 
                     // ==========================================
-                    // TAB 5: STATISTICS
+                    // TAB 6: STATISTICS
                     // ==========================================
-                    if root.active_tab == 5: VerticalLayout {
+                    if root.active_tab == 6: VerticalLayout {
                         alignment: start;
                         spacing: 12px;
 
@@ -2537,9 +2691,9 @@ export component MainWindow inherits Window {
                     }
 
                     // ==========================================
-                    // TAB 6: SETTINGS
+                    // TAB 7: SETTINGS
                     // ==========================================
-                    if root.active_tab == 6: VerticalLayout {
+                    if root.active_tab == 7: VerticalLayout {
                         alignment: start;
                         spacing: 14px;
 
@@ -2885,11 +3039,9 @@ export component MainWindow inherits Window {
                     }
 
                     // ==========================================
-                    // TAB 7: ABOUT & OPEN SOURCE
+                    // TAB 8: ABOUT & OPEN SOURCE
                     // ==========================================
-                    // TAB 7: ABOUT & OPEN SOURCE
-                    // ==========================================
-                    if root.active_tab == 7: VerticalLayout {
+                    if root.active_tab == 8: VerticalLayout {
                         alignment: start;
                         spacing: 14px;
 
