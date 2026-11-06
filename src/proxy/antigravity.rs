@@ -90,6 +90,8 @@ pub fn normalize_antigravity_upstream_model(requested: &str) -> &'static str {
         }
     } else if clean.contains("argon") {
         "gemini-4-argon"
+    } else if clean.contains("image") || clean.contains("imagen") {
+        "imagen-3.0-generate-002"
     } else if clean.contains("pro") {
         "gemini-2.5-pro"
     } else {

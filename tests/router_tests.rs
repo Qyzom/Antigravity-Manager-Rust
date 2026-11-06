@@ -785,8 +785,9 @@ mod tests {
         });
 
         cfg.sanitize_models();
-        // After sanitization, only 6 unique flagship models remain
-        assert_eq!(cfg.models.len(), 6);
+        // After sanitization, 7 unique flagship models remain (including Image generator)
+        assert_eq!(cfg.models.len(), 7);
+        assert!(cfg.models.iter().any(|m| m.id == "Image generator"));
         assert!(cfg.models.iter().any(|m| m.id == "gemini-3.8-flash"));
         assert!(!cfg.models.iter().any(|m| m.id == "gemini-3.8-flash-medium"));
     }

@@ -1,6 +1,6 @@
 [package]
 name = "amr"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["Qyzom <t0lotsmail@gmail.com>"]
 description = "Ultra-lightweight high-performance AI API proxy & protocol emulator in Rust (Antigravity Manager Rust)"
@@ -48,6 +48,7 @@ auto-launch = "0.5"
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Shell",
     "Win32_Storage_FileSystem",
 ] }
 

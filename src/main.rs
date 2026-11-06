@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 slint::include_modules!();
 
 use amr::autostart::set_autostart;
@@ -22,7 +24,23 @@ fn open_in_system(target: &str) {
     #[cfg(target_os = "linux")]
     let _ = std::process::Command::new("xdg-open").arg(target).spawn();
     #[cfg(target_os = "windows")]
-    let _ = std::process::Command::new("cmd").args(["/C", "start", "", target]).spawn();
+    {
+        use std::os::windows::ffi::OsStrExt;
+        let mut wide: Vec<u16> = std::ffi::OsStr::new(target).encode_wide().collect();
+        wide.push(0);
+        let mut operation: Vec<u16> = std::ffi::OsStr::new("open").encode_wide().collect();
+        operation.push(0);
+        unsafe {
+            windows_sys::Win32::UI::Shell::ShellExecuteW(
+                0,
+                operation.as_ptr(),
+                wide.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
+            );
+        }
+    }
     #[cfg(target_os = "macos")]
     let _ = std::process::Command::new("open").arg(target).spawn();
 }
@@ -886,7 +904,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 (cfg.host.clone(), cfg.port)
             };
             let addr = format!("{}:{}", host, port);
-            log::info!("Starting Aroxy core server on http://{}", addr);
+            log::info!("Starting AMR core server on http://{}", addr);
 
             // Resilient bind: retry with backoff if port is temporarily in TIME_WAIT / in use
             let mut listener_opt = None;
@@ -905,12 +923,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let listener = match listener_opt {
                 Some(l) => {
-                    log::info!("Aroxy core server successfully bound and listening on http://{}", addr);
+                    log::info!("AMR core server successfully bound and listening on http://{}", addr);
                     p_running_srv.store(true, Ordering::SeqCst);
                     l
                 }
                 None => {
-                    log::error!("Aroxy failed to bind to {} after 10 attempts", addr);
+                    log::error!("AMR failed to bind to {} after 10 attempts", addr);
                     p_running_srv.store(false, Ordering::SeqCst);
                     tokio::select! {
                         _ = proxy_enable_rx.changed() => continue,
@@ -925,14 +943,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tokio::select! {
                 res = server => {
                     if let Err(e) = res {
-                        log::error!("Aroxy server error: {}", e);
+                        log::error!("AMR server error: {}", e);
                     }
                 }
                 _ = proxy_enable_rx.changed() => {
-                    log::info!("Aroxy server shutting down listener per user toggle.");
+                    log::info!("AMR server shutting down listener per user toggle.");
                 }
                 _ = s_stop_rx.changed() => {
-                    log::info!("Aroxy server received application shutdown signal.");
+                    log::info!("AMR server received application shutdown signal.");
                     break;
                 }
             }
@@ -1231,7 +1249,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     if args.headless {
-        log::info!("Aroxy running in headless daemon mode. Press Ctrl+C to stop.");
+        log::info!("AMR running in headless daemon mode. Press Ctrl+C to stop.");
         tokio::signal::ctrl_c().await?;
         let _ = stop_sender.send(true);
         return Ok(());
@@ -1617,10 +1635,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     main_window.on_add_account_browser_oauth(move || {
         let auth_url = antigravity::get_oauth_authorization_url(port_oauth);
         log::info!("Opening Google OAuth in browser: {}", auth_url);
-        #[cfg(target_os = "linux")]
-        let _ = std::process::Command::new("xdg-open").arg(&auth_url).spawn();
-        #[cfg(target_os = "windows")]
-        let _ = std::process::Command::new("cmd").args(["/C", "start", &auth_url]).spawn();
+        open_in_system(&auth_url);
     });
 
     // Shared update states for account interactive feedback: id -> (is_updating, status_text)

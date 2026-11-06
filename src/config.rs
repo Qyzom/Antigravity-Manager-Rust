@@ -475,6 +475,14 @@ impl Default for AppConfig {
                     is_enabled: true,
                     supports_thinking: true,
                 },
+                ModelCatalogItem {
+                    id: "Image generator".to_string(),
+                    display_name: "Image generator".to_string(),
+                    provider: "Google".to_string(),
+                    tier: "PRO".to_string(),
+                    is_enabled: true,
+                    supports_thinking: false,
+                },
             ],
         }
     }
@@ -585,6 +593,11 @@ impl AppConfig {
                 m.display_name = "Gemini 4 Argon".to_string();
                 m.provider = "gemini".to_string();
                 m.supports_thinking = true;
+            } else if m.id == "Image generator" || m.id.to_lowercase().contains("imagen") || m.id == "image-generator" {
+                m.id = "Image generator".to_string();
+                m.display_name = "Image generator".to_string();
+                m.provider = "Google".to_string();
+                m.supports_thinking = false;
             }
         }
 
@@ -749,7 +762,7 @@ impl AppConfig {
     pub fn aggregate_claude_gpt_percent(&self) -> i32 {
         let active: Vec<_> = self.accounts.iter().filter(|a| a.is_active).collect();
         if active.is_empty() {
-            return 100;
+            return 0;
         }
         let sum: i32 = active.iter().map(|a| a.claude_gpt_percent).sum();
         sum / active.len() as i32
@@ -758,7 +771,7 @@ impl AppConfig {
     pub fn aggregate_claude_gpt_weekly_percent(&self) -> i32 {
         let active: Vec<_> = self.accounts.iter().filter(|a| a.is_active).collect();
         if active.is_empty() {
-            return 100;
+            return 0;
         }
         let sum: i32 = active.iter().map(|a| a.claude_gpt_weekly_percent).sum();
         sum / active.len() as i32
@@ -767,7 +780,7 @@ impl AppConfig {
     pub fn aggregate_gemini_percent(&self) -> i32 {
         let active: Vec<_> = self.accounts.iter().filter(|a| a.is_active).collect();
         if active.is_empty() {
-            return 100;
+            return 0;
         }
         let sum: i32 = active.iter().map(|a| a.gemini_percent).sum();
         sum / active.len() as i32
@@ -776,7 +789,7 @@ impl AppConfig {
     pub fn aggregate_gemini_weekly_percent(&self) -> i32 {
         let active: Vec<_> = self.accounts.iter().filter(|a| a.is_active).collect();
         if active.is_empty() {
-            return 100;
+            return 0;
         }
         let sum: i32 = active.iter().map(|a| a.gemini_weekly_percent).sum();
         sum / active.len() as i32
@@ -790,15 +803,7 @@ impl AppConfig {
             .filter(|a| a.is_active)
             .map(|a| Self::localize_reset_str(&a.claude_gpt_reset, is_ru, is_zh))
             .next()
-            .unwrap_or_else(|| {
-                if is_ru {
-                    "4ч 00м".to_string()
-                } else if is_zh {
-                    "4小时00分".to_string()
-                } else {
-                    "4h 00m".to_string()
-                }
-            })
+            .unwrap_or_else(|| "—".to_string())
     }
 
     pub fn nearest_claude_weekly_reset(&self) -> String {
@@ -809,15 +814,7 @@ impl AppConfig {
             .filter(|a| a.is_active)
             .map(|a| Self::localize_reset_str(&a.claude_gpt_weekly_reset, is_ru, is_zh))
             .next()
-            .unwrap_or_else(|| {
-                if is_ru {
-                    "5д 17ч".to_string()
-                } else if is_zh {
-                    "5天17小时".to_string()
-                } else {
-                    "5d 17h".to_string()
-                }
-            })
+            .unwrap_or_else(|| "—".to_string())
     }
 
     pub fn nearest_gemini_reset(&self) -> String {
@@ -828,15 +825,7 @@ impl AppConfig {
             .filter(|a| a.is_active)
             .map(|a| Self::localize_reset_str(&a.gemini_reset, is_ru, is_zh))
             .next()
-            .unwrap_or_else(|| {
-                if is_ru {
-                    "4ч 00м".to_string()
-                } else if is_zh {
-                    "4小时00分".to_string()
-                } else {
-                    "4h 00m".to_string()
-                }
-            })
+            .unwrap_or_else(|| "—".to_string())
     }
 
     pub fn nearest_gemini_weekly_reset(&self) -> String {
@@ -847,15 +836,7 @@ impl AppConfig {
             .filter(|a| a.is_active)
             .map(|a| Self::localize_reset_str(&a.gemini_weekly_reset, is_ru, is_zh))
             .next()
-            .unwrap_or_else(|| {
-                if is_ru {
-                    "5д 17ч".to_string()
-                } else if is_zh {
-                    "5天17小时".to_string()
-                } else {
-                    "5d 17h".to_string()
-                }
-            })
+            .unwrap_or_else(|| "—".to_string())
     }
 
     pub fn save(&self) -> std::io::Result<()> {

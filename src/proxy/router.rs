@@ -141,6 +141,8 @@ pub fn resolve_model_with_effort(
                     Some(ReasoningEffort::Off) => ("gemini-4-argon".to_string(), Some(ReasoningEffort::Off)),
                     None => ("gemini-4-argon-medium".to_string(), Some(ReasoningEffort::Medium)),
                 }
+            } else if lower.contains("image") || lower.contains("imagen") {
+                ("imagen-3.0-generate-002".to_string(), None)
             } else {
                 match effective_effort {
                     Some(ReasoningEffort::Low) => ("gemini-3.8-flash-low".to_string(), Some(ReasoningEffort::Low)),

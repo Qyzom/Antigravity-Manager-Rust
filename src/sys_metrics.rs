@@ -1,4 +1,4 @@
-// Aroxy System & Process Resource Metrics
+// AMR System & Process Resource Metrics
 
 pub fn get_process_memory_mb() -> f64 {
     #[cfg(target_os = "linux")]
