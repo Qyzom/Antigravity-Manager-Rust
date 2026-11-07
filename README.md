@@ -80,7 +80,6 @@
 | **Web Runtime Dependency** | Bundled Chromium | System WebKitGTK | **None (Native OpenGL / FemtoVG)** |
 | **Telemetry Packages** | Sentry, Microsoft Clarity, OpenTelemetry | None | **None** |
 | **License** | MIT License | CC-BY-NC-SA-4.0 | **MIT License** |
-| **SSE Heartbeat Frame Injection** | Raw upstream SSE | Raw upstream SSE | **Auto-injected (`: ping\n\n`)** |
 | **Stream Micro-Chunk Pacing** | Raw upstream chunks | Raw upstream chunks | **Sub-token configurable pacing** |
 | **Reasoning Effort Support** | Partial suffixes | Suffixes | **Suffixes + Native Protocol** |
 

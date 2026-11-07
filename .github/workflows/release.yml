@@ -164,17 +164,9 @@ jobs:
 
             Ultra-lightweight high-performance AI API proxy, protocol emulator & multi-account quota dispatcher in pure Rust.
 
-            ### 📦 Выбор пакета / Package Selection:
-
-            #### 🖥️ Для ПК и ноутбуков (Intel / AMD — x86_64 / amd64):
-            - **Linux AppImage (Рекомендуется):** `AMR-*-x86_64.AppImage` *(портативный запуск / Shelly)*
-            - **Ubuntu / Debian / Mint:** `AMR_*_amd64.deb`
-            - **Fedora / RHEL:** `AMR-*-1.x86_64.rpm`
-            - **Windows 10 / 11:** `AMR-*-x86_64.exe`
-
-            #### 📱 Для ARM64 устройств (Raspberry Pi, ARM Mac/Linux, Snapdragon):
-            - **Linux ARM64 AppImage:** `AMR-*-aarch64.AppImage`
-            - **Ubuntu / Debian ARM64:** `AMR_*_arm64.deb`
-            - **Fedora / RHEL ARM64:** `AMR-*-1.aarch64.rpm`
-            - **Windows ARM64:** `AMR-*-arm64.exe`
+            ### Release Packages (x86_64 & ARM64):
+            - **Linux AppImage:** `AMR-*-x86_64.AppImage` & `AMR-*-aarch64.AppImage` (Portable package for any modern Linux)
+            - **Debian / Ubuntu DEB:** `AMR_*_amd64.deb` & `AMR_*_arm64.deb`
+            - **Fedora / RHEL RPM:** `AMR-*-1.x86_64.rpm` & `AMR-*-1.aarch64.rpm`
+            - **Windows Portable EXE:** `AMR-*-x86_64.exe` & `AMR-*-arm64.exe` (Standalone executables)
 
