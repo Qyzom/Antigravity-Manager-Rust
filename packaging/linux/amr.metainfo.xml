@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.amr</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>AMR</name>
+  <summary>Ultra-lightweight AI Protocol Proxy &amp; Emulator</summary>
+  <description>
+    <p>
+      AMR (Antigravity Manager Rust) is an ultra-lightweight, high-performance cross-platform AI protocol proxy and emulator written in pure Rust with a native Slint GUI.
+    </p>
+    <p>
+      Features include zero bloat, dual-mode reasoning effort parsing, multi-account quota balancing, hardware isolation, and seamless OpenAI and Anthropic Claude compatibility.
+    </p>
+  </description>
+  <launchable type="desktop-id">amr.desktop</launchable>
+  <provides>
+    <binary>amr</binary>
+  </provides>
+  <categories>
+    <category>Development</category>
+    <category>Network</category>
+  </categories>
+  <releases>
+    <release version="0.1.3" date="2026-11-07">
+      <description>
+        <p>AMR v0.1.3: Stealth spoofing suite, reasoning clones, AppImage metadata fix, UI layout polishing.</p>
+      </description>
+    </release>
+  </releases>
+  <content_rating type="oars-1.1" />
+</component>

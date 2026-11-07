@@ -58,6 +58,66 @@ impl AppState {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+pub fn build_upstream_headers(
+    token: &str,
+    client_id: &str,
+    machine_id: &str,
+    platform_str: &str,
+    ide_ver: &str,
+    spoof_arch: &str,
+    spoof_channel: &str,
+    spoof_go: bool,
+    inject_app_meta: bool,
+) -> reqwest::header::HeaderMap {
+    let mut req_headers = reqwest::header::HeaderMap::new();
+    req_headers.insert(
+        reqwest::header::AUTHORIZATION,
+        format!("Bearer {}", token).parse().unwrap(),
+    );
+    req_headers.insert(
+        reqwest::header::ACCEPT,
+        "text/event-stream".parse().unwrap(),
+    );
+    req_headers.insert(
+        reqwest::header::CONTENT_TYPE,
+        "application/json".parse().unwrap(),
+    );
+
+    if inject_app_meta {
+        let ua = crate::proxy::antigravity::get_official_hub_user_agent_with_meta(
+            Some(platform_str),
+            Some(ide_ver),
+            Some(spoof_arch),
+        );
+        req_headers.insert(reqwest::header::USER_AGENT, ua.parse().unwrap());
+        if let Ok(val) = client_id.parse() {
+            req_headers.insert("X-Client-Id", val);
+        }
+        if let Ok(val) = machine_id.parse() {
+            req_headers.insert("X-Machine-Id", val);
+        }
+    } else {
+        let generic_ua = format!("reqwest/0.12 (AMR-Proxy/{})", env!("CARGO_PKG_VERSION"));
+        req_headers.insert(reqwest::header::USER_AGENT, generic_ua.parse().unwrap());
+    }
+
+    if spoof_channel != "stable" {
+        if let Ok(val) = spoof_channel.parse() {
+            req_headers.insert("X-Client-Channel", val);
+        }
+    }
+
+    let sdk_hdr = if spoof_go {
+        "gl-go/1.28.0 gdcl/0.1.0"
+    } else {
+        "gl-rust/1.0.0"
+    };
+    req_headers.insert("X-Goog-Api-Client", sdk_hdr.parse().unwrap());
+
+    req_headers
+}
+
 pub fn create_proxy_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health_check))
@@ -441,6 +501,7 @@ async fn execute_chat_request(
             spoof_arch,
             spoof_channel,
             auto_rotate_fp,
+            inject_app_meta,
         ) = {
             let cfg = state.config.read();
             (
@@ -453,6 +514,7 @@ async fn execute_chat_request(
                 cfg.spoof_arch.clone(),
                 cfg.spoof_channel.clone(),
                 cfg.auto_rotate_fp_on_limit,
+                cfg.inject_ide_metadata,
             )
         };
 
@@ -469,19 +531,17 @@ async fn execute_chat_request(
         };
 
         for endpoint_url in endpoints {
-            let mut req_headers = reqwest::header::HeaderMap::new();
-            req_headers.insert("authorization", format!("Bearer {}", req_token).parse().unwrap());
-            req_headers.insert("User-Agent", crate::proxy::antigravity::get_official_hub_user_agent_with_meta(Some(platform_str), Some(&ide_ver), Some(&spoof_arch)).parse().unwrap());
-            req_headers.insert("X-Client-Id", client_id.parse().unwrap());
-            req_headers.insert("X-Machine-Id", machine_id.parse().unwrap());
-            if spoof_channel != "stable" {
-                if let Ok(val) = spoof_channel.parse() {
-                    req_headers.insert("X-Client-Channel", val);
-                }
-            }
-            let sdk_hdr = if spoof_go { "gl-go/1.28.0 gdcl/0.1.0" } else { "gl-rust/1.0.0" };
-            req_headers.insert("X-Goog-Api-Client", sdk_hdr.parse().unwrap());
-            req_headers.insert("Content-Type", "application/json".parse().unwrap());
+            let req_headers = build_upstream_headers(
+                &req_token,
+                &client_id,
+                &machine_id,
+                platform_str,
+                &ide_ver,
+                &spoof_arch,
+                &spoof_channel,
+                spoof_go,
+                inject_app_meta,
+            );
 
             if let Ok(r) = client.post(*endpoint_url).headers(req_headers).json(&payload_json).send().await {
                 let s = r.status();
@@ -544,10 +604,17 @@ async fn execute_chat_request(
                     state.cfg_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
                     for endpoint_url in crate::proxy::antigravity::STREAM_ENDPOINTS {
-                        let mut retry_headers = reqwest::header::HeaderMap::new();
-                        retry_headers.insert("authorization", format!("Bearer {}", fresh_token).parse().unwrap());
-                        retry_headers.insert("User-Agent", crate::proxy::antigravity::OFFICIAL_USER_AGENT.parse().unwrap());
-                        retry_headers.insert("Content-Type", "application/json".parse().unwrap());
+                        let retry_headers = build_upstream_headers(
+                            &fresh_token,
+                            &client_id,
+                            &machine_id,
+                            platform_str,
+                            &ide_ver,
+                            &spoof_arch,
+                            &spoof_channel,
+                            spoof_go,
+                            inject_app_meta,
+                        );
 
                         if let Ok(retry_res) = state.http_client.post(endpoint_url).headers(retry_headers).json(&payload_json).send().await {
                             status = retry_res.status();
@@ -1127,6 +1194,7 @@ async fn execute_claude_request(
             spoof_arch,
             spoof_channel,
             auto_rotate_fp,
+            inject_app_meta,
         ) = {
             let cfg = state.config.read();
             (
@@ -1139,6 +1207,7 @@ async fn execute_claude_request(
                 cfg.spoof_arch.clone(),
                 cfg.spoof_channel.clone(),
                 cfg.auto_rotate_fp_on_limit,
+                cfg.inject_ide_metadata,
             )
         };
 
@@ -1155,19 +1224,17 @@ async fn execute_claude_request(
         };
 
         for endpoint_url in endpoints {
-            let mut req_headers = reqwest::header::HeaderMap::new();
-            req_headers.insert("authorization", format!("Bearer {}", req_token).parse().unwrap());
-            req_headers.insert("User-Agent", crate::proxy::antigravity::get_official_hub_user_agent_with_meta(Some(platform_str), Some(&ide_ver), Some(&spoof_arch)).parse().unwrap());
-            req_headers.insert("X-Client-Id", client_id.parse().unwrap());
-            req_headers.insert("X-Machine-Id", machine_id.parse().unwrap());
-            if spoof_channel != "stable" {
-                if let Ok(val) = spoof_channel.parse() {
-                    req_headers.insert("X-Client-Channel", val);
-                }
-            }
-            let sdk_hdr = if spoof_go { "gl-go/1.28.0 gdcl/0.1.0" } else { "gl-rust/1.0.0" };
-            req_headers.insert("X-Goog-Api-Client", sdk_hdr.parse().unwrap());
-            req_headers.insert("Content-Type", "application/json".parse().unwrap());
+            let req_headers = build_upstream_headers(
+                &req_token,
+                &client_id,
+                &machine_id,
+                platform_str,
+                &ide_ver,
+                &spoof_arch,
+                &spoof_channel,
+                spoof_go,
+                inject_app_meta,
+            );
 
             if let Ok(r) = client.post(*endpoint_url).headers(req_headers).json(&payload_json).send().await {
                 let s = r.status();
@@ -1229,10 +1296,17 @@ async fn execute_claude_request(
                     state.cfg_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
                     for endpoint_url in crate::proxy::antigravity::STREAM_ENDPOINTS {
-                        let mut retry_headers = reqwest::header::HeaderMap::new();
-                        retry_headers.insert("authorization", format!("Bearer {}", fresh_token).parse().unwrap());
-                        retry_headers.insert("User-Agent", crate::proxy::antigravity::OFFICIAL_USER_AGENT.parse().unwrap());
-                        retry_headers.insert("Content-Type", "application/json".parse().unwrap());
+                        let retry_headers = build_upstream_headers(
+                            &fresh_token,
+                            &client_id,
+                            &machine_id,
+                            platform_str,
+                            &ide_ver,
+                            &spoof_arch,
+                            &spoof_channel,
+                            spoof_go,
+                            inject_app_meta,
+                        );
 
                         if let Ok(retry_res) = state.http_client.post(endpoint_url).headers(retry_headers).json(&payload_json).send().await {
                             status = retry_res.status();

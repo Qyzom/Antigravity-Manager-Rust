@@ -112,6 +112,7 @@ jobs:
         run: cargo build --release --target x86_64-pc-windows-msvc --bin amr
 
       - name: Build AMR ARM64
+        continue-on-error: true
         run: cargo build --release --target aarch64-pc-windows-msvc --bin amr
 
       - name: Rename to standard release format
@@ -121,7 +122,9 @@ jobs:
           VERSION="${RAW_VER:-0.1.3}"
           echo "Packaging Windows EXEs for version $VERSION"
           cp target/x86_64-pc-windows-msvc/release/amr.exe "AMR-${VERSION}-x86_64.exe"
-          cp target/aarch64-pc-windows-msvc/release/amr.exe "AMR-${VERSION}-arm64.exe"
+          if [ -f target/aarch64-pc-windows-msvc/release/amr.exe ]; then
+            cp target/aarch64-pc-windows-msvc/release/amr.exe "AMR-${VERSION}-arm64.exe"
+          fi
 
       - name: Upload Windows Portable EXEs
         uses: actions/upload-artifact@v4

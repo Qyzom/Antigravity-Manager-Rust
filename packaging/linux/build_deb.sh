@@ -8,6 +8,7 @@ rm -rf "$DEB_DIR"
 mkdir -p "$DEB_DIR/DEBIAN"
 mkdir -p "$DEB_DIR/usr/bin"
 mkdir -p "$DEB_DIR/usr/share/applications"
+mkdir -p "$DEB_DIR/usr/share/metainfo"
 
 for sz in 16 32 48 64 128 256 512; do
   mkdir -p "$DEB_DIR/usr/share/icons/hicolor/${sz}x${sz}/apps"
@@ -17,6 +18,7 @@ done
 cp target/release/amr "$DEB_DIR/usr/bin/amr"
 chmod 755 "$DEB_DIR/usr/bin/amr"
 cp packaging/linux/amr.desktop "$DEB_DIR/usr/share/applications/amr.desktop"
+cp packaging/linux/amr.metainfo.xml "$DEB_DIR/usr/share/metainfo/amr.metainfo.xml"
 
 cat << EOF > "$DEB_DIR/DEBIAN/control"
 Package: amr

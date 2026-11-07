@@ -12,10 +12,15 @@ for sz in 16 32 48 64 128 256 512; do
   cp "assets/icons/logo_${sz}.png" "$APPDIR/usr/share/icons/hicolor/${sz}x${sz}/apps/amr.png" 2>/dev/null || true
 done
 mkdir -p "$APPDIR/usr/share/applications"
+mkdir -p "$APPDIR/usr/share/metainfo"
+mkdir -p "$APPDIR/usr/share/appdata"
 
 cp target/release/amr "$APPDIR/usr/bin/"
 cp packaging/linux/amr.desktop "$APPDIR/usr/share/applications/"
 cp packaging/linux/amr.desktop "$APPDIR/"
+cp packaging/linux/amr.metainfo.xml "$APPDIR/usr/share/metainfo/amr.metainfo.xml"
+cp packaging/linux/amr.metainfo.xml "$APPDIR/usr/share/metainfo/io.github.amr.metainfo.xml"
+cp packaging/linux/amr.metainfo.xml "$APPDIR/usr/share/appdata/amr.appdata.xml"
 cp assets/icons/logo_256.png "$APPDIR/amr.png"
 cp assets/icons/logo_256.png "$APPDIR/.DirIcon"
 
