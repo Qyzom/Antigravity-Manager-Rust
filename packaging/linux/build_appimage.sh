@@ -1,8 +1,10 @@
 #!/bin/bash
 set -e
 
-echo "==> Building AMR release binary..."
-cargo build --release --bin amr
+if [ ! -f target/release/amr ]; then
+    echo "==> Building AMR release binary..."
+    cargo build --release --bin amr
+fi
 
 APPDIR="target/AppDir"
 rm -rf "$APPDIR"
@@ -46,6 +48,9 @@ if command -v appimagetool &> /dev/null; then
     echo "==> AppImage created successfully: AMR-${VERSION}-${ARCH}.AppImage"
 elif [ -f "target/squashfs-root/AppRun" ]; then
     ARCH=${ARCH} target/squashfs-root/AppRun --no-appstream $RUNTIME_FLAG "$APPDIR" "AMR-${VERSION}-${ARCH}.AppImage"
+    echo "==> AppImage created successfully: AMR-${VERSION}-${ARCH}.AppImage"
+elif [ -f "squashfs-root/AppRun" ]; then
+    ARCH=${ARCH} ./squashfs-root/AppRun --no-appstream $RUNTIME_FLAG "$APPDIR" "AMR-${VERSION}-${ARCH}.AppImage"
     echo "==> AppImage created successfully: AMR-${VERSION}-${ARCH}.AppImage"
 else
     echo "Notice: appimagetool not found locally. Ready for CI packaging."
