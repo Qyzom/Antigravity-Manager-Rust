@@ -69,8 +69,9 @@ pub fn process_claude_to_openai_stream(
                         Some(Ok(bytes)) => {
                             if let Ok(text) = std::str::from_utf8(&bytes) {
                                 buffer.push_str(text);
-                                let normalized = buffer.replace("\r\n", "\n");
-                                buffer = normalized;
+                                if buffer.contains("\r\n") {
+                                    buffer = buffer.replace("\r\n", "\n");
+                                }
 
                                 while let Some(pos) = buffer.find("\n\n") {
                                     let event_chunk = buffer[..pos].to_string();
@@ -251,8 +252,9 @@ pub fn process_antigravity_to_openai_stream(
                         Some(Ok(bytes)) => {
                             if let Ok(text) = std::str::from_utf8(&bytes) {
                                 buffer.push_str(text);
-                                let normalized = buffer.replace("\r\n", "\n");
-                                buffer = normalized;
+                                if buffer.contains("\r\n") {
+                                    buffer = buffer.replace("\r\n", "\n");
+                                }
 
                                 while let Some(pos) = buffer.find("\n\n") {
                                     let event_chunk = buffer[..pos].to_string();
@@ -498,8 +500,9 @@ pub fn process_antigravity_to_claude_stream(
                         Some(Ok(bytes)) => {
                             if let Ok(text) = std::str::from_utf8(&bytes) {
                                 buffer.push_str(text);
-                                let normalized = buffer.replace("\r\n", "\n");
-                                buffer = normalized;
+                                if buffer.contains("\r\n") {
+                                    buffer = buffer.replace("\r\n", "\n");
+                                }
 
                                 while let Some(pos) = buffer.find("\n\n") {
                                     let event_chunk = buffer[..pos].to_string();

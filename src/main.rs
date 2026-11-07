@@ -477,10 +477,24 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_cooldown_duration: t.lbl_cooldown_duration.into(),
         lbl_request_jitter: t.lbl_request_jitter.into(),
         lbl_request_jitter_desc: t.lbl_request_jitter_desc.into(),
+        lbl_stealth_sec_protocol: t.lbl_stealth_sec_protocol.into(),
+        lbl_stealth_sec_identity: t.lbl_stealth_sec_identity.into(),
+        lbl_stealth_sec_backoff: t.lbl_stealth_sec_backoff.into(),
+        lbl_tag_latest: t.lbl_tag_latest.into(),
+        lbl_tag_legacy: t.lbl_tag_legacy.into(),
+        lbl_tag_default: t.lbl_tag_default.into(),
+        lbl_modal_effort_prefix: t.lbl_modal_effort_prefix.into(),
+        about_spec_runtime_val: t.about_spec_runtime_val.into(),
+        about_spec_transport_val: t.about_spec_transport_val.into(),
+        about_spec_gui_val: t.about_spec_gui_val.into(),
+        about_spec_license_val: t.about_spec_license_val.into(),
+        lbl_endpoints_openai: t.lbl_endpoints_openai.into(),
+        lbl_endpoints_claude: t.lbl_endpoints_claude.into(),
     };
     ui.set_github_update_status(t.btn_check_updates.clone().into());
     ui.set_test_prompt(t.lbl_test_default_prompt.clone().into());
     ui.set_test_status(t.test_status_ready.clone().into());
+    ui.set_app_version(format!("v{}", env!("CARGO_PKG_VERSION")).into());
     ui.set_i18n(i18n_struct);
     ui.set_current_language(lang.to_index());
 }
@@ -1259,7 +1273,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         // Enforce Winit backend with FemtoVG renderer for hardware-accelerated OpenGL and embedded fonts
         std::env::set_var("SLINT_BACKEND", "winit");
-        // Ensure Wayland / X11 window manager associates window with aroxy.desktop / GNOME dock icon
+        // Ensure Wayland / X11 window manager associates window with amr.desktop / GNOME dock icon
         let mut backend_builder = i_slint_backend_winit::Backend::builder();
         backend_builder = backend_builder.with_window_attributes_hook(|attrs| {
             #[cfg(target_os = "linux")]
@@ -1816,7 +1830,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (dev_id, mach_id) = if let Some(ref dp) = acc.device_profile {
                     (dp.dev_device_id.clone(), dp.machine_id.clone())
                 } else {
-                    ("dev-device-auto".to_string(), "auth0|user_auto".to_string())
+                    (String::new(), String::new())
                 };
                 h.set_info_account_device_id(dev_id.into());
                 h.set_info_account_machine_id(mach_id.into());
@@ -1908,7 +1922,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let c_regen = Arc::clone(&config_arc);
     let h_regen = window_handle.clone();
     main_window.on_regenerate_master_key(move || {
-        let new_key = format!("sk-aroxy-{}", &uuid::Uuid::new_v4().simple().to_string()[..16]);
+        let new_key = format!("sk-amr-{}", &uuid::Uuid::new_v4().simple().to_string()[..16]);
         let lang = {
             let mut cfg = c_regen.write();
             cfg.master_api_key = new_key.clone();
@@ -2235,8 +2249,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     main_window.on_open_log_details(move |id_slint| {
         let id_str = id_slint.to_string();
         if let Some(h) = h_log_modal.upgrade() {
-            if let Ok(logs) = s_log_modal.recent_logs.read() {
-                if let Some(item) = logs.iter().find(|l| l.id == id_str) {
+            let logs = s_log_modal.recent_logs.read();
+            if let Some(item) = logs.iter().find(|l| l.id == id_str) {
                     h.set_modal_log_time(item.time.clone().into());
                     h.set_modal_log_method(item.method.clone().into());
                     h.set_modal_log_path(item.path.clone().into());
@@ -2267,7 +2281,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     h.set_show_log_modal(true);
                 }
             }
-        }
     });
 
     // Language switcher callback
@@ -2921,24 +2934,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Chart 3: Model Traffic Share
             let (claude_pct, gemini_pct) = {
-                let logs_guard = s_timer.recent_logs.read().ok();
-                if let Some(ref logs) = logs_guard {
-                    let mut cl = 0;
-                    let mut gm = 0;
-                    for l in logs.iter() {
-                        let m = l.model.to_lowercase();
-                        if m.contains("claude") {
-                            cl += 1;
-                        } else if m.contains("gemini") {
-                            gm += 1;
-                        }
+                let logs = s_timer.recent_logs.read();
+                let mut cl = 0;
+                let mut gm = 0;
+                for l in logs.iter() {
+                    let m = l.model.to_lowercase();
+                    if m.contains("claude") {
+                        cl += 1;
+                    } else if m.contains("gemini") {
+                        gm += 1;
                     }
-                    if cl + gm > 0 {
-                        let cp = ((cl as f64 / (cl + gm) as f64) * 100.0).round() as i32;
-                        (cp, 100 - cp)
-                    } else {
-                        (50, 50)
-                    }
+                }
+                if cl + gm > 0 {
+                    let cp = ((cl as f64 / (cl + gm) as f64) * 100.0).round() as i32;
+                    (cp, 100 - cp)
                 } else {
                     (50, 50)
                 }

@@ -5,7 +5,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::RwLock;
+use parking_lot::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogItem {
@@ -297,7 +297,8 @@ impl ProxyStats {
             }
 
             // Write to in-memory ring buffer
-            if let Ok(mut logs) = self.recent_logs.write() {
+            {
+                let mut logs = self.recent_logs.write();
                 while logs.len() >= max_cap {
                     logs.pop_back();
                 }
@@ -328,15 +329,13 @@ impl ProxyStats {
     }
 
     pub fn get_recent_logs(&self) -> Vec<LogItem> {
-        if let Ok(logs) = self.recent_logs.read() {
-            logs.iter().cloned().collect()
-        } else {
-            Vec::new()
-        }
+        let logs = self.recent_logs.read();
+        logs.iter().cloned().collect()
     }
 
     pub fn clear_logs(&self) {
-        if let Ok(mut logs) = self.recent_logs.write() {
+        {
+            let mut logs = self.recent_logs.write();
             logs.clear();
         }
         let log_path = Self::logs_file_path();

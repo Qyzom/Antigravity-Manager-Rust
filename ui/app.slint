@@ -370,6 +370,19 @@ export struct I18nData {
     lbl_tray_exit: string,
     lbl_tray_tooltip: string,
     lbl_config_files_hint: string,
+    lbl_stealth_sec_protocol: string,
+    lbl_stealth_sec_identity: string,
+    lbl_stealth_sec_backoff: string,
+    lbl_tag_latest: string,
+    lbl_tag_legacy: string,
+    lbl_tag_default: string,
+    lbl_modal_effort_prefix: string,
+    about_spec_runtime_val: string,
+    about_spec_transport_val: string,
+    about_spec_gui_val: string,
+    about_spec_license_val: string,
+    lbl_endpoints_openai: string,
+    lbl_endpoints_claude: string,
 }
 
 component NavItem inherits Rectangle {
@@ -563,6 +576,7 @@ export component MainWindow inherits Window {
     // Translations
     in-out property <I18nData> i18n;
     in-out property <int> current_language: 0; // 0: EN, 1: RU, 2: ZH
+    in-out property <string> app_version: "v0.1.3";
 
     // Navigation & Status
     in-out property <int> active_tab: 0;
@@ -636,7 +650,7 @@ export component MainWindow inherits Window {
     in-out property <string> info_account_proxy_url: "";
 
     // Master API Key & Extra Dashboard Metrics
-    in-out property <string> master_api_key: "sk-aroxy-v1-master-key";
+    in-out property <string> master_api_key: "sk-amr-v1-master-key";
     in-out property <string> master_key_status_text: "";
     in-out property <string> github_update_status: "";
     in-out property <bool> github_checking_update: false;
@@ -831,7 +845,7 @@ export component MainWindow inherits Window {
                         vertical-alignment: center;
                     }
                     Text {
-                        text: "v0.1.0";
+                        text: root.app_version;
                         font-size: 11px;
                         font-weight: 600;
                         color: #71717a;
@@ -1814,7 +1828,7 @@ export component MainWindow inherits Window {
                                         HorizontalLayout {
                                             padding-left: 8px;
                                             padding-right: 8px;
-                                            Text { text: "OpenAI v1"; width: 140px; font-size: 10px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
+                                            Text { text: root.i18n.lbl_endpoints_openai; width: 140px; font-size: 10px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
                                             Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/chat/completions"; horizontal-stretch: 1; font-size: 10px; color: #38bdf8; vertical-alignment: center; }
                                         }
                                     }
@@ -1826,7 +1840,7 @@ export component MainWindow inherits Window {
                                         HorizontalLayout {
                                             padding-left: 8px;
                                             padding-right: 8px;
-                                            Text { text: "Claude Messages"; width: 140px; font-size: 10px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
+                                            Text { text: root.i18n.lbl_endpoints_claude; width: 140px; font-size: 10px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
                                             Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/messages"; horizontal-stretch: 1; font-size: 10px; color: #38bdf8; vertical-alignment: center; }
                                         }
                                     }
@@ -1898,7 +1912,7 @@ export component MainWindow inherits Window {
                                 padding: 12px;
                                 spacing: 10px;
 
-                                Text { text: "1. Go SDK & Protocol Emulation"; font-size: 12px; font-weight: 700; color: #10b981; }
+                                Text { text: root.i18n.lbl_stealth_sec_protocol; font-size: 12px; font-weight: 700; color: #10b981; }
 
                                 // Go SDK Header
                                 HorizontalLayout {
@@ -1964,7 +1978,7 @@ export component MainWindow inherits Window {
                                 padding: 12px;
                                 spacing: 10px;
 
-                                Text { text: "2. Client Identity & Operating System"; font-size: 12px; font-weight: 700; color: #38bdf8; }
+                                Text { text: root.i18n.lbl_stealth_sec_identity; font-size: 12px; font-weight: 700; color: #38bdf8; }
 
                                 // Inject IDE Metadata
                                 HorizontalLayout {
@@ -2018,7 +2032,7 @@ export component MainWindow inherits Window {
                                     spacing: 8px;
                                     Text { text: root.i18n.lbl_spoof_ide_version + ":"; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
                                     ActionButton {
-                                        text: "2.28.1 (Latest)";
+                                        text: "2.28.1 " + root.i18n.lbl_tag_latest;
                                         is_primary: root.stealth_spoof_ide_version == "2.28.1";
                                         is_accent: root.stealth_spoof_ide_version == "2.28.1";
                                         clicked => { root.set_stealth_ide_version("2.28.1"); }
@@ -2030,7 +2044,7 @@ export component MainWindow inherits Window {
                                         clicked => { root.set_stealth_ide_version("2.23.1"); }
                                     }
                                     ActionButton {
-                                        text: "1.107.0 (Legacy)";
+                                        text: "1.107.0 " + root.i18n.lbl_tag_legacy;
                                         is_primary: root.stealth_spoof_ide_version == "1.107.0";
                                         is_accent: root.stealth_spoof_ide_version == "1.107.0";
                                         clicked => { root.set_stealth_ide_version("1.107.0"); }
@@ -2050,7 +2064,7 @@ export component MainWindow inherits Window {
                                 padding: 12px;
                                 spacing: 10px;
 
-                                Text { text: "3. Adaptive Backoff Ladder & Auto-Heal (Anti-429)"; font-size: 12px; font-weight: 700; color: #fbbf24; }
+                                Text { text: root.i18n.lbl_stealth_sec_backoff; font-size: 12px; font-weight: 700; color: #fbbf24; }
 
                                 // Cooldown 429 Toggle
                                 HorizontalLayout {
@@ -2088,7 +2102,7 @@ export component MainWindow inherits Window {
                                         clicked => { root.set_stealth_cooldown_jitter(10); }
                                     }
                                     ActionButton {
-                                        text: "15% (Default)";
+                                        text: "15% " + root.i18n.lbl_tag_default;
                                         is_primary: root.stealth_cooldown_jitter_pct == 15;
                                         is_accent: root.stealth_cooldown_jitter_pct == 15;
                                         clicked => { root.set_stealth_cooldown_jitter(15); }
@@ -3081,22 +3095,22 @@ export component MainWindow inherits Window {
                                     HorizontalLayout {
                                         alignment: space-between;
                                         Text { text: root.i18n.about_spec_runtime; font-size: 12px; color: #a1a1aa; }
-                                        Text { text: "Tokio 1.x (Lock-Free Async Engine)"; font-size: 12px; font-weight: 600; color: #e4e4e7; }
+                                        Text { text: root.i18n.about_spec_runtime_val; font-size: 12px; font-weight: 600; color: #e4e4e7; }
                                     }
                                     HorizontalLayout {
                                         alignment: space-between;
                                         Text { text: root.i18n.about_spec_transport; font-size: 12px; color: #a1a1aa; }
-                                        Text { text: "Axum 0.7 & Reqwest 0.12 (Hyper / Rustls)"; font-size: 12px; font-weight: 600; color: #e4e4e7; }
+                                        Text { text: root.i18n.about_spec_transport_val; font-size: 12px; font-weight: 600; color: #e4e4e7; }
                                     }
                                     HorizontalLayout {
                                         alignment: space-between;
                                         Text { text: root.i18n.about_spec_gui; font-size: 12px; color: #a1a1aa; }
-                                        Text { text: "Slint 1.9 (backend-winit, renderer-femtovg)"; font-size: 12px; font-weight: 600; color: #e4e4e7; }
+                                        Text { text: root.i18n.about_spec_gui_val; font-size: 12px; font-weight: 600; color: #e4e4e7; }
                                     }
                                     HorizontalLayout {
                                         alignment: space-between;
                                         Text { text: root.i18n.about_spec_license; font-size: 12px; color: #a1a1aa; }
-                                        Text { text: "MIT License (Open Source)"; font-size: 12px; font-weight: 600; color: #e4e4e7; }
+                                        Text { text: root.i18n.about_spec_license_val; font-size: 12px; font-weight: 600; color: #e4e4e7; }
                                     }
                                 }
 
@@ -3172,7 +3186,8 @@ export component MainWindow inherits Window {
                             Badge {
                                 text: root.info_account_status == "ACTIVE" ? root.i18n.lbl_status_active : (root.info_account_status == "ERROR" ? root.i18n.lbl_status_error : root.i18n.lbl_status_disabled);
                                 is_green: root.info_account_status == "ACTIVE";
-                                is_danger: root.info_account_status != "ACTIVE";
+                                is_danger: root.info_account_status == "ERROR";
+                                is_amber: root.info_account_status != "ACTIVE" && root.info_account_status != "ERROR";
                             }
                         }
                     }
@@ -3362,7 +3377,7 @@ export component MainWindow inherits Window {
                         HorizontalLayout {
                             alignment: space-between;
                             Text { text: root.i18n.lbl_modal_machine_id; font-size: 10px; color: #a1a1aa; }
-                            Text { text: root.info_account_machine_id != "" ? root.info_account_machine_id : "auth0|user_..."; font-size: 10px; color: #e4e4e7; }
+                            Text { text: root.info_account_machine_id != "" ? root.info_account_machine_id : root.i18n.lbl_auto_device_id; font-size: 10px; color: #e4e4e7; }
                         }
 
                         HorizontalLayout {
@@ -3647,7 +3662,7 @@ export component MainWindow inherits Window {
                         Text { text: root.i18n.lbl_inspector_title; font-size: 14px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
                         VerticalLayout {
                             alignment: center;
-                            Badge { text: root.modal_log_account; is_green: false; }
+                            Badge { text: root.modal_log_account; }
                         }
                     }
                     ActionButton {
@@ -3664,9 +3679,9 @@ export component MainWindow inherits Window {
                     height: 24px;
                     VerticalLayout { alignment: center; Badge { text: root.modal_log_method; is_green: true; } }
                     Text { text: root.modal_log_path; font-size: 12px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
-                    VerticalLayout { alignment: center; Badge { text: root.modal_log_status; is_green: root.modal_log_status == "200 OK"; is_danger: root.modal_log_status != "200 OK"; } }
-                    VerticalLayout { alignment: center; Badge { text: root.modal_log_model; is_amber: false; } }
-                    if root.modal_log_effort != "": VerticalLayout { alignment: center; Badge { text: "effort: " + root.modal_log_effort; is_amber: root.modal_log_effort != "off"; is_green: root.modal_log_effort == "off"; } }
+                    VerticalLayout { alignment: center; Badge { text: root.modal_log_status; is_green: root.modal_log_status == "200 OK"; is_danger: root.modal_log_status != "" && root.modal_log_status != "200 OK"; } }
+                    VerticalLayout { alignment: center; Badge { text: root.modal_log_model; } }
+                    if root.modal_log_effort != "": VerticalLayout { alignment: center; Badge { text: root.i18n.lbl_modal_effort_prefix + root.modal_log_effort; is_amber: root.modal_log_effort != "off"; is_green: root.modal_log_effort == "off"; } }
                     VerticalLayout { alignment: center; Badge { text: root.modal_log_tokens + " tok"; } }
                     VerticalLayout { alignment: center; Badge { text: root.modal_log_latency; } }
                 }

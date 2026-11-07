@@ -1,9 +1,0 @@
-[Desktop Entry]
-Name=Aroxy
-Comment=Ultra-lightweight AI Protocol Proxy & Emulator
-Exec=aroxy
-Icon=aroxy
-Terminal=false
-Type=Application
-Categories=Development;Network;
-StartupWMClass=aroxy

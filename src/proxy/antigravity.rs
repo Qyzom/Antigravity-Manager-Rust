@@ -9,22 +9,42 @@ use std::collections::HashMap;
 pub const OFFICIAL_HUB_VERSION: &str = "2.28.1";
 pub const OFFICIAL_HUB_CL: &str = "1000353293";
 
-pub fn get_official_hub_user_agent() -> String {
-    let os_type = match std::env::consts::OS {
-        "windows" => "windows",
-        "macos" => "darwin",
-        "linux" => "linux",
-        other => other,
+pub fn get_official_hub_user_agent_with_meta(
+    platform: Option<&str>,
+    ide_version: Option<&str>,
+) -> String {
+    let os_type = match platform {
+        Some(p) => match p.to_uppercase().as_str() {
+            "WINDOWS" => "windows",
+            "MACOS" | "DARWIN" => "darwin",
+            _ => "linux",
+        },
+        None => match std::env::consts::OS {
+            "windows" => "windows",
+            "macos" => "darwin",
+            "linux" => "linux",
+            other => other,
+        },
     };
     let arch = match std::env::consts::ARCH {
         "x86_64" => "amd64",
         "aarch64" => "arm64",
         other => other,
     };
+    let ver = ide_version.unwrap_or(OFFICIAL_HUB_VERSION);
+    let cl = match ver {
+        "2.23.1" => "998881661",
+        "1.107.0" => "987654321",
+        _ => OFFICIAL_HUB_CL,
+    };
     format!(
         "antigravity/hub/{} (aidev_client; os_type={}; arch={}; cl={})",
-        OFFICIAL_HUB_VERSION, os_type, arch, OFFICIAL_HUB_CL
+        ver, os_type, arch, cl
     )
+}
+
+pub fn get_official_hub_user_agent() -> String {
+    get_official_hub_user_agent_with_meta(None, None)
 }
 
 pub const OFFICIAL_USER_AGENT: &str =

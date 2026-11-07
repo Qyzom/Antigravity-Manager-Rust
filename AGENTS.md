@@ -49,8 +49,8 @@ src/
 
 ## Release Packaging & Artifacts
 The release workflow (`.github/workflows/release.yml`) builds exactly two standalone release artifacts:
-- `AMR-0.1.0-x86_64.AppImage` (Linux)
-- `AMR-0.1.0-x86_64.exe` (Windows)
+- `AMR-0.1.3-x86_64.AppImage` (Linux)
+- `AMR-0.1.3-x86_64.exe` (Windows)
 
 Do not add unnecessary packaging formats or complex installer wrappers.
 

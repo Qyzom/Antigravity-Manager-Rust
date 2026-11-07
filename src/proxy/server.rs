@@ -232,11 +232,11 @@ async fn oauth_callback(
                 <h2>Account Connected</h2>
                 <p>Authorized as <strong>{}</strong> (Tier: {})</p>
                 <p>Antigravity quota and active models have been synchronized with AMR.<br>You can close this tab and return to the application.</p>
-                <div class="badge">AMR v0.1.1</div>
+                <div class="badge">AMR v{}</div>
             </div>
         </body>
         </html>
-    "#, email, tier))
+    "#, email, tier, env!("CARGO_PKG_VERSION")))
 }
 
 async fn health_check() -> impl IntoResponse {
@@ -428,7 +428,7 @@ async fn execute_chat_request(
         let (client_id, machine_id) = if let Some(ref dp) = account.device_profile {
             (dp.dev_device_id.clone(), dp.machine_id.clone())
         } else {
-            (uuid::Uuid::new_v4().to_string(), format!("auth0|user_{}", uuid::Uuid::new_v4().simple()))
+            (uuid::Uuid::new_v4().to_string(), format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple()))
         };
 
         let (spoof_go, lock_prod, cooldown_429, cooldown_secs, cooldown_jitter, apply_jitter) = {
@@ -458,7 +458,7 @@ async fn execute_chat_request(
         for endpoint_url in endpoints {
             let mut req_headers = reqwest::header::HeaderMap::new();
             req_headers.insert("authorization", format!("Bearer {}", req_token).parse().unwrap());
-            req_headers.insert("User-Agent", crate::proxy::antigravity::get_official_hub_user_agent().parse().unwrap());
+            req_headers.insert("User-Agent", crate::proxy::antigravity::get_official_hub_user_agent_with_meta(Some(platform_str), Some(&ide_ver)).parse().unwrap());
             req_headers.insert("X-Client-Id", client_id.parse().unwrap());
             req_headers.insert("X-Machine-Id", machine_id.parse().unwrap());
             let sdk_hdr = if spoof_go { "gl-go/1.28.0 gdcl/0.1.0" } else { "gl-rust/1.0.0" };
@@ -1084,7 +1084,7 @@ async fn execute_claude_request(
         let (client_id, machine_id) = if let Some(ref dp) = account.device_profile {
             (dp.dev_device_id.clone(), dp.machine_id.clone())
         } else {
-            (uuid::Uuid::new_v4().to_string(), format!("auth0|user_{}", uuid::Uuid::new_v4().simple()))
+            (uuid::Uuid::new_v4().to_string(), format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple()))
         };
 
         let (spoof_go, lock_prod, cooldown_429, cooldown_secs, cooldown_jitter, apply_jitter) = {
@@ -1114,7 +1114,7 @@ async fn execute_claude_request(
         for endpoint_url in endpoints {
             let mut req_headers = reqwest::header::HeaderMap::new();
             req_headers.insert("authorization", format!("Bearer {}", req_token).parse().unwrap());
-            req_headers.insert("User-Agent", crate::proxy::antigravity::get_official_hub_user_agent().parse().unwrap());
+            req_headers.insert("User-Agent", crate::proxy::antigravity::get_official_hub_user_agent_with_meta(Some(platform_str), Some(&ide_ver)).parse().unwrap());
             req_headers.insert("X-Client-Id", client_id.parse().unwrap());
             req_headers.insert("X-Machine-Id", machine_id.parse().unwrap());
             let sdk_hdr = if spoof_go { "gl-go/1.28.0 gdcl/0.1.0" } else { "gl-rust/1.0.0" };

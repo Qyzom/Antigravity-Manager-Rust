@@ -146,7 +146,7 @@ pub struct DeviceProfile {
 impl DeviceProfile {
     pub fn generate() -> Self {
         let random_hex_32 = uuid::Uuid::new_v4().simple().to_string();
-        let machine_id = format!("auth0|user_{}", random_hex_32);
+        let machine_id = format!("{}{}", random_hex_32, uuid::Uuid::new_v4().simple());
         let dev_device_id = uuid::Uuid::new_v4().to_string();
         let mac_machine_id = uuid::Uuid::new_v4().to_string();
         let sqm_id = format!("{{{}}}", uuid::Uuid::new_v4().to_string().to_uppercase());

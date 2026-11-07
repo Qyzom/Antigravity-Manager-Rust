@@ -28,7 +28,7 @@ exec "$HERE/usr/bin/amr" "$@"
 EOF
 chmod +x "$APPDIR/AppRun"
 
-VERSION="${1:-0.1.1}"
+VERSION="${1:-0.1.3}"
 ARCH="${2:-x86_64}"
 echo "==> AppDir structure prepared at $APPDIR"
 RUNTIME_FLAG=""

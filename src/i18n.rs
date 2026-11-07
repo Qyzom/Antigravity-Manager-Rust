@@ -358,6 +358,19 @@ pub struct TranslationBundle {
     pub lbl_tray_exit: String,
     pub lbl_tray_tooltip: String,
     pub lbl_config_files_hint: String,
+    pub lbl_stealth_sec_protocol: String,
+    pub lbl_stealth_sec_identity: String,
+    pub lbl_stealth_sec_backoff: String,
+    pub lbl_tag_latest: String,
+    pub lbl_tag_legacy: String,
+    pub lbl_tag_default: String,
+    pub lbl_modal_effort_prefix: String,
+    pub about_spec_runtime_val: String,
+    pub about_spec_transport_val: String,
+    pub about_spec_gui_val: String,
+    pub about_spec_license_val: String,
+    pub lbl_endpoints_openai: String,
+    pub lbl_endpoints_claude: String,
 }
 
 pub fn get_translations(lang: Language) -> TranslationBundle {
