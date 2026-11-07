@@ -79,17 +79,16 @@ pub const GOOGLE_USERINFO_URL: &str = "https://www.googleapis.com/oauth2/v2/user
 pub const GOOGLE_AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 
 pub const LOAD_PROJECT_ENDPOINTS: [&str; 2] = [
-    "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
     "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+    "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:loadCodeAssist",
 ];
 
 pub const FETCH_MODELS_ENDPOINTS: [&str; 2] = [
-    "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
     "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+    "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:fetchAvailableModels",
 ];
 
-pub const STREAM_ENDPOINTS: [&str; 3] = [
-    "https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+pub const STREAM_ENDPOINTS: [&str; 2] = [
     "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
     "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse",
 ];
@@ -97,37 +96,57 @@ pub const STREAM_ENDPOINTS: [&str; 3] = [
 pub fn normalize_antigravity_upstream_model(requested: &str) -> &'static str {
     let lower = requested.to_lowercase();
     let clean = lower
-        .trim_end_matches("-low")
-        .trim_end_matches("-medium")
-        .trim_end_matches("-high")
         .trim_end_matches("-no-thinking")
-        .trim_end_matches(" (low)")
-        .trim_end_matches(" (medium)")
-        .trim_end_matches(" (high)")
         .trim_end_matches(" (no-thinking)")
         .trim_end_matches(" (none)")
         .trim_end_matches("-none");
 
-    if clean.contains("opus") {
+    if clean == "gemini-3.8-flash-low" || clean == "gemini-3.8-flash (low)" {
+        "gemini-3.8-flash-low"
+    } else if clean == "gemini-3.8-flash-medium" || clean == "gemini-3.8-flash (medium)" {
+        "gemini-3.8-flash-medium"
+    } else if clean == "gemini-3.8-flash-high" || clean == "gemini-3.8-flash (high)" {
+        "gemini-3.8-flash-high"
+    } else if clean == "gemini-3.8-flash-tiered" {
+        "gemini-3.8-flash-tiered"
+    } else if clean.contains("claude-sonnet-4-6") || clean.contains("sonnet-4-6") || clean.contains("sonnet-4.6") {
+        "claude-sonnet-4-6"
+    } else if clean.contains("claude-opus-4-6") || clean.contains("opus-4-6") || clean.contains("opus-4.6") {
+        "claude-opus-4-6-thinking"
+    } else if clean.contains("opus") {
         if clean.contains("5-5") || clean.contains("5.5") {
             "claude-opus-5-5-high"
         } else {
             "claude-opus-4-6-thinking"
         }
     } else if clean.contains("claude") || clean.contains("sonnet") {
-        if clean.contains("4-6") || clean.contains("4.6") {
-            "claude-sonnet-4-6"
-        } else {
+        if clean.contains("5-5") || clean.contains("5.5") {
             "claude-sonnet-5-5-high"
+        } else {
+            "claude-sonnet-4-6"
         }
     } else if clean.contains("argon") {
-        "gemini-4-argon"
+        if clean.ends_with("-low") || clean.ends_with(" (low)") {
+            "gemini-4-argon-low"
+        } else if clean.ends_with("-high") || clean.ends_with(" (high)") {
+            "gemini-4-argon-high"
+        } else if clean.ends_with("-medium") || clean.ends_with(" (medium)") {
+            "gemini-4-argon-medium"
+        } else {
+            "gemini-4-argon"
+        }
     } else if clean.contains("image") || clean.contains("imagen") {
         "imagen-3.0-generate-002"
     } else if clean.contains("pro") {
         "gemini-2.5-pro"
+    } else if clean.contains("gemini-2.5-flash") {
+        "gemini-2.5-flash"
+    } else if clean.contains("gemini-3.1-flash-lite") {
+        "gemini-3.1-flash-lite"
+    } else if clean.contains("gemini-3.5-flash-lite") {
+        "gemini-3.5-flash-lite"
     } else {
-        "gemini-3.8-flash-tiered"
+        "gemini-3.8-flash-medium"
     }
 }
 
@@ -923,12 +942,18 @@ pub fn build_antigravity_payload_with_meta(
     }
 
     let pid = project_id.unwrap_or("aicode-consumers");
+    let ts = chrono::Utc::now().timestamp_millis();
+    let conv = &uuid::Uuid::new_v4().simple().to_string()[..16];
+    let traj = &uuid::Uuid::new_v4().simple().to_string()[..8];
+    let request_id = format!("agent/{}/{}/{}/1", conv, ts, traj);
+
     serde_json::json!({
         "project": pid,
-        "model": upstream_model,
+        "requestId": request_id,
         "request": inner_request,
+        "model": upstream_model,
         "userAgent": "antigravity",
-        "requestId": format!("req-{}", uuid::Uuid::new_v4().simple()),
+        "requestType": "agent",
     })
 }
 
@@ -1139,12 +1164,18 @@ pub fn build_antigravity_payload_from_claude_with_meta(
     }
 
     let pid = project_id.unwrap_or("aicode-consumers");
+    let ts = chrono::Utc::now().timestamp_millis();
+    let conv = &uuid::Uuid::new_v4().simple().to_string()[..16];
+    let traj = &uuid::Uuid::new_v4().simple().to_string()[..8];
+    let request_id = format!("agent/{}/{}/{}/1", conv, ts, traj);
+
     serde_json::json!({
         "project": pid,
-        "model": upstream_model,
+        "requestId": request_id,
         "request": inner_request,
+        "model": upstream_model,
         "userAgent": "antigravity",
-        "requestId": format!("req-{}", uuid::Uuid::new_v4().simple()),
+        "requestType": "agent",
     })
 }
 

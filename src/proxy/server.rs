@@ -61,14 +61,15 @@ impl AppState {
 #[allow(clippy::too_many_arguments)]
 pub fn build_upstream_headers(
     token: &str,
-    client_id: &str,
-    machine_id: &str,
+    _client_id: &str,
+    _machine_id: &str,
     platform_str: &str,
     ide_ver: &str,
     spoof_arch: &str,
-    spoof_channel: &str,
-    spoof_go: bool,
-    inject_app_meta: bool,
+    _spoof_channel: &str,
+    _spoof_go: bool,
+    _inject_app_meta: bool,
+    target_model: &str,
 ) -> reqwest::header::HeaderMap {
     let mut req_headers = reqwest::header::HeaderMap::new();
     req_headers.insert(
@@ -84,36 +85,16 @@ pub fn build_upstream_headers(
         "application/json".parse().unwrap(),
     );
 
-    if inject_app_meta {
-        let ua = crate::proxy::antigravity::get_official_hub_user_agent_with_meta(
-            Some(platform_str),
-            Some(ide_ver),
-            Some(spoof_arch),
-        );
-        req_headers.insert(reqwest::header::USER_AGENT, ua.parse().unwrap());
-        if let Ok(val) = client_id.parse() {
-            req_headers.insert("X-Client-Id", val);
-        }
-        if let Ok(val) = machine_id.parse() {
-            req_headers.insert("X-Machine-Id", val);
-        }
-    } else {
-        let generic_ua = format!("reqwest/0.12 (AMR-Proxy/{})", env!("CARGO_PKG_VERSION"));
-        req_headers.insert(reqwest::header::USER_AGENT, generic_ua.parse().unwrap());
-    }
+    let ua = crate::proxy::antigravity::get_official_hub_user_agent_with_meta(
+        Some(platform_str),
+        Some(ide_ver),
+        Some(spoof_arch),
+    );
+    req_headers.insert(reqwest::header::USER_AGENT, ua.parse().unwrap());
 
-    if spoof_channel != "stable" {
-        if let Ok(val) = spoof_channel.parse() {
-            req_headers.insert("X-Client-Channel", val);
-        }
+    if target_model.to_lowercase().contains("claude") {
+        req_headers.insert("anthropic-beta", "claude-code-20250219".parse().unwrap());
     }
-
-    let sdk_hdr = if spoof_go {
-        "gl-go/1.28.0 gdcl/0.1.0"
-    } else {
-        "gl-rust/1.0.0"
-    };
-    req_headers.insert("X-Goog-Api-Client", sdk_hdr.parse().unwrap());
 
     req_headers
 }
@@ -540,6 +521,7 @@ async fn execute_chat_request(
                 &spoof_channel,
                 spoof_go,
                 inject_app_meta,
+                &target_model,
             );
 
             if let Ok(r) = client.post(*endpoint_url).headers(req_headers).json(&payload_json).send().await {
@@ -619,6 +601,7 @@ async fn execute_chat_request(
                             &spoof_channel,
                             spoof_go,
                             inject_app_meta,
+                            &target_model,
                         );
 
                         if let Ok(retry_res) = state.http_client.post(endpoint_url).headers(retry_headers).json(&payload_json).send().await {
@@ -1270,6 +1253,7 @@ async fn execute_claude_request(
                 &spoof_channel,
                 spoof_go,
                 inject_app_meta,
+                &target_model,
             );
 
             if let Ok(r) = client.post(*endpoint_url).headers(req_headers).json(&payload_json).send().await {
@@ -1348,6 +1332,7 @@ async fn execute_claude_request(
                             &spoof_channel,
                             spoof_go,
                             inject_app_meta,
+                            &target_model,
                         );
 
                         if let Ok(retry_res) = state.http_client.post(endpoint_url).headers(retry_headers).json(&payload_json).send().await {

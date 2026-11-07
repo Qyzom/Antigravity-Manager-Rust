@@ -154,13 +154,15 @@ pub fn resolve_model_with_effort(
                 }
             } else if lower.contains("image") || lower.contains("imagen") {
                 ("imagen-3.0-generate-002".to_string(), None)
+            } else if lower.contains("tiered") {
+                ("gemini-3.8-flash-tiered".to_string(), effective_effort)
             } else {
                 match effective_effort {
                     Some(ReasoningEffort::Low) => ("gemini-3.8-flash-low".to_string(), Some(ReasoningEffort::Low)),
                     Some(ReasoningEffort::Medium) => ("gemini-3.8-flash-medium".to_string(), Some(ReasoningEffort::Medium)),
                     Some(ReasoningEffort::High) => ("gemini-3.8-flash-high".to_string(), Some(ReasoningEffort::High)),
-                    Some(ReasoningEffort::Off) => ("gemini-3.8-flash".to_string(), Some(ReasoningEffort::Off)),
-                    None => ("gemini-3.8-flash".to_string(), Some(ReasoningEffort::Off)),
+                    Some(ReasoningEffort::Off) => ("gemini-3.8-flash-medium".to_string(), Some(ReasoningEffort::Off)),
+                    None => ("gemini-3.8-flash-medium".to_string(), Some(ReasoningEffort::Medium)),
                 }
             }
         }
