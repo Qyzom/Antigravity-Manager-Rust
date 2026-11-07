@@ -71,6 +71,14 @@ mod tests {
         assert_eq!(base_off, "claude-3-7-sonnet");
         assert_eq!(eff_off, Some(ReasoningEffort::Off));
 
+        let (base_none, eff_none) = parse_model_and_reasoning("claude-opus-4-6 (none)", None);
+        assert_eq!(base_none, "claude-opus-4-6");
+        assert_eq!(eff_none, Some(ReasoningEffort::Off));
+
+        let (base_none2, eff_none2) = parse_model_and_reasoning("claude-opus-4-6-none", None);
+        assert_eq!(base_none2, "claude-opus-4-6");
+        assert_eq!(eff_none2, Some(ReasoningEffort::Off));
+
         // Native protocol parameter detection
         let (base_nat, eff_nat) = parse_model_and_reasoning("claude-3-7-sonnet", Some("high"));
         assert_eq!(base_nat, "claude-3-7-sonnet");
@@ -790,6 +798,8 @@ mod tests {
         assert!(cfg.models.iter().any(|m| m.id == "Image generator"));
         assert!(cfg.models.iter().any(|m| m.id == "gemini-3.8-flash"));
         assert!(!cfg.models.iter().any(|m| m.id == "gemini-3.8-flash-medium"));
+        let opus46 = cfg.models.iter().find(|m| m.id == "claude-opus-4-6").unwrap();
+        assert!(opus46.supports_thinking);
     }
 
     #[tokio::test]

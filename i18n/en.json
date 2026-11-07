@@ -327,5 +327,17 @@
     "lbl_test_image_prompt_placeholder": "Describe the image you want to generate in detail...",
     "opt_cache_first_desc": "Maintains session affinity to maximize prompt cache hits and minimize latency",
     "opt_cache_balanced_desc": "Balances prompt cache retention with quota distribution across available accounts",
-    "opt_cache_spread_desc": "Uniformly disperses requests across accounts to prevent single-account quota depletion"
+    "opt_cache_spread_desc": "Uniformly disperses requests across accounts to prevent single-account quota depletion",
+    "lbl_badge_thinking": "Thinking",
+    "lbl_badge_no_thinking": "None",
+    "lbl_spoof_arch": "Client CPU Architecture",
+    "lbl_spoof_arch_desc": "Emulates CPU architecture reported in official Antigravity client User-Agent",
+    "lbl_spoof_channel": "Release Ring Channel",
+    "lbl_spoof_channel_desc": "Emulate release channel signature (Stable, Insiders, or Preview)",
+    "lbl_strip_telemetry": "Telemetry Shield & Trace Scrubbing",
+    "lbl_strip_telemetry_desc": "Strips third-party traceparent, baggage and x-client-data headers before upstream dispatch",
+    "lbl_auto_rotate_fp": "Auto-Rotate Fingerprint on 429",
+    "lbl_auto_rotate_fp_desc": "Generates fresh device and hardware machine IDs when an account hits rate limit",
+    "lbl_normalize_headers": "Canonical Go Header Normalization",
+    "lbl_normalize_headers_desc": "Enforces exact Go standard library header casing and ordering to mask proxy origins"
 }

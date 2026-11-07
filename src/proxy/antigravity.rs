@@ -12,6 +12,7 @@ pub const OFFICIAL_HUB_CL: &str = "1000353293";
 pub fn get_official_hub_user_agent_with_meta(
     platform: Option<&str>,
     ide_version: Option<&str>,
+    arch_override: Option<&str>,
 ) -> String {
     let os_type = match platform {
         Some(p) => match p.to_uppercase().as_str() {
@@ -26,10 +27,19 @@ pub fn get_official_hub_user_agent_with_meta(
             other => other,
         },
     };
-    let arch = match std::env::consts::ARCH {
-        "x86_64" => "amd64",
-        "aarch64" => "arm64",
-        other => other,
+    let arch = match arch_override {
+        Some(a) => match a.to_lowercase().as_str() {
+            "arm64" | "aarch64" => "arm64",
+            "x86_64" | "amd64" => "x86_64",
+            _ => match std::env::consts::ARCH {
+                "aarch64" => "arm64",
+                _ => "x86_64",
+            },
+        },
+        None => match std::env::consts::ARCH {
+            "aarch64" => "arm64",
+            _ => "x86_64",
+        },
     };
     let ver = ide_version.unwrap_or(OFFICIAL_HUB_VERSION);
     let cl = match ver {
@@ -44,7 +54,7 @@ pub fn get_official_hub_user_agent_with_meta(
 }
 
 pub fn get_official_hub_user_agent() -> String {
-    get_official_hub_user_agent_with_meta(None, None)
+    get_official_hub_user_agent_with_meta(None, None, None)
 }
 
 pub const OFFICIAL_USER_AGENT: &str =
@@ -94,7 +104,9 @@ pub fn normalize_antigravity_upstream_model(requested: &str) -> &'static str {
         .trim_end_matches(" (low)")
         .trim_end_matches(" (medium)")
         .trim_end_matches(" (high)")
-        .trim_end_matches(" (no-thinking)");
+        .trim_end_matches(" (no-thinking)")
+        .trim_end_matches(" (none)")
+        .trim_end_matches("-none");
 
     if clean.contains("opus") {
         if clean.contains("5-5") || clean.contains("5.5") {
@@ -623,7 +635,7 @@ pub async fn fetch_models_and_quota(
                             "openai".to_string()
                         };
 
-                        let supports_thinking = clean_id != "claude-opus-4-6";
+                        let supports_thinking = clean_id != "Image generator";
 
                         let tier = "PRO".to_string();
 

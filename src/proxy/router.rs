@@ -50,12 +50,17 @@ const REASONING_SUFFIXES: &[(&str, Option<ReasoningEffort>)] = &[
     (":high", Some(ReasoningEffort::High)),
     (" high", Some(ReasoningEffort::High)),
     ("-high", Some(ReasoningEffort::High)),
-    // Thinking off
+    // Thinking off / none
     (" [thinking off]", Some(ReasoningEffort::Off)),
     (" (thinking off)", Some(ReasoningEffort::Off)),
     (" [no-thinking]", Some(ReasoningEffort::Off)),
     (" (no-thinking)", Some(ReasoningEffort::Off)),
     ("-no-thinking", Some(ReasoningEffort::Off)),
+    (" [none]", Some(ReasoningEffort::Off)),
+    (" (none)", Some(ReasoningEffort::Off)),
+    ("-none", Some(ReasoningEffort::Off)),
+    (":none", Some(ReasoningEffort::Off)),
+    (" none", Some(ReasoningEffort::Off)),
     (":off", Some(ReasoningEffort::Off)),
     (" off", Some(ReasoningEffort::Off)),
     ("-off", Some(ReasoningEffort::Off)),
@@ -111,7 +116,13 @@ pub fn resolve_model_with_effort(
         "antigravity" => {
             if lower.contains("opus") {
                 if lower.contains("4-6") || lower.contains("4.6") {
-                    ("claude-opus-4-6-thinking".to_string(), None)
+                    match effective_effort {
+                        Some(ReasoningEffort::Off) => ("claude-opus-4-6".to_string(), Some(ReasoningEffort::Off)),
+                        Some(ReasoningEffort::Low) => ("claude-opus-4-6-thinking".to_string(), Some(ReasoningEffort::Low)),
+                        Some(ReasoningEffort::Medium) => ("claude-opus-4-6-thinking".to_string(), Some(ReasoningEffort::Medium)),
+                        Some(ReasoningEffort::High) => ("claude-opus-4-6-thinking".to_string(), Some(ReasoningEffort::High)),
+                        None => ("claude-opus-4-6-thinking".to_string(), None),
+                    }
                 } else {
                     match effective_effort {
                         Some(ReasoningEffort::Low) => ("claude-opus-5-5-low".to_string(), Some(ReasoningEffort::Low)),

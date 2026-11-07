@@ -389,6 +389,18 @@ export struct I18nData {
     opt_cache_first_desc: string,
     opt_cache_balanced_desc: string,
     opt_cache_spread_desc: string,
+    lbl_badge_thinking: string,
+    lbl_badge_no_thinking: string,
+    lbl_spoof_arch: string,
+    lbl_spoof_arch_desc: string,
+    lbl_spoof_channel: string,
+    lbl_spoof_channel_desc: string,
+    lbl_strip_telemetry: string,
+    lbl_strip_telemetry_desc: string,
+    lbl_auto_rotate_fp: string,
+    lbl_auto_rotate_fp_desc: string,
+    lbl_normalize_headers: string,
+    lbl_normalize_headers_desc: string,
 }
 
 component NavItem inherits Rectangle {
@@ -711,6 +723,11 @@ export component MainWindow inherits Window {
     in-out property <bool> stealth_request_jitter: true;
     in-out property <string> stealth_spoof_platform: "AUTO";
     in-out property <string> stealth_spoof_ide_version: "2.28.1";
+    in-out property <string> stealth_spoof_arch: "AUTO";
+    in-out property <string> stealth_spoof_channel: "stable";
+    in-out property <bool> stealth_strip_telemetry: true;
+    in-out property <bool> stealth_auto_rotate_fp: true;
+    in-out property <bool> stealth_normalize_headers: true;
     in-out property <int> stealth_cooldown_jitter_pct: 15;
 
     // Refresh Cadence
@@ -793,6 +810,11 @@ export component MainWindow inherits Window {
     callback toggle_stealth_request_jitter();
     callback set_stealth_platform(string);
     callback set_stealth_ide_version(string);
+    callback set_stealth_arch(string);
+    callback set_stealth_channel(string);
+    callback toggle_stealth_strip_telemetry();
+    callback toggle_stealth_auto_rotate_fp();
+    callback toggle_stealth_normalize_headers();
     callback set_stealth_cooldown_jitter(int);
     callback set_active_refresh_cadence(int);
     callback set_pool_refresh_cadence(int);
@@ -1562,6 +1584,24 @@ export component MainWindow inherits Window {
                                                 color: #71717a;
                                                 vertical-alignment: center;
                                             }
+                                            Rectangle {
+                                                height: 18px;
+                                                border-radius: 4px;
+                                                background: model.supports_thinking ? #0284c726 : #27272a80;
+                                                border-width: 1px;
+                                                border-color: model.supports_thinking ? #0284c760 : #3f3f46;
+                                                HorizontalLayout {
+                                                    padding-left: 6px;
+                                                    padding-right: 6px;
+                                                    Text {
+                                                        text: model.supports_thinking ? root.i18n.lbl_badge_thinking : root.i18n.lbl_badge_no_thinking;
+                                                        font-size: 9px;
+                                                        font-weight: 700;
+                                                        color: model.supports_thinking ? #38bdf8 : #a1a1aa;
+                                                        vertical-alignment: center;
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -1985,6 +2025,40 @@ export component MainWindow inherits Window {
                                         }
                                     }
                                 }
+
+                                // Canonical Go Header Normalization
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 1px;
+                                        Text { text: root.i18n.lbl_normalize_headers; font-size: 11px; font-weight: 600; color: #fafafa; }
+                                        Text { text: root.i18n.lbl_normalize_headers_desc; font-size: 10px; color: #71717a; }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        ToggleSwitch {
+                                            checked: root.stealth_normalize_headers;
+                                            toggled => { root.toggle_stealth_normalize_headers(); }
+                                        }
+                                    }
+                                }
+
+                                // Telemetry Shield & Trace Scrubbing
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 1px;
+                                        Text { text: root.i18n.lbl_strip_telemetry; font-size: 11px; font-weight: 600; color: #fafafa; }
+                                        Text { text: root.i18n.lbl_strip_telemetry_desc; font-size: 10px; color: #71717a; }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        ToggleSwitch {
+                                            checked: root.stealth_strip_telemetry;
+                                            toggled => { root.toggle_stealth_strip_telemetry(); }
+                                        }
+                                    }
+                                }
                             }
                         }
 
@@ -2048,6 +2122,54 @@ export component MainWindow inherits Window {
                                     }
                                 }
 
+                                // Architecture Selector
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Text { text: root.i18n.lbl_spoof_arch + ":"; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
+                                    ActionButton {
+                                        text: root.i18n.lbl_platform_auto;
+                                        is_primary: root.stealth_spoof_arch == "AUTO";
+                                        is_accent: root.stealth_spoof_arch == "AUTO";
+                                        clicked => { root.set_stealth_arch("AUTO"); }
+                                    }
+                                    ActionButton {
+                                        text: "x86_64";
+                                        is_primary: root.stealth_spoof_arch == "x86_64";
+                                        is_accent: root.stealth_spoof_arch == "x86_64";
+                                        clicked => { root.set_stealth_arch("x86_64"); }
+                                    }
+                                    ActionButton {
+                                        text: "ARM64";
+                                        is_primary: root.stealth_spoof_arch == "arm64";
+                                        is_accent: root.stealth_spoof_arch == "arm64";
+                                        clicked => { root.set_stealth_arch("arm64"); }
+                                    }
+                                }
+
+                                // Release Ring Channel Selector
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Text { text: root.i18n.lbl_spoof_channel + ":"; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
+                                    ActionButton {
+                                        text: "Stable";
+                                        is_primary: root.stealth_spoof_channel == "stable";
+                                        is_accent: root.stealth_spoof_channel == "stable";
+                                        clicked => { root.set_stealth_channel("stable"); }
+                                    }
+                                    ActionButton {
+                                        text: "Insiders";
+                                        is_primary: root.stealth_spoof_channel == "insiders";
+                                        is_accent: root.stealth_spoof_channel == "insiders";
+                                        clicked => { root.set_stealth_channel("insiders"); }
+                                    }
+                                    ActionButton {
+                                        text: "Preview";
+                                        is_primary: root.stealth_spoof_channel == "preview";
+                                        is_accent: root.stealth_spoof_channel == "preview";
+                                        clicked => { root.set_stealth_channel("preview"); }
+                                    }
+                                }
+
                                 // App Version Selector
                                 HorizontalLayout {
                                     spacing: 8px;
@@ -2100,6 +2222,23 @@ export component MainWindow inherits Window {
                                         ToggleSwitch {
                                             checked: root.stealth_cooldown_429;
                                             toggled => { root.toggle_stealth_cooldown_429(); }
+                                        }
+                                    }
+                                }
+
+                                // Auto-Rotate Fingerprint on 429
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 1px;
+                                        Text { text: root.i18n.lbl_auto_rotate_fp; font-size: 11px; font-weight: 600; color: #fafafa; }
+                                        Text { text: root.i18n.lbl_auto_rotate_fp_desc; font-size: 10px; color: #71717a; }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        ToggleSwitch {
+                                            checked: root.stealth_auto_rotate_fp;
+                                            toggled => { root.toggle_stealth_auto_rotate_fp(); }
                                         }
                                     }
                                 }

@@ -327,5 +327,17 @@
     "lbl_test_image_prompt_placeholder": "详细描述您想要生成的图像...",
     "opt_cache_first_desc": "保持会话粘性以最大化提示词缓存命中率并显著降低延迟",
     "opt_cache_balanced_desc": "在提示词缓存重用与各账号可用配额消耗之间取得自适应平衡",
-    "opt_cache_spread_desc": "将请求均匀分散到各个账号，避免单一账号配额过快耗尽"
+    "opt_cache_spread_desc": "将请求均匀分散到各个账号，避免单一账号配额过快耗尽",
+    "lbl_badge_thinking": "思考",
+    "lbl_badge_no_thinking": "None",
+    "lbl_spoof_arch": "客户端 CPU 架构",
+    "lbl_spoof_arch_desc": "在官方客户端 User-Agent 中模拟报告的 CPU 架构",
+    "lbl_spoof_channel": "发布通道 (Release Ring)",
+    "lbl_spoof_channel_desc": "模拟发布通道签名 (Stable, Insiders 或 Preview)",
+    "lbl_strip_telemetry": "遥测防护与追踪清理",
+    "lbl_strip_telemetry_desc": "向上游发送前清除第三方 traceparent、baggage 和 x-client-data 追踪头",
+    "lbl_auto_rotate_fp": "429 自动轮换硬件指纹",
+    "lbl_auto_rotate_fp_desc": "当账号触发速率限制时自动重新生成全新的 Device ID 和 Machine ID",
+    "lbl_normalize_headers": "标准 Go net/http 请求头规范化",
+    "lbl_normalize_headers_desc": "强制采用标准 Go net/http 库标头大小写与顺序，彻底掩蔽代理源特征"
 }

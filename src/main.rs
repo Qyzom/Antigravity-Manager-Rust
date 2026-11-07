@@ -142,7 +142,12 @@ fn get_display_models(cfg: &AppConfig) -> Vec<ModelItemData> {
         });
 
         if !cfg.group_reasoning_clones && m.supports_thinking {
-            for (suffix, label) in [("-low", "Low"), ("-medium", "Medium"), ("-high", "High")] {
+            for (suffix, label) in [
+                ("-none", "none"),
+                ("-low", "low"),
+                ("-medium", "medium"),
+                ("-high", "high"),
+            ] {
                 let clone_id = format!("{}{}", base_id, suffix);
                 result.push(ModelItemData {
                     id: clone_id.into(),
@@ -150,7 +155,7 @@ fn get_display_models(cfg: &AppConfig) -> Vec<ModelItemData> {
                     provider: m.provider.clone().into(),
                     tier: m.tier.clone().into(),
                     is_enabled: m.is_enabled,
-                    supports_thinking: true,
+                    supports_thinking: suffix != "-none",
                 });
             }
         }
@@ -499,6 +504,18 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         opt_cache_first_desc: t.opt_cache_first_desc.into(),
         opt_cache_balanced_desc: t.opt_cache_balanced_desc.into(),
         opt_cache_spread_desc: t.opt_cache_spread_desc.into(),
+        lbl_badge_thinking: t.lbl_badge_thinking.into(),
+        lbl_badge_no_thinking: t.lbl_badge_no_thinking.into(),
+        lbl_spoof_arch: t.lbl_spoof_arch.into(),
+        lbl_spoof_arch_desc: t.lbl_spoof_arch_desc.into(),
+        lbl_spoof_channel: t.lbl_spoof_channel.into(),
+        lbl_spoof_channel_desc: t.lbl_spoof_channel_desc.into(),
+        lbl_strip_telemetry: t.lbl_strip_telemetry.into(),
+        lbl_strip_telemetry_desc: t.lbl_strip_telemetry_desc.into(),
+        lbl_auto_rotate_fp: t.lbl_auto_rotate_fp.into(),
+        lbl_auto_rotate_fp_desc: t.lbl_auto_rotate_fp_desc.into(),
+        lbl_normalize_headers: t.lbl_normalize_headers.into(),
+        lbl_normalize_headers_desc: t.lbl_normalize_headers_desc.into(),
     };
     ui.set_github_update_status(t.btn_check_updates.clone().into());
     ui.set_test_prompt(t.lbl_test_default_prompt.clone().into());
@@ -699,7 +716,7 @@ fn capture_and_save_screenshots(target_dir: &str) -> Result<(), Box<dyn std::err
             provider: "Anthropic".into(),
             tier: "PRO".into(),
             is_enabled: true,
-            supports_thinking: false,
+            supports_thinking: true,
         },
         ModelItemData {
             id: "gemini-4-argon".into(),
@@ -1379,6 +1396,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_stealth_request_jitter(cfg.request_jitter);
         main_window.set_stealth_spoof_platform(cfg.spoof_platform.clone().into());
         main_window.set_stealth_spoof_ide_version(cfg.spoof_ide_version.clone().into());
+        main_window.set_stealth_spoof_arch(cfg.spoof_arch.clone().into());
+        main_window.set_stealth_spoof_channel(cfg.spoof_channel.clone().into());
+        main_window.set_stealth_strip_telemetry(cfg.strip_telemetry_traces);
+        main_window.set_stealth_auto_rotate_fp(cfg.auto_rotate_fp_on_limit);
+        main_window.set_stealth_normalize_headers(cfg.normalize_headers);
         main_window.set_stealth_cooldown_jitter_pct(cfg.cooldown_jitter_percent as i32);
         main_window.set_active_account_refresh_mins(cfg.active_account_refresh_mins as i32);
         main_window.set_pool_account_refresh_mins(cfg.pool_account_refresh_mins as i32);
@@ -2803,6 +2825,76 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         if let Some(h) = h_side.upgrade() {
             h.set_stealth_spoof_ide_version(ver_str.into());
+        }
+    });
+
+    let c_sarch = Arc::clone(&config_arc);
+    let h_sarch = window_handle.clone();
+    main_window.on_set_stealth_arch(move |arch| {
+        let arch_str = arch.to_string();
+        {
+            let mut cfg = c_sarch.write();
+            cfg.spoof_arch = arch_str.clone();
+            let _ = cfg.save();
+        }
+        if let Some(h) = h_sarch.upgrade() {
+            h.set_stealth_spoof_arch(arch_str.into());
+        }
+    });
+
+    let c_schan = Arc::clone(&config_arc);
+    let h_schan = window_handle.clone();
+    main_window.on_set_stealth_channel(move |chan| {
+        let chan_str = chan.to_string();
+        {
+            let mut cfg = c_schan.write();
+            cfg.spoof_channel = chan_str.clone();
+            let _ = cfg.save();
+        }
+        if let Some(h) = h_schan.upgrade() {
+            h.set_stealth_spoof_channel(chan_str.into());
+        }
+    });
+
+    let c_stt = Arc::clone(&config_arc);
+    let h_stt = window_handle.clone();
+    main_window.on_toggle_stealth_strip_telemetry(move || {
+        let new_val = {
+            let mut cfg = c_stt.write();
+            cfg.strip_telemetry_traces = !cfg.strip_telemetry_traces;
+            let _ = cfg.save();
+            cfg.strip_telemetry_traces
+        };
+        if let Some(h) = h_stt.upgrade() {
+            h.set_stealth_strip_telemetry(new_val);
+        }
+    });
+
+    let c_sarfp = Arc::clone(&config_arc);
+    let h_sarfp = window_handle.clone();
+    main_window.on_toggle_stealth_auto_rotate_fp(move || {
+        let new_val = {
+            let mut cfg = c_sarfp.write();
+            cfg.auto_rotate_fp_on_limit = !cfg.auto_rotate_fp_on_limit;
+            let _ = cfg.save();
+            cfg.auto_rotate_fp_on_limit
+        };
+        if let Some(h) = h_sarfp.upgrade() {
+            h.set_stealth_auto_rotate_fp(new_val);
+        }
+    });
+
+    let c_snh = Arc::clone(&config_arc);
+    let h_snh = window_handle.clone();
+    main_window.on_toggle_stealth_normalize_headers(move || {
+        let new_val = {
+            let mut cfg = c_snh.write();
+            cfg.normalize_headers = !cfg.normalize_headers;
+            let _ = cfg.save();
+            cfg.normalize_headers
+        };
+        if let Some(h) = h_snh.upgrade() {
+            h.set_stealth_normalize_headers(new_val);
         }
     });
 

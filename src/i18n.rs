@@ -377,6 +377,18 @@ pub struct TranslationBundle {
     pub opt_cache_first_desc: String,
     pub opt_cache_balanced_desc: String,
     pub opt_cache_spread_desc: String,
+    pub lbl_badge_thinking: String,
+    pub lbl_badge_no_thinking: String,
+    pub lbl_spoof_arch: String,
+    pub lbl_spoof_arch_desc: String,
+    pub lbl_spoof_channel: String,
+    pub lbl_spoof_channel_desc: String,
+    pub lbl_strip_telemetry: String,
+    pub lbl_strip_telemetry_desc: String,
+    pub lbl_auto_rotate_fp: String,
+    pub lbl_auto_rotate_fp_desc: String,
+    pub lbl_normalize_headers: String,
+    pub lbl_normalize_headers_desc: String,
 }
 
 pub fn get_translations(lang: Language) -> TranslationBundle {

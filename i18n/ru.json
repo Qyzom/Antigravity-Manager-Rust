@@ -327,5 +327,17 @@
     "lbl_test_image_prompt_placeholder": "Опишите желаемое изображение в деталях...",
     "opt_cache_first_desc": "Сохраняет привязку сессии к аккаунту для максимального кэширования промптов и ускорения ответов",
     "opt_cache_balanced_desc": "Балансирует повторное использование кэша с распределением квот между аккаунтами",
-    "opt_cache_spread_desc": "Равномерно распределяет запросы по всем аккаунтам для защиты от исчерпания квоты"
+    "opt_cache_spread_desc": "Равномерно распределяет запросы по всем аккаунтам для защиты от исчерпания квоты",
+    "lbl_badge_thinking": "Мышление",
+    "lbl_badge_no_thinking": "None",
+    "lbl_spoof_arch": "Архитектура процессора",
+    "lbl_spoof_arch_desc": "Эмулирует архитектуру процессора в User-Agent оригинального клиента",
+    "lbl_spoof_channel": "Канал обновлений (Release Ring)",
+    "lbl_spoof_channel_desc": "Эмулирует сигнатуру канала релизов (Stable, Insiders или Preview)",
+    "lbl_strip_telemetry": "Защита от телеметрии и зачистка трейсов",
+    "lbl_strip_telemetry_desc": "Удаляет сторонние заголовки traceparent, baggage и x-client-data перед отправкой в Google",
+    "lbl_auto_rotate_fp": "Авто-ротация Fingerprint при лимите (429)",
+    "lbl_auto_rotate_fp_desc": "Генерирует свежий Device ID и Machine ID при попадании аккаунта в 429",
+    "lbl_normalize_headers": "Нормализация заголовков под Go net/http",
+    "lbl_normalize_headers_desc": "Форматирует регистр и порядок заголовков строго под стандартную библиотеку Go net/http"
 }

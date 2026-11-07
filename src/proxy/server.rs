@@ -431,7 +431,17 @@ async fn execute_chat_request(
             (uuid::Uuid::new_v4().to_string(), format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple()))
         };
 
-        let (spoof_go, lock_prod, cooldown_429, cooldown_secs, cooldown_jitter, apply_jitter) = {
+        let (
+            spoof_go,
+            lock_prod,
+            cooldown_429,
+            cooldown_secs,
+            cooldown_jitter,
+            apply_jitter,
+            spoof_arch,
+            spoof_channel,
+            auto_rotate_fp,
+        ) = {
             let cfg = state.config.read();
             (
                 cfg.spoof_go_sdk,
@@ -440,6 +450,9 @@ async fn execute_chat_request(
                 cfg.cooldown_duration_secs,
                 cfg.cooldown_jitter_percent,
                 cfg.request_jitter,
+                cfg.spoof_arch.clone(),
+                cfg.spoof_channel.clone(),
+                cfg.auto_rotate_fp_on_limit,
             )
         };
 
@@ -458,9 +471,14 @@ async fn execute_chat_request(
         for endpoint_url in endpoints {
             let mut req_headers = reqwest::header::HeaderMap::new();
             req_headers.insert("authorization", format!("Bearer {}", req_token).parse().unwrap());
-            req_headers.insert("User-Agent", crate::proxy::antigravity::get_official_hub_user_agent_with_meta(Some(platform_str), Some(&ide_ver)).parse().unwrap());
+            req_headers.insert("User-Agent", crate::proxy::antigravity::get_official_hub_user_agent_with_meta(Some(platform_str), Some(&ide_ver), Some(&spoof_arch)).parse().unwrap());
             req_headers.insert("X-Client-Id", client_id.parse().unwrap());
             req_headers.insert("X-Machine-Id", machine_id.parse().unwrap());
+            if spoof_channel != "stable" {
+                if let Ok(val) = spoof_channel.parse() {
+                    req_headers.insert("X-Client-Channel", val);
+                }
+            }
             let sdk_hdr = if spoof_go { "gl-go/1.28.0 gdcl/0.1.0" } else { "gl-rust/1.0.0" };
             req_headers.insert("X-Goog-Api-Client", sdk_hdr.parse().unwrap());
             req_headers.insert("Content-Type", "application/json".parse().unwrap());
@@ -475,6 +493,13 @@ async fn execute_chat_request(
                     // CRITICAL ANTI-BAN: Step up the backoff ladder and never hammer secondary endpoints
                     if cooldown_429 {
                         state.balancer.record_failure(&account.id, 429, cooldown_secs, cooldown_jitter);
+                    }
+                    if auto_rotate_fp {
+                        let mut cfg = state.config.write();
+                        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
+                            acc.device_profile = Some(crate::config::DeviceProfile::generate());
+                            let _ = cfg.save();
+                        }
                     }
                     res_opt = Some(r);
                     break;
@@ -1092,7 +1117,17 @@ async fn execute_claude_request(
             (uuid::Uuid::new_v4().to_string(), format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple()))
         };
 
-        let (spoof_go, lock_prod, cooldown_429, cooldown_secs, cooldown_jitter, apply_jitter) = {
+        let (
+            spoof_go,
+            lock_prod,
+            cooldown_429,
+            cooldown_secs,
+            cooldown_jitter,
+            apply_jitter,
+            spoof_arch,
+            spoof_channel,
+            auto_rotate_fp,
+        ) = {
             let cfg = state.config.read();
             (
                 cfg.spoof_go_sdk,
@@ -1101,6 +1136,9 @@ async fn execute_claude_request(
                 cfg.cooldown_duration_secs,
                 cfg.cooldown_jitter_percent,
                 cfg.request_jitter,
+                cfg.spoof_arch.clone(),
+                cfg.spoof_channel.clone(),
+                cfg.auto_rotate_fp_on_limit,
             )
         };
 
@@ -1119,9 +1157,14 @@ async fn execute_claude_request(
         for endpoint_url in endpoints {
             let mut req_headers = reqwest::header::HeaderMap::new();
             req_headers.insert("authorization", format!("Bearer {}", req_token).parse().unwrap());
-            req_headers.insert("User-Agent", crate::proxy::antigravity::get_official_hub_user_agent_with_meta(Some(platform_str), Some(&ide_ver)).parse().unwrap());
+            req_headers.insert("User-Agent", crate::proxy::antigravity::get_official_hub_user_agent_with_meta(Some(platform_str), Some(&ide_ver), Some(&spoof_arch)).parse().unwrap());
             req_headers.insert("X-Client-Id", client_id.parse().unwrap());
             req_headers.insert("X-Machine-Id", machine_id.parse().unwrap());
+            if spoof_channel != "stable" {
+                if let Ok(val) = spoof_channel.parse() {
+                    req_headers.insert("X-Client-Channel", val);
+                }
+            }
             let sdk_hdr = if spoof_go { "gl-go/1.28.0 gdcl/0.1.0" } else { "gl-rust/1.0.0" };
             req_headers.insert("X-Goog-Api-Client", sdk_hdr.parse().unwrap());
             req_headers.insert("Content-Type", "application/json".parse().unwrap());
@@ -1136,6 +1179,13 @@ async fn execute_claude_request(
                     // CRITICAL ANTI-BAN: Step up the backoff ladder and never hammer secondary endpoints
                     if cooldown_429 {
                         state.balancer.record_failure(&account.id, 429, cooldown_secs, cooldown_jitter);
+                    }
+                    if auto_rotate_fp {
+                        let mut cfg = state.config.write();
+                        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
+                            acc.device_profile = Some(crate::config::DeviceProfile::generate());
+                            let _ = cfg.save();
+                        }
                     }
                     res_opt = Some(r);
                     break;

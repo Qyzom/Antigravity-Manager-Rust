@@ -300,6 +300,16 @@ pub struct AppConfig {
     pub spoof_platform: String,
     #[serde(default = "default_spoof_ide_version")]
     pub spoof_ide_version: String,
+    #[serde(default = "default_spoof_arch")]
+    pub spoof_arch: String,
+    #[serde(default = "default_spoof_channel")]
+    pub spoof_channel: String,
+    #[serde(default = "default_true")]
+    pub strip_telemetry_traces: bool,
+    #[serde(default = "default_true")]
+    pub auto_rotate_fp_on_limit: bool,
+    #[serde(default = "default_true")]
+    pub normalize_headers: bool,
     #[serde(default = "default_true")]
     pub request_jitter: bool,
     #[serde(default = "default_active_refresh_mins")]
@@ -379,6 +389,14 @@ fn default_jitter_percent() -> u8 {
     15
 }
 
+fn default_spoof_arch() -> String {
+    "AUTO".to_string()
+}
+
+fn default_spoof_channel() -> String {
+    "stable".to_string()
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -413,6 +431,11 @@ impl Default for AppConfig {
             cooldown_jitter_percent: 15,
             spoof_platform: "AUTO".to_string(),
             spoof_ide_version: "2.28.1".to_string(),
+            spoof_arch: "AUTO".to_string(),
+            spoof_channel: "stable".to_string(),
+            strip_telemetry_traces: true,
+            auto_rotate_fp_on_limit: true,
+            normalize_headers: true,
             request_jitter: true,
             active_account_refresh_mins: 2,
             pool_account_refresh_mins: 15,
@@ -457,7 +480,7 @@ impl Default for AppConfig {
                     provider: "anthropic".to_string(),
                     tier: "PRO".to_string(),
                     is_enabled: true,
-                    supports_thinking: false,
+                    supports_thinking: true,
                 },
                 ModelCatalogItem {
                     id: "gemini-4-argon".to_string(),
@@ -582,7 +605,7 @@ impl AppConfig {
                 m.id = "claude-opus-4-6".to_string();
                 m.display_name = "Claude Opus 4.6".to_string();
                 m.provider = "anthropic".to_string();
-                m.supports_thinking = false;
+                m.supports_thinking = true;
             } else if m.id == "gemini-3.8-flash-high" || m.id == "gemini-3.8-flash-medium" || m.id == "gemini-3.8-flash-low" || m.id == "gemini-3.8-flash-tiered" || m.id == "gemini-2.5-flash-thinking" || m.id == "gemini-2.5-flash" || m.id == "gemini-3.8-flash" {
                 m.id = "gemini-3.8-flash".to_string();
                 m.display_name = "Gemini 3.8 Flash".to_string();
@@ -928,10 +951,11 @@ impl AppConfig {
             // If reasoning clones are NOT grouped into base models, expose clones
             if !self.group_reasoning_clones && self.expose_reasoning_variants && m.supports_thinking {
                 for (suffix, label) in [
-                    (" (low)", "Low Effort"),
-                    (" (medium)", "Medium Effort"),
-                    (" (high)", "High Effort"),
-                    (" (no-thinking)", "Thinking Off"),
+                    (" (none)", "none"),
+                    (" (low)", "low"),
+                    (" (medium)", "medium"),
+                    (" (high)", "high"),
+                    (" (no-thinking)", "no-thinking"),
                 ] {
                     let clone_id = format!("{}{}", base_id, suffix);
                     if seen_ids.insert(clone_id.clone()) {
