@@ -389,6 +389,21 @@ pub struct TranslationBundle {
     pub lbl_auto_rotate_fp_desc: String,
     pub lbl_normalize_headers: String,
     pub lbl_normalize_headers_desc: String,
+    pub lbl_version_amr_release: String,
+    pub lbl_version_antigravity_latest: String,
+    pub lbl_modal_health_title: String,
+    pub lbl_modal_quarantine_stage: String,
+    pub lbl_modal_quarantine_remaining: String,
+    pub lbl_modal_quarantine_reason: String,
+    pub lbl_modal_quarantine_active: String,
+    pub lbl_modal_quarantine_no_error: String,
+    pub btn_modal_reset_quarantine: String,
+    pub lbl_stage_healthy: String,
+    pub lbl_stage_soft_pause: String,
+    pub lbl_stage_backoff: String,
+    pub lbl_stage_cooldown: String,
+    pub lbl_stage_quarantine: String,
+    pub lbl_stage_probing: String,
 }
 
 pub fn get_translations(lang: Language) -> TranslationBundle {

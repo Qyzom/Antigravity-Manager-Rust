@@ -414,7 +414,6 @@ async fn chat_completions(
     let (resp, should_failover) = execute_chat_request(&state, &payload, &initial_account, &requested_model, start_time).await;
 
     if should_failover {
-        state.balancer.mark_cooldown(&initial_account.id, 60);
         let next_acc_opt = {
             let cfg = state.config.read();
             state.balancer.select_account(&cfg, &requested_model, Some(&session_id)).ok()
@@ -552,7 +551,13 @@ async fn execute_chat_request(
                 } else if s == StatusCode::TOO_MANY_REQUESTS {
                     // CRITICAL ANTI-BAN: Step up the backoff ladder and never hammer secondary endpoints
                     if cooldown_429 {
-                        state.balancer.record_failure(&account.id, 429, cooldown_secs, cooldown_jitter);
+                        state.balancer.record_failure_with_reason(
+                            &account.id,
+                            429,
+                            cooldown_secs,
+                            cooldown_jitter,
+                            Some("HTTP 429: Too Many Requests (Rate limit / Quota exhausted)"),
+                        );
                     }
                     if auto_rotate_fp {
                         let mut cfg = state.config.write();
@@ -650,6 +655,20 @@ async fn execute_chat_request(
                 &err_text,
                 Some(&error_msg),
             );
+
+            if is_429 && cooldown_429 {
+                state.balancer.update_failure_reason(&account.id, 429, &format!("HTTP 429: {}", error_msg));
+            } else if is_auth_error {
+                state.balancer.update_failure_reason(&account.id, status.as_u16(), &format!("HTTP {}: Auth failed ({})", status.as_u16(), error_msg));
+            } else if status.is_server_error() {
+                state.balancer.record_failure_with_reason(
+                    &account.id,
+                    status.as_u16(),
+                    cooldown_secs,
+                    cooldown_jitter,
+                    Some(&format!("HTTP {}: {}", status.as_u16(), error_msg)),
+                );
+            }
 
             if is_auth_error || error_msg.contains("invalid_grant") || error_msg.contains("PERMISSION_DENIED") {
                 log::warn!("Upstream account auth failed for {}: {}", account.name, error_msg);
@@ -866,6 +885,10 @@ async fn execute_chat_request(
         let status = res.status();
         let is_429 = status == StatusCode::TOO_MANY_REQUESTS;
         let is_auth_error = status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
+        let (cooldown_429, cooldown_secs, cooldown_jitter) = {
+            let cfg = state.config.read();
+            (cfg.cooldown_on_429, cfg.cooldown_duration_secs, cfg.cooldown_jitter_percent)
+        };
 
         if !status.is_success() {
             let err_text = res.text().await.unwrap_or_default();
@@ -888,6 +911,20 @@ async fn execute_chat_request(
                 &err_text,
                 Some(&error_msg),
             );
+
+            if is_429 && cooldown_429 {
+                state.balancer.update_failure_reason(&account.id, 429, &format!("HTTP 429: {}", error_msg));
+            } else if is_auth_error {
+                state.balancer.update_failure_reason(&account.id, status.as_u16(), &format!("HTTP {}: Auth failed ({})", status.as_u16(), error_msg));
+            } else if status.is_server_error() {
+                state.balancer.record_failure_with_reason(
+                    &account.id,
+                    status.as_u16(),
+                    cooldown_secs,
+                    cooldown_jitter,
+                    Some(&format!("HTTP {}: {}", status.as_u16(), error_msg)),
+                );
+            }
 
             if is_auth_error || error_msg.contains("invalid_grant") || error_msg.contains("PERMISSION_DENIED") {
                 log::warn!("Upstream account auth failed for {}: {}", account.name, error_msg);
@@ -1120,7 +1157,6 @@ async fn claude_messages(
     let (resp, should_failover) = execute_claude_request(&state, &payload, &initial_account, &model, start_time).await;
 
     if should_failover {
-        state.balancer.mark_cooldown(&initial_account.id, 60);
         let next_acc_opt = {
             let cfg = state.config.read();
             state.balancer.select_account(&cfg, &model, Some(&session_id)).ok()
@@ -1245,7 +1281,13 @@ async fn execute_claude_request(
                 } else if s == StatusCode::TOO_MANY_REQUESTS {
                     // CRITICAL ANTI-BAN: Step up the backoff ladder and never hammer secondary endpoints
                     if cooldown_429 {
-                        state.balancer.record_failure(&account.id, 429, cooldown_secs, cooldown_jitter);
+                        state.balancer.record_failure_with_reason(
+                            &account.id,
+                            429,
+                            cooldown_secs,
+                            cooldown_jitter,
+                            Some("HTTP 429: Too Many Requests (Rate limit / Quota exhausted)"),
+                        );
                     }
                     if auto_rotate_fp {
                         let mut cfg = state.config.write();
@@ -1342,6 +1384,20 @@ async fn execute_claude_request(
                 &err_text,
                 Some(&error_msg),
             );
+
+            if is_429 && cooldown_429 {
+                state.balancer.update_failure_reason(&account.id, 429, &format!("HTTP 429: {}", error_msg));
+            } else if is_auth_error {
+                state.balancer.update_failure_reason(&account.id, status.as_u16(), &format!("HTTP {}: Auth failed ({})", status.as_u16(), error_msg));
+            } else if status.is_server_error() {
+                state.balancer.record_failure_with_reason(
+                    &account.id,
+                    status.as_u16(),
+                    cooldown_secs,
+                    cooldown_jitter,
+                    Some(&format!("HTTP {}: {}", status.as_u16(), error_msg)),
+                );
+            }
 
             if is_auth_error || error_msg.contains("invalid_grant") || error_msg.contains("PERMISSION_DENIED") {
                 log::warn!("Upstream account auth failed for {}: {}", account.name, error_msg);

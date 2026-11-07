@@ -909,4 +909,45 @@ mod tests {
         assert_eq!(count, 0);
         assert!(rem.is_none());
     }
+
+    #[test]
+    fn test_detailed_health_and_manual_reset() {
+        use amr::proxy::balancer::{HealthStage, LoadBalancer};
+
+        let balancer = LoadBalancer::new();
+        let acc_id = "test-detailed-acc";
+
+        // Initial check
+        let initial = balancer.get_detailed_health(acc_id);
+        assert_eq!(initial.stage, HealthStage::Healthy);
+        assert_eq!(initial.stage_level, 0);
+        assert_eq!(initial.failure_count, 0);
+        assert!(!initial.is_cooling);
+        assert!(initial.remaining_secs.is_none());
+
+        // Record failure with specific reason
+        balancer.record_failure_with_reason(acc_id, 429, 90, 0, Some("HTTP 429: Resource exhausted"));
+        let step1 = balancer.get_detailed_health(acc_id);
+        assert_eq!(step1.stage, HealthStage::SoftPause);
+        assert_eq!(step1.stage_level, 1);
+        assert_eq!(step1.failure_count, 1);
+        assert!(step1.is_cooling);
+        assert_eq!(step1.last_status_code, Some(429));
+        assert_eq!(step1.last_failure_reason.as_deref(), Some("HTTP 429: Resource exhausted"));
+
+        // Update reason
+        balancer.update_failure_reason(acc_id, 429, "HTTP 429: Updated quota details");
+        let updated = balancer.get_detailed_health(acc_id);
+        assert_eq!(updated.last_failure_reason.as_deref(), Some("HTTP 429: Updated quota details"));
+
+        // Manual reset back to healthy
+        balancer.reset_health(acc_id);
+        let reset = balancer.get_detailed_health(acc_id);
+        assert_eq!(reset.stage, HealthStage::Healthy);
+        assert_eq!(reset.stage_level, 0);
+        assert_eq!(reset.failure_count, 0);
+        assert!(!reset.is_cooling);
+        assert!(reset.remaining_secs.is_none());
+        assert!(reset.last_failure_reason.is_none());
+    }
 }

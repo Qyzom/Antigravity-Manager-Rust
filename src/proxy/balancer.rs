@@ -70,6 +70,8 @@ pub struct AccountHealthRecord {
     pub total_failures: u64,
     pub total_successes: u64,
     pub last_failure_time: Option<Instant>,
+    pub last_status_code: Option<u16>,
+    pub last_failure_reason: Option<String>,
 }
 
 impl Default for AccountHealthRecord {
@@ -81,8 +83,23 @@ impl Default for AccountHealthRecord {
             total_failures: 0,
             total_successes: 0,
             last_failure_time: None,
+            last_status_code: None,
+            last_failure_reason: None,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct DetailedHealthStatus {
+    pub stage: HealthStage,
+    pub stage_level: u32,
+    pub failure_count: u32,
+    pub remaining_secs: Option<u64>,
+    pub last_status_code: Option<u16>,
+    pub last_failure_reason: Option<String>,
+    pub total_failures: u64,
+    pub total_successes: u64,
+    pub is_cooling: bool,
 }
 
 pub struct LoadBalancer {
@@ -184,9 +201,21 @@ impl LoadBalancer {
     }
 
     /// Record a failure on an account (e.g. 429 Too Many Requests or 5xx).
-    /// Advances through the adaptive exponential backoff ladder (3s -> 15s -> 60s -> 300s quarantine)
+    /// Advances through the adaptive exponential backoff ladder (3s -> 15s -> 60s -> quarantine)
     /// with randomized jitter (default ±15%) to prevent synthetic machine periodicities.
     pub fn record_failure(&self, account_id: &str, status_code: u16, max_quarantine_secs: u64, jitter_pct: u8) {
+        self.record_failure_with_reason(account_id, status_code, max_quarantine_secs, jitter_pct, None);
+    }
+
+    /// Record a failure with exact status code and descriptive reason.
+    pub fn record_failure_with_reason(
+        &self,
+        account_id: &str,
+        status_code: u16,
+        max_quarantine_secs: u64,
+        jitter_pct: u8,
+        reason: Option<&str>,
+    ) {
         let now = Instant::now();
         let (expiry, _stage, _count) = {
             let mut health_map = self.account_health.write();
@@ -194,17 +223,23 @@ impl LoadBalancer {
             record.failure_count += 1;
             record.total_failures += 1;
             record.last_failure_time = Some(now);
+            record.last_status_code = Some(status_code);
+            if let Some(r) = reason {
+                record.last_failure_reason = Some(r.to_string());
+            } else if record.last_failure_reason.is_none() {
+                record.last_failure_reason = Some(format!("HTTP {} error", status_code));
+            }
 
             // Exponential Backoff Ladder:
-            // Failure 1: ~3s
-            // Failure 2: ~15s
-            // Failure 3: ~60s
-            // Failure 4+: max_quarantine_secs (default 300s)
+            // Failure 1: ~3s (SoftPause)
+            // Failure 2: ~15s (Backoff)
+            // Failure 3: ~60s (Cooldown)
+            // Failure 4+: max_quarantine_secs (Quarantine, clamped to min 30s)
             let (base_secs, stage) = match record.failure_count {
                 1 => (3.0f64, HealthStage::SoftPause),
                 2 => (15.0f64, HealthStage::Backoff),
                 3 => (60.0f64, HealthStage::Cooldown),
-                _ => (max_quarantine_secs.max(120) as f64, HealthStage::Quarantine),
+                _ => (max_quarantine_secs.max(30) as f64, HealthStage::Quarantine),
             };
 
             // Apply randomized jitter (e.g. ±15%)
@@ -217,8 +252,8 @@ impl LoadBalancer {
             record.cooldown_until = Some(expiry);
 
             log::warn!(
-                "[LoadBalancer] Account {} failure #{} (status: {}). Entering {:?} for {:.2}s (base: {:.0}s, jitter ±{}%)",
-                account_id, record.failure_count, status_code, stage, final_secs, base_secs, jitter_pct
+                "[LoadBalancer] Account {} failure #{} (status: {}). Entering {:?} for {:.2}s (base: {:.0}s, jitter ±{}%) - Reason: {:?}",
+                account_id, record.failure_count, status_code, stage, final_secs, base_secs, jitter_pct, record.last_failure_reason
             );
 
             (expiry, stage, record.failure_count)
@@ -239,6 +274,32 @@ impl LoadBalancer {
         self.failover_rotations.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Update the failure reason on an account (e.g. once detailed upstream error body is parsed)
+    pub fn update_failure_reason(&self, account_id: &str, status_code: u16, reason: &str) {
+        let mut health_map = self.account_health.write();
+        if let Some(record) = health_map.get_mut(account_id) {
+            record.last_status_code = Some(status_code);
+            record.last_failure_reason = Some(reason.to_string());
+        }
+    }
+
+    /// Manually or automatically reset an account from quarantine/cooldown back to Healthy
+    pub fn reset_health(&self, account_id: &str) {
+        {
+            let mut health_map = self.account_health.write();
+            if let Some(record) = health_map.get_mut(account_id) {
+                record.failure_count = 0;
+                record.stage = HealthStage::Healthy;
+                record.cooldown_until = None;
+                record.last_failure_reason = None;
+                record.last_status_code = None;
+            }
+        }
+        let mut cds = self.account_cooldowns.write();
+        cds.remove(account_id);
+        log::info!("[LoadBalancer] Health manually reset for account {}. Cooldown cleared.", account_id);
+    }
+
     /// Record successful response on an account.
     /// Auto-heals the account: resets the failure count and restores to Healthy stage.
     pub fn record_success(&self, account_id: &str) {
@@ -253,6 +314,8 @@ impl LoadBalancer {
                 record.failure_count = 0;
                 record.stage = HealthStage::Healthy;
                 record.cooldown_until = None;
+                record.last_failure_reason = None;
+                record.last_status_code = None;
             }
         }
         let mut cds = self.account_cooldowns.write();
@@ -261,7 +324,7 @@ impl LoadBalancer {
 
     /// Mark account in temporary cooldown on rate-limit (429) or transient 5xx error
     pub fn mark_cooldown(&self, account_id: &str, duration_secs: u64) {
-        self.record_failure(account_id, 429, duration_secs, 15);
+        self.record_failure_with_reason(account_id, 429, duration_secs, 15, Some("Manual Cooldown (429)"));
     }
 
     /// Retrieve live health status of an account: (HealthStage, failure_count, remaining_cooldown_secs)
@@ -280,6 +343,60 @@ impl LoadBalancer {
             }
         }
         (HealthStage::Healthy, 0, None)
+    }
+
+    /// Retrieve comprehensive health details for UI modals and diagnostics
+    pub fn get_detailed_health(&self, account_id: &str) -> DetailedHealthStatus {
+        let now = Instant::now();
+        let health_map = self.account_health.read();
+        if let Some(record) = health_map.get(account_id) {
+            let remaining = record.cooldown_until.and_then(|until| {
+                if until > now {
+                    Some(until.duration_since(now).as_secs().max(1))
+                } else {
+                    None
+                }
+            });
+            let is_cooling = remaining.is_some();
+            let effective_stage = if is_cooling {
+                record.stage
+            } else if record.failure_count > 0 {
+                HealthStage::Probing
+            } else {
+                HealthStage::Healthy
+            };
+            let stage_level = match effective_stage {
+                HealthStage::Healthy => 0,
+                HealthStage::SoftPause => 1,
+                HealthStage::Backoff => 2,
+                HealthStage::Cooldown => 3,
+                HealthStage::Quarantine => 4,
+                HealthStage::Probing => 0,
+            };
+            DetailedHealthStatus {
+                stage: effective_stage,
+                stage_level,
+                failure_count: record.failure_count,
+                remaining_secs: remaining,
+                last_status_code: record.last_status_code,
+                last_failure_reason: record.last_failure_reason.clone(),
+                total_failures: record.total_failures,
+                total_successes: record.total_successes,
+                is_cooling,
+            }
+        } else {
+            DetailedHealthStatus {
+                stage: HealthStage::Healthy,
+                stage_level: 0,
+                failure_count: 0,
+                remaining_secs: None,
+                last_status_code: None,
+                last_failure_reason: None,
+                total_failures: 0,
+                total_successes: 0,
+                is_cooling: false,
+            }
+        }
     }
 
     /// Select optimal upstream account with cache affinity, quota balancing, model capability, and failover

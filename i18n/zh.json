@@ -339,5 +339,20 @@
     "lbl_auto_rotate_fp": "429 自动轮换硬件指纹",
     "lbl_auto_rotate_fp_desc": "当账号触发速率限制时自动重新生成全新的 Device ID 和 Machine ID",
     "lbl_normalize_headers": "标准 Go net/http 请求头规范化",
-    "lbl_normalize_headers_desc": "强制采用标准 Go net/http 库标头大小写与顺序，彻底掩蔽代理源特征"
+    "lbl_normalize_headers_desc": "强制采用标准 Go net/http 库标头大小写与顺序，彻底掩蔽代理源特征",
+    "lbl_version_amr_release": "AMR 发布版本 (2.23.1)",
+    "lbl_version_antigravity_latest": "最新 Antigravity (2.28.1)",
+    "lbl_modal_health_title": "健康与隔离状态",
+    "lbl_modal_quarantine_stage": "当前阶段",
+    "lbl_modal_quarantine_remaining": "剩余冷却时间",
+    "lbl_modal_quarantine_reason": "故障原因",
+    "lbl_modal_quarantine_active": "正常 (可处理请求)",
+    "lbl_modal_quarantine_no_error": "无错误记录",
+    "btn_modal_reset_quarantine": "解除隔离",
+    "lbl_stage_healthy": "健康 (0 错误)",
+    "lbl_stage_soft_pause": "阶段 1/4: 短暂暂停 (~3秒)",
+    "lbl_stage_backoff": "阶段 2/4: 避让等待 (~15秒)",
+    "lbl_stage_cooldown": "阶段 3/4: 冷却 (~60秒)",
+    "lbl_stage_quarantine": "阶段 4/4: 隔离",
+    "lbl_stage_probing": "探测请求 (验证自动恢复)"
 }

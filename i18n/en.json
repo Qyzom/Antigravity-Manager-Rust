@@ -339,5 +339,20 @@
     "lbl_auto_rotate_fp": "Auto-Rotate Fingerprint on 429",
     "lbl_auto_rotate_fp_desc": "Generates fresh device and hardware machine IDs when an account hits rate limit",
     "lbl_normalize_headers": "Canonical Go Header Normalization",
-    "lbl_normalize_headers_desc": "Enforces exact Go standard library header casing and ordering to mask proxy origins"
+    "lbl_normalize_headers_desc": "Enforces exact Go standard library header casing and ordering to mask proxy origins",
+    "lbl_version_amr_release": "AMR Release (2.23.1)",
+    "lbl_version_antigravity_latest": "Latest Antigravity (2.28.1)",
+    "lbl_modal_health_title": "HEALTH & QUARANTINE STATUS",
+    "lbl_modal_quarantine_stage": "Current Stage",
+    "lbl_modal_quarantine_remaining": "Cooldown Remaining",
+    "lbl_modal_quarantine_reason": "Failure Cause",
+    "lbl_modal_quarantine_active": "Active (ready for requests)",
+    "lbl_modal_quarantine_no_error": "No errors recorded",
+    "btn_modal_reset_quarantine": "Reset Cooldown",
+    "lbl_stage_healthy": "Healthy (0 errors)",
+    "lbl_stage_soft_pause": "Stage 1/4: Soft Pause (~3s)",
+    "lbl_stage_backoff": "Stage 2/4: Backoff (~15s)",
+    "lbl_stage_cooldown": "Stage 3/4: Cooldown (~60s)",
+    "lbl_stage_quarantine": "Stage 4/4: Quarantine",
+    "lbl_stage_probing": "Trial Probe (Auto-heal verification)"
 }

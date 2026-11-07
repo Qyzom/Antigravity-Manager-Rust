@@ -233,12 +233,15 @@ fn default_max_log_entries() -> usize {
     100
 }
 
+pub const VERSION_AMR_RELEASE: &str = "2.23.1";
+pub const VERSION_ANTIGRAVITY_LATEST: &str = "2.28.1";
+
 fn default_spoof_platform() -> String {
     "AUTO".to_string()
 }
 
 fn default_spoof_ide_version() -> String {
-    "2.28.1".to_string()
+    VERSION_AMR_RELEASE.to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -430,7 +433,7 @@ impl Default for AppConfig {
             cooldown_duration_secs: 300,
             cooldown_jitter_percent: 15,
             spoof_platform: "AUTO".to_string(),
-            spoof_ide_version: "2.28.1".to_string(),
+            spoof_ide_version: VERSION_AMR_RELEASE.to_string(),
             spoof_arch: "AUTO".to_string(),
             spoof_channel: "stable".to_string(),
             strip_telemetry_traces: true,

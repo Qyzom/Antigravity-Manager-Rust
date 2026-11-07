@@ -516,6 +516,21 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_auto_rotate_fp_desc: t.lbl_auto_rotate_fp_desc.into(),
         lbl_normalize_headers: t.lbl_normalize_headers.into(),
         lbl_normalize_headers_desc: t.lbl_normalize_headers_desc.into(),
+        lbl_version_amr_release: t.lbl_version_amr_release.into(),
+        lbl_version_antigravity_latest: t.lbl_version_antigravity_latest.into(),
+        lbl_modal_health_title: t.lbl_modal_health_title.into(),
+        lbl_modal_quarantine_stage: t.lbl_modal_quarantine_stage.into(),
+        lbl_modal_quarantine_remaining: t.lbl_modal_quarantine_remaining.into(),
+        lbl_modal_quarantine_reason: t.lbl_modal_quarantine_reason.into(),
+        lbl_modal_quarantine_active: t.lbl_modal_quarantine_active.into(),
+        lbl_modal_quarantine_no_error: t.lbl_modal_quarantine_no_error.into(),
+        btn_modal_reset_quarantine: t.btn_modal_reset_quarantine.into(),
+        lbl_stage_healthy: t.lbl_stage_healthy.into(),
+        lbl_stage_soft_pause: t.lbl_stage_soft_pause.into(),
+        lbl_stage_backoff: t.lbl_stage_backoff.into(),
+        lbl_stage_cooldown: t.lbl_stage_cooldown.into(),
+        lbl_stage_quarantine: t.lbl_stage_quarantine.into(),
+        lbl_stage_probing: t.lbl_stage_probing.into(),
     };
     ui.set_github_update_status(t.btn_check_updates.clone().into());
     ui.set_test_prompt(t.lbl_test_default_prompt.clone().into());
@@ -580,8 +595,27 @@ fn setup_linux_desktop_integration() {
             exec_path
         );
 
+        let has_external_desktop = if let Ok(entries) = std::fs::read_dir(&app_dir) {
+            entries.filter_map(|e| e.ok()).any(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                name != "amr.desktop"
+                    && (name.starts_with("amr-")
+                        || name.starts_with("io.github.amr")
+                        || name.starts_with("appimagekit_amr"))
+                    && name.ends_with(".desktop")
+            })
+        } else {
+            false
+        };
+
         let desktop_file = app_dir.join("amr.desktop");
-        let _ = std::fs::write(&desktop_file, desktop_content);
+        if has_external_desktop {
+            if desktop_file.exists() {
+                let _ = std::fs::remove_file(&desktop_file);
+            }
+        } else {
+            let _ = std::fs::write(&desktop_file, desktop_content);
+        }
 
         let _ = std::process::Command::new("update-desktop-database")
             .arg(&app_dir)
@@ -1852,6 +1886,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Open account details dialog callback
     let c_info = Arc::clone(&config_arc);
     let h_info = window_handle.clone();
+    let b_info = Arc::clone(&balancer_arc);
     main_window.on_open_account_info(move |id_slint| {
         let id_str = id_slint.to_string();
         if let Some(h) = h_info.upgrade() {
@@ -1883,8 +1918,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 h.set_info_account_models(format!("{} {}", cfg.models.len(), t.lbl_upstream_models_suffix).into());
                 h.set_info_account_added_at(format_elapsed_time(acc.added_at.unwrap_or(0), lang).into());
                 h.set_info_account_error(acc.error_message.clone().unwrap_or_default().into());
+
+                // Health & Quarantine diagnosis
+                let health = b_info.get_detailed_health(&acc.id);
+                let (stage_text, is_cooling) = match health.stage {
+                    amr::proxy::balancer::HealthStage::Healthy => (t.lbl_stage_healthy.clone(), false),
+                    amr::proxy::balancer::HealthStage::SoftPause => (t.lbl_stage_soft_pause.clone(), true),
+                    amr::proxy::balancer::HealthStage::Backoff => (t.lbl_stage_backoff.clone(), true),
+                    amr::proxy::balancer::HealthStage::Cooldown => (t.lbl_stage_cooldown.clone(), true),
+                    amr::proxy::balancer::HealthStage::Quarantine => (t.lbl_stage_quarantine.clone(), true),
+                    amr::proxy::balancer::HealthStage::Probing => (t.lbl_stage_probing.clone(), false),
+                };
+                h.set_info_account_health_stage(stage_text.into());
+                h.set_info_account_health_level(health.stage_level as i32);
+                h.set_info_account_is_cooling(is_cooling);
+                if let Some(rem) = health.remaining_secs {
+                    h.set_info_account_health_remaining(format!("{}s", rem).into());
+                } else {
+                    h.set_info_account_health_remaining(t.lbl_modal_quarantine_active.clone().into());
+                }
+                if let Some(ref reason) = health.last_failure_reason {
+                    h.set_info_account_health_reason(reason.clone().into());
+                } else {
+                    h.set_info_account_health_reason(t.lbl_modal_quarantine_no_error.clone().into());
+                }
+
                 h.set_show_account_info(true);
             }
+        }
+    });
+
+    // Reset account quarantine callback
+    let b_reset = Arc::clone(&balancer_arc);
+    let h_reset = window_handle.clone();
+    let c_reset = Arc::clone(&config_arc);
+    main_window.on_reset_account_quarantine(move |id_slint| {
+        let id_str = id_slint.to_string();
+        b_reset.reset_health(&id_str);
+        if let Some(h) = h_reset.upgrade() {
+            let cfg = c_reset.read();
+            let lang = Language::from_str_code(&cfg.language);
+            let t = get_translations(lang);
+            h.set_info_account_health_stage(t.lbl_stage_healthy.into());
+            h.set_info_account_health_level(0);
+            h.set_info_account_is_cooling(false);
+            h.set_info_account_health_remaining(t.lbl_modal_quarantine_active.into());
+            h.set_info_account_health_reason(t.lbl_modal_quarantine_no_error.into());
         }
     });
 
@@ -3166,6 +3245,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if row.status != expected_status {
                         row.status = expected_status;
                         accounts_model.set_row_data(idx, row);
+                    }
+                }
+            }
+
+            // Real-time quarantine countdown in account info modal
+            if w.get_show_account_info() {
+                let acc_id = w.get_info_account_id();
+                let health = b_timer.get_detailed_health(acc_id.as_str());
+                if let Some(rem) = health.remaining_secs {
+                    w.set_info_account_health_remaining(format!("{}s", rem).into());
+                    w.set_info_account_is_cooling(true);
+                } else if w.get_info_account_is_cooling() {
+                    let cfg = c_timer.read();
+                    let lang = Language::from_str_code(&cfg.language);
+                    let t = get_translations(lang);
+                    w.set_info_account_is_cooling(false);
+                    w.set_info_account_health_remaining(t.lbl_modal_quarantine_active.into());
+                    if health.stage == amr::proxy::balancer::HealthStage::Healthy {
+                        w.set_info_account_health_stage(t.lbl_stage_healthy.into());
+                        w.set_info_account_health_level(0);
                     }
                 }
             }

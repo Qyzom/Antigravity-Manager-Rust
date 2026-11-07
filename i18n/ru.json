@@ -339,5 +339,20 @@
     "lbl_auto_rotate_fp": "Авто-ротация Fingerprint при лимите (429)",
     "lbl_auto_rotate_fp_desc": "Генерирует свежий Device ID и Machine ID при попадании аккаунта в 429",
     "lbl_normalize_headers": "Нормализация заголовков под Go net/http",
-    "lbl_normalize_headers_desc": "Форматирует регистр и порядок заголовков строго под стандартную библиотеку Go net/http"
+    "lbl_normalize_headers_desc": "Форматирует регистр и порядок заголовков строго под стандартную библиотеку Go net/http",
+    "lbl_version_amr_release": "Релиз AMR (2.23.1)",
+    "lbl_version_antigravity_latest": "Актуальная Antigravity (2.28.1)",
+    "lbl_modal_health_title": "СТАТУС ЗДОРОВЬЯ И КАРАНТИН",
+    "lbl_modal_quarantine_stage": "Текущая стадия",
+    "lbl_modal_quarantine_remaining": "Осталось отлёжки",
+    "lbl_modal_quarantine_reason": "Причина сбоя",
+    "lbl_modal_quarantine_active": "Активен (готов к запросам)",
+    "lbl_modal_quarantine_no_error": "Ошибок не зафиксировано",
+    "btn_modal_reset_quarantine": "Снять карантин",
+    "lbl_stage_healthy": "Здоров (0 ошибок)",
+    "lbl_stage_soft_pause": "Стадия 1/4: Мягкая пауза (~3с)",
+    "lbl_stage_backoff": "Стадия 2/4: Ожидание (~15с)",
+    "lbl_stage_cooldown": "Стадия 3/4: Отлёжка (~60с)",
+    "lbl_stage_quarantine": "Стадия 4/4: Карантин",
+    "lbl_stage_probing": "Пробный запрос (проверка авто-восстановления)"
 }

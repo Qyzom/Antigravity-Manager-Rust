@@ -401,6 +401,21 @@ export struct I18nData {
     lbl_auto_rotate_fp_desc: string,
     lbl_normalize_headers: string,
     lbl_normalize_headers_desc: string,
+    lbl_version_amr_release: string,
+    lbl_version_antigravity_latest: string,
+    lbl_modal_health_title: string,
+    lbl_modal_quarantine_stage: string,
+    lbl_modal_quarantine_remaining: string,
+    lbl_modal_quarantine_reason: string,
+    lbl_modal_quarantine_active: string,
+    lbl_modal_quarantine_no_error: string,
+    btn_modal_reset_quarantine: string,
+    lbl_stage_healthy: string,
+    lbl_stage_soft_pause: string,
+    lbl_stage_backoff: string,
+    lbl_stage_cooldown: string,
+    lbl_stage_quarantine: string,
+    lbl_stage_probing: string,
 }
 
 component NavItem inherits Rectangle {
@@ -666,6 +681,11 @@ export component MainWindow inherits Window {
     in-out property <string> info_account_machine_id: "";
     in-out property <string> info_account_device_id: "";
     in-out property <string> info_account_proxy_url: "";
+    in-out property <string> info_account_health_stage: "";
+    in-out property <int> info_account_health_level: 0;
+    in-out property <string> info_account_health_remaining: "";
+    in-out property <string> info_account_health_reason: "";
+    in-out property <bool> info_account_is_cooling: false;
 
     // Master API Key & Extra Dashboard Metrics
     in-out property <string> master_api_key: "sk-amr-v1-master-key";
@@ -813,6 +833,7 @@ export component MainWindow inherits Window {
     callback set_stealth_arch(string);
     callback set_stealth_channel(string);
     callback toggle_stealth_strip_telemetry();
+    callback reset_account_quarantine(string);
     callback toggle_stealth_auto_rotate_fp();
     callback toggle_stealth_normalize_headers();
     callback set_stealth_cooldown_jitter(int);
@@ -2122,75 +2143,21 @@ export component MainWindow inherits Window {
                                     }
                                 }
 
-                                // Architecture Selector
-                                HorizontalLayout {
-                                    spacing: 8px;
-                                    Text { text: root.i18n.lbl_spoof_arch + ":"; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
-                                    ActionButton {
-                                        text: root.i18n.lbl_platform_auto;
-                                        is_primary: root.stealth_spoof_arch == "AUTO";
-                                        is_accent: root.stealth_spoof_arch == "AUTO";
-                                        clicked => { root.set_stealth_arch("AUTO"); }
-                                    }
-                                    ActionButton {
-                                        text: "x86_64";
-                                        is_primary: root.stealth_spoof_arch == "x86_64";
-                                        is_accent: root.stealth_spoof_arch == "x86_64";
-                                        clicked => { root.set_stealth_arch("x86_64"); }
-                                    }
-                                    ActionButton {
-                                        text: "ARM64";
-                                        is_primary: root.stealth_spoof_arch == "arm64";
-                                        is_accent: root.stealth_spoof_arch == "arm64";
-                                        clicked => { root.set_stealth_arch("arm64"); }
-                                    }
-                                }
-
-                                // Release Ring Channel Selector
-                                HorizontalLayout {
-                                    spacing: 8px;
-                                    Text { text: root.i18n.lbl_spoof_channel + ":"; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
-                                    ActionButton {
-                                        text: "Stable";
-                                        is_primary: root.stealth_spoof_channel == "stable";
-                                        is_accent: root.stealth_spoof_channel == "stable";
-                                        clicked => { root.set_stealth_channel("stable"); }
-                                    }
-                                    ActionButton {
-                                        text: "Insiders";
-                                        is_primary: root.stealth_spoof_channel == "insiders";
-                                        is_accent: root.stealth_spoof_channel == "insiders";
-                                        clicked => { root.set_stealth_channel("insiders"); }
-                                    }
-                                    ActionButton {
-                                        text: "Preview";
-                                        is_primary: root.stealth_spoof_channel == "preview";
-                                        is_accent: root.stealth_spoof_channel == "preview";
-                                        clicked => { root.set_stealth_channel("preview"); }
-                                    }
-                                }
-
-                                // App Version Selector
+                                // App Version Selector (2 Options: AMR Release [Default] vs Latest Upstream)
                                 HorizontalLayout {
                                     spacing: 8px;
                                     Text { text: root.i18n.lbl_spoof_ide_version + ":"; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
                                     ActionButton {
-                                        text: "2.28.1 " + root.i18n.lbl_tag_stable;
-                                        is_primary: root.stealth_spoof_ide_version == "2.28.1";
-                                        is_accent: root.stealth_spoof_ide_version == "2.28.1";
-                                        clicked => { root.set_stealth_ide_version("2.28.1"); }
-                                    }
-                                    ActionButton {
-                                        text: "2.23.1";
+                                        text: root.i18n.lbl_version_amr_release + " " + root.i18n.lbl_tag_default;
                                         is_primary: root.stealth_spoof_ide_version == "2.23.1";
                                         is_accent: root.stealth_spoof_ide_version == "2.23.1";
                                         clicked => { root.set_stealth_ide_version("2.23.1"); }
                                     }
                                     ActionButton {
-                                        text: "1.107.0 " + root.i18n.lbl_tag_legacy;
-                                        is_primary: root.stealth_spoof_ide_version == "1.107.0";
-                                        is_accent: root.stealth_spoof_ide_version == "1.107.0";
-                                        clicked => { root.set_stealth_ide_version("1.107.0"); }
+                                        text: root.i18n.lbl_version_antigravity_latest;
+                                        is_primary: root.stealth_spoof_ide_version == "2.28.1";
+                                        is_accent: root.stealth_spoof_ide_version == "2.28.1";
+                                        clicked => { root.set_stealth_ide_version("2.28.1"); }
                                     }
                                 }
                             }
@@ -3511,6 +3478,76 @@ export component MainWindow inherits Window {
                                         width: parent.width * (root.info_account_gemini_week_pct / 100.0);
                                         background: root.info_account_gemini_week_pct <= 0 ? #ef4444 : (root.info_account_gemini_week_pct <= 20 ? #eab308 : #4ade80);
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Health & Quarantine Status Card
+                Rectangle {
+                    background: root.info_account_is_cooling ? #251414 : #1a1a1e;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: root.info_account_is_cooling ? #7f1d1d : #27272a;
+
+                    VerticalLayout {
+                        padding: 10px;
+                        spacing: 6px;
+
+                        HorizontalLayout {
+                            alignment: space-between;
+                            Text {
+                                text: root.i18n.lbl_modal_health_title;
+                                font-size: 11px;
+                                font-weight: 700;
+                                color: root.info_account_is_cooling ? #f87171 : #ffffff;
+                                vertical-alignment: center;
+                            }
+                            Badge {
+                                text: root.info_account_health_stage != "" ? root.info_account_health_stage : root.i18n.lbl_stage_healthy;
+                                is_green: !root.info_account_is_cooling && root.info_account_health_level == 0;
+                                is_amber: root.info_account_is_cooling && root.info_account_health_level < 4;
+                                is_danger: root.info_account_is_cooling && root.info_account_health_level >= 4;
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: root.i18n.lbl_modal_quarantine_remaining + ":"; width: 140px; font-size: 10px; color: #a1a1aa; vertical-alignment: center; }
+                            Text {
+                                text: root.info_account_is_cooling ? root.info_account_health_remaining : root.i18n.lbl_modal_quarantine_active;
+                                horizontal-stretch: 1;
+                                font-size: 10px;
+                                font-weight: 600;
+                                color: root.info_account_is_cooling ? #fbbf24 : #4ade80;
+                                horizontal-alignment: right;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Text { text: root.i18n.lbl_modal_quarantine_reason + ":"; width: 140px; font-size: 10px; color: #a1a1aa; vertical-alignment: top; }
+                            Text {
+                                text: root.info_account_health_reason != "" ? root.info_account_health_reason : root.i18n.lbl_modal_quarantine_no_error;
+                                horizontal-stretch: 1;
+                                font-size: 10px;
+                                color: root.info_account_is_cooling ? #fca5a5 : #e4e4e7;
+                                horizontal-alignment: right;
+                                wrap: word-wrap;
+                            }
+                        }
+
+                        if root.info_account_is_cooling: HorizontalLayout {
+                            alignment: start;
+                            padding-top: 4px;
+                            ActionButton {
+                                text: root.i18n.btn_modal_reset_quarantine;
+                                is_accent: true;
+                                custom_height: 26px;
+                                clicked => {
+                                    root.reset_account_quarantine(root.info_account_id);
                                 }
                             }
                         }
