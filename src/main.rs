@@ -30,15 +30,18 @@ fn open_in_system(target: &str) {
         wide.push(0);
         let mut operation: Vec<u16> = std::ffi::OsStr::new("open").encode_wide().collect();
         operation.push(0);
-        unsafe {
+        let res = unsafe {
             windows_sys::Win32::UI::Shell::ShellExecuteW(
-                0,
+                std::ptr::null_mut(),
                 operation.as_ptr(),
                 wide.as_ptr(),
                 std::ptr::null(),
                 std::ptr::null(),
                 windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
-            );
+            )
+        };
+        if res as usize <= 32 {
+            let _ = std::process::Command::new("cmd").args(["/C", "start", "", target]).spawn();
         }
     }
     #[cfg(target_os = "macos")]
@@ -490,6 +493,12 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         about_spec_license_val: t.about_spec_license_val.into(),
         lbl_endpoints_openai: t.lbl_endpoints_openai.into(),
         lbl_endpoints_claude: t.lbl_endpoints_claude.into(),
+        lbl_tag_stable: t.lbl_tag_stable.into(),
+        lbl_test_image_prompt: t.lbl_test_image_prompt.into(),
+        lbl_test_image_prompt_placeholder: t.lbl_test_image_prompt_placeholder.into(),
+        opt_cache_first_desc: t.opt_cache_first_desc.into(),
+        opt_cache_balanced_desc: t.opt_cache_balanced_desc.into(),
+        opt_cache_spread_desc: t.opt_cache_spread_desc.into(),
     };
     ui.set_github_update_status(t.btn_check_updates.clone().into());
     ui.set_test_prompt(t.lbl_test_default_prompt.clone().into());
@@ -2026,6 +2035,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let c_test_dlg = Arc::clone(&config_arc);
     main_window.on_open_test_dialog(move |model_id_slint| {
         if let Some(h) = h_test_dlg.upgrade() {
+            let is_image = model_id_slint == "Image generator" || model_id_slint == "image-generator";
             let lang = Language::from_str_code(&c_test_dlg.read().language);
             let t = get_translations(lang);
             h.set_test_model_id(model_id_slint);
@@ -2034,7 +2044,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             h.set_test_tokens("0".into());
             h.set_test_response("".into());
             h.set_test_reasoning_effort_index(0);
-            if h.get_test_prompt().is_empty() {
+            if is_image {
+                h.set_test_stream(false);
+                h.set_test_prompt(t.lbl_test_image_prompt.into());
+            } else if h.get_test_prompt().is_empty() || h.get_test_prompt() == t.lbl_test_image_prompt {
                 h.set_test_prompt(t.lbl_test_default_prompt.into());
             }
             h.set_show_test_dialog(true);
@@ -2799,6 +2812,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         {
             let mut cfg = c_scjit.write();
             cfg.cooldown_jitter_percent = (pct as u8).clamp(0, 50);
+            cfg.request_jitter = pct > 0;
             let _ = cfg.save();
         }
         if let Some(h) = h_scjit.upgrade() {

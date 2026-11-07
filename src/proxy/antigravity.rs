@@ -692,8 +692,8 @@ pub fn build_antigravity_payload_with_meta(
     target_model: &str,
     project_id: Option<&str>,
     reasoning_effort: Option<ReasoningEffort>,
-    platform_override: Option<&str>,
-    ide_version_override: Option<&str>,
+    _platform_override: Option<&str>,
+    _ide_version_override: Option<&str>,
 ) -> Value {
     let upstream_model = normalize_antigravity_upstream_model(target_model);
     let mut contents = Vec::new();
@@ -911,25 +911,12 @@ pub fn build_antigravity_payload_with_meta(
     }
 
     let pid = project_id.unwrap_or("aicode-consumers");
-    let default_os = match std::env::consts::OS {
-        "windows" => "WINDOWS",
-        "macos" => "MACOS",
-        _ => "LINUX",
-    };
-    let os_platform = platform_override.unwrap_or(default_os);
-    let ide_ver = ide_version_override.unwrap_or(OFFICIAL_HUB_VERSION);
     serde_json::json!({
         "project": pid,
         "model": upstream_model,
         "request": inner_request,
         "userAgent": "antigravity",
         "requestId": format!("req-{}", uuid::Uuid::new_v4().simple()),
-        "clientInfo": {
-            "clientType": "ANTIGRAVITY",
-            "ideType": "ANTIGRAVITY",
-            "ideVersion": ide_ver,
-            "platform": os_platform
-        }
     })
 }
 
@@ -947,8 +934,8 @@ pub fn build_antigravity_payload_from_claude_with_meta(
     target_model: &str,
     project_id: Option<&str>,
     reasoning_effort: Option<ReasoningEffort>,
-    platform_override: Option<&str>,
-    ide_version_override: Option<&str>,
+    _platform_override: Option<&str>,
+    _ide_version_override: Option<&str>,
 ) -> Value {
     let upstream_model = normalize_antigravity_upstream_model(target_model);
     let mut contents = Vec::new();
@@ -1140,25 +1127,12 @@ pub fn build_antigravity_payload_from_claude_with_meta(
     }
 
     let pid = project_id.unwrap_or("aicode-consumers");
-    let default_os = match std::env::consts::OS {
-        "windows" => "WINDOWS",
-        "macos" => "MACOS",
-        _ => "LINUX",
-    };
-    let os_platform = platform_override.unwrap_or(default_os);
-    let ide_ver = ide_version_override.unwrap_or(OFFICIAL_HUB_VERSION);
     serde_json::json!({
         "project": pid,
         "model": upstream_model,
         "request": inner_request,
         "userAgent": "antigravity",
         "requestId": format!("req-{}", uuid::Uuid::new_v4().simple()),
-        "clientInfo": {
-            "clientType": "ANTIGRAVITY",
-            "ideType": "ANTIGRAVITY",
-            "ideVersion": ide_ver,
-            "platform": os_platform
-        }
     })
 }
 
@@ -1180,6 +1154,11 @@ pub fn convert_antigravity_response_to_claude(
                             thinking_parts.push_str(txt);
                         } else {
                             text_parts.push_str(txt);
+                        }
+                    } else if let Some(inline) = part.get("inlineData") {
+                        let mime = inline.get("mimeType").and_then(|m| m.as_str()).unwrap_or("image/png");
+                        if let Some(b64) = inline.get("data").and_then(|d| d.as_str()) {
+                            text_parts.push_str(&format!("[Generated Image: {} bytes, {}]\n![Generated Image](data:{};base64,{})", b64.len(), mime, mime, b64));
                         }
                     }
                 }
@@ -1244,6 +1223,11 @@ pub fn convert_antigravity_response_to_openai(
                             entry.push_str(txt);
                         } else {
                             full_text.push_str(txt);
+                        }
+                    } else if let Some(inline) = part.get("inlineData") {
+                        let mime = inline.get("mimeType").and_then(|m| m.as_str()).unwrap_or("image/png");
+                        if let Some(b64) = inline.get("data").and_then(|d| d.as_str()) {
+                            full_text.push_str(&format!("[Generated Image: {} bytes, {}]\n![Generated Image](data:{};base64,{})", b64.len(), mime, mime, b64));
                         }
                     }
                 }

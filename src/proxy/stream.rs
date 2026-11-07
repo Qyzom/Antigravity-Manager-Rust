@@ -347,6 +347,16 @@ pub fn process_antigravity_to_openai_stream(
                                                                             }
                                                                         }
                                                                     }
+                                                                } else if let Some(inline) = part.get("inlineData") {
+                                                                    let mime = inline.get("mimeType").and_then(|m| m.as_str()).unwrap_or("image/png");
+                                                                    if let Some(b64) = inline.get("data").and_then(|d| d.as_str()) {
+                                                                        let img_md = format!("[Generated Image: {} bytes, {}]\n![Generated Image](data:{};base64,{})", b64.len(), mime, mime, b64);
+                                                                        if accumulated_response.len() < 65536 {
+                                                                            accumulated_response.push_str(&img_md);
+                                                                        }
+                                                                        let chunk = create_stream_chunk(&stream_id, &model_name, Some(&img_md), None, None);
+                                                                        yield Ok(Bytes::from(chunk));
+                                                                    }
                                                                 }
                                                             }
                                                         }
@@ -641,6 +651,35 @@ pub fn process_antigravity_to_claude_stream(
                                                                             "delta": {
                                                                                 "type": "text_delta",
                                                                                 "text": txt
+                                                                            }
+                                                                        });
+                                                                        yield Ok(Bytes::from(format!("event: content_block_delta\ndata: {}\n\n", delta)));
+                                                                    }
+                                                                } else if let Some(inline) = part.get("inlineData") {
+                                                                    let mime = inline.get("mimeType").and_then(|m| m.as_str()).unwrap_or("image/png");
+                                                                    if let Some(b64) = inline.get("data").and_then(|d| d.as_str()) {
+                                                                        let img_md = format!("[Generated Image: {} bytes, {}]\n![Generated Image](data:{};base64,{})", b64.len(), mime, mime, b64);
+                                                                        if accumulated_response.len() < 65536 {
+                                                                            accumulated_response.push_str(&img_md);
+                                                                        }
+                                                                        if active_block != Some("text") {
+                                                                            active_block = Some("text");
+                                                                            let block_start = serde_json::json!({
+                                                                                "type": "content_block_start",
+                                                                                "index": block_index,
+                                                                                "content_block": {
+                                                                                    "type": "text",
+                                                                                    "text": ""
+                                                                                }
+                                                                            });
+                                                                            yield Ok(Bytes::from(format!("event: content_block_start\ndata: {}\n\n", block_start)));
+                                                                        }
+                                                                        let delta = serde_json::json!({
+                                                                            "type": "content_block_delta",
+                                                                            "index": block_index,
+                                                                            "delta": {
+                                                                                "type": "text_delta",
+                                                                                "text": img_md
                                                                             }
                                                                         });
                                                                         yield Ok(Bytes::from(format!("event: content_block_delta\ndata: {}\n\n", delta)));

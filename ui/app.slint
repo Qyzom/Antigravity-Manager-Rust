@@ -383,6 +383,12 @@ export struct I18nData {
     about_spec_license_val: string,
     lbl_endpoints_openai: string,
     lbl_endpoints_claude: string,
+    lbl_tag_stable: string,
+    lbl_test_image_prompt: string,
+    lbl_test_image_prompt_placeholder: string,
+    opt_cache_first_desc: string,
+    opt_cache_balanced_desc: string,
+    opt_cache_spread_desc: string,
 }
 
 component NavItem inherits Rectangle {
@@ -658,6 +664,7 @@ export component MainWindow inherits Window {
     // Modal 2: Test Model Dialog
     in-out property <bool> show_test_dialog: false;
     in-out property <string> test_model_id: "claude-3-7-sonnet";
+    property <bool> is_image_test_model: root.test_model_id == "Image generator" || root.test_model_id == "image-generator";
     in-out property <string> test_prompt: "";
     in-out property <string> test_timeout_secs: "60";
     in-out property <string> test_max_tokens: "2048";
@@ -1727,6 +1734,16 @@ export component MainWindow inherits Window {
                                         }
                                     }
 
+                                    Text {
+                                        text: root.cache_affinity_mode_index == 0
+                                            ? root.i18n.opt_cache_first_desc
+                                            : (root.cache_affinity_mode_index == 1
+                                                ? root.i18n.opt_cache_balanced_desc
+                                                : root.i18n.opt_cache_spread_desc);
+                                        font-size: 10px;
+                                        color: #a1a1aa;
+                                    }
+
                                     HorizontalLayout {
                                         alignment: space-between;
                                         VerticalLayout {
@@ -1822,38 +1839,59 @@ export component MainWindow inherits Window {
                                     }
 
                                     Rectangle {
-                                        height: 24px;
+                                        height: 28px;
                                         border-radius: 5px;
                                         background: #121214;
                                         HorizontalLayout {
                                             padding-left: 8px;
                                             padding-right: 8px;
+                                            spacing: 8px;
                                             Text { text: root.i18n.lbl_endpoints_openai; width: 140px; font-size: 10px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
-                                            Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/chat/completions"; horizontal-stretch: 1; font-size: 10px; color: #38bdf8; vertical-alignment: center; }
+                                            Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/chat/completions"; horizontal-stretch: 1; font-size: 10px; color: #38bdf8; vertical-alignment: center; overflow: elide; }
+                                            ActionButton {
+                                                text: root.i18n.btn_copy;
+                                                custom_height: 20px;
+                                                is_primary: false;
+                                                clicked => { root.copy_text_to_clipboard("http://" + root.proxy_host + ":" + root.proxy_port + "/v1/chat/completions"); }
+                                            }
                                         }
                                     }
 
                                     Rectangle {
-                                        height: 24px;
+                                        height: 28px;
                                         border-radius: 5px;
                                         background: #121214;
                                         HorizontalLayout {
                                             padding-left: 8px;
                                             padding-right: 8px;
+                                            spacing: 8px;
                                             Text { text: root.i18n.lbl_endpoints_claude; width: 140px; font-size: 10px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
-                                            Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/messages"; horizontal-stretch: 1; font-size: 10px; color: #38bdf8; vertical-alignment: center; }
+                                            Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/messages"; horizontal-stretch: 1; font-size: 10px; color: #38bdf8; vertical-alignment: center; overflow: elide; }
+                                            ActionButton {
+                                                text: root.i18n.btn_copy;
+                                                custom_height: 20px;
+                                                is_primary: false;
+                                                clicked => { root.copy_text_to_clipboard("http://" + root.proxy_host + ":" + root.proxy_port + "/v1/messages"); }
+                                            }
                                         }
                                     }
 
                                     Rectangle {
-                                        height: 24px;
+                                        height: 28px;
                                         border-radius: 5px;
                                         background: #121214;
                                         HorizontalLayout {
                                             padding-left: 8px;
                                             padding-right: 8px;
+                                            spacing: 8px;
                                             Text { text: root.i18n.lbl_endpoints_models; width: 140px; font-size: 10px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
-                                            Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/models"; horizontal-stretch: 1; font-size: 10px; color: #38bdf8; vertical-alignment: center; }
+                                            Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/models"; horizontal-stretch: 1; font-size: 10px; color: #38bdf8; vertical-alignment: center; overflow: elide; }
+                                            ActionButton {
+                                                text: root.i18n.btn_copy;
+                                                custom_height: 20px;
+                                                is_primary: false;
+                                                clicked => { root.copy_text_to_clipboard("http://" + root.proxy_host + ":" + root.proxy_port + "/v1/models"); }
+                                            }
                                         }
                                     }
                                 }
@@ -1947,23 +1985,6 @@ export component MainWindow inherits Window {
                                         }
                                     }
                                 }
-
-                                // Request Timing Jitter
-                                HorizontalLayout {
-                                    alignment: space-between;
-                                    VerticalLayout {
-                                        spacing: 1px;
-                                        Text { text: root.i18n.lbl_request_jitter; font-size: 11px; font-weight: 600; color: #fafafa; }
-                                        Text { text: root.i18n.lbl_request_jitter_desc; font-size: 10px; color: #71717a; }
-                                    }
-                                    VerticalLayout {
-                                        alignment: center;
-                                        ToggleSwitch {
-                                            checked: root.stealth_request_jitter;
-                                            toggled => { root.toggle_stealth_request_jitter(); }
-                                        }
-                                    }
-                                }
                             }
                         }
 
@@ -1980,7 +2001,7 @@ export component MainWindow inherits Window {
 
                                 Text { text: root.i18n.lbl_stealth_sec_identity; font-size: 12px; font-weight: 700; color: #38bdf8; }
 
-                                // Inject IDE Metadata
+                                // Inject Official App Metadata
                                 HorizontalLayout {
                                     alignment: space-between;
                                     VerticalLayout {
@@ -2027,12 +2048,12 @@ export component MainWindow inherits Window {
                                     }
                                 }
 
-                                // IDE Version Selector
+                                // App Version Selector
                                 HorizontalLayout {
                                     spacing: 8px;
                                     Text { text: root.i18n.lbl_spoof_ide_version + ":"; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
                                     ActionButton {
-                                        text: "2.28.1 " + root.i18n.lbl_tag_latest;
+                                        text: "2.28.1 " + root.i18n.lbl_tag_stable;
                                         is_primary: root.stealth_spoof_ide_version == "2.28.1";
                                         is_accent: root.stealth_spoof_ide_version == "2.28.1";
                                         clicked => { root.set_stealth_ide_version("2.28.1"); }
@@ -3369,27 +3390,27 @@ export component MainWindow inherits Window {
                         spacing: 6px;
 
                         HorizontalLayout {
-                            alignment: space-between;
-                            Text { text: root.i18n.lbl_modal_device_id; font-size: 10px; color: #a1a1aa; }
-                            Text { text: root.info_account_device_id != "" ? root.info_account_device_id : root.i18n.lbl_auto_device_id; font-size: 10px; color: #e4e4e7; }
+                            spacing: 8px;
+                            Text { text: root.i18n.lbl_modal_device_id; width: 140px; font-size: 10px; color: #a1a1aa; vertical-alignment: center; }
+                            Text { text: root.info_account_device_id != "" ? root.info_account_device_id : root.i18n.lbl_auto_device_id; horizontal-stretch: 1; overflow: elide; font-size: 10px; color: #e4e4e7; horizontal-alignment: right; vertical-alignment: center; }
                         }
 
                         HorizontalLayout {
-                            alignment: space-between;
-                            Text { text: root.i18n.lbl_modal_machine_id; font-size: 10px; color: #a1a1aa; }
-                            Text { text: root.info_account_machine_id != "" ? root.info_account_machine_id : root.i18n.lbl_auto_device_id; font-size: 10px; color: #e4e4e7; }
+                            spacing: 8px;
+                            Text { text: root.i18n.lbl_modal_machine_id; width: 140px; font-size: 10px; color: #a1a1aa; vertical-alignment: center; }
+                            Text { text: root.info_account_machine_id != "" ? root.info_account_machine_id : root.i18n.lbl_auto_device_id; horizontal-stretch: 1; overflow: elide; font-size: 10px; color: #e4e4e7; horizontal-alignment: right; vertical-alignment: center; }
                         }
 
                         HorizontalLayout {
-                            alignment: space-between;
-                            Text { text: root.i18n.lbl_modal_endpoint; font-size: 10px; color: #a1a1aa; }
-                            Text { text: "Google Cloud Code Pa API"; font-size: 10px; color: #e4e4e7; }
+                            spacing: 8px;
+                            Text { text: root.i18n.lbl_modal_endpoint; width: 140px; font-size: 10px; color: #a1a1aa; vertical-alignment: center; }
+                            Text { text: "Google Cloud Code Pa API"; horizontal-stretch: 1; overflow: elide; font-size: 10px; color: #e4e4e7; horizontal-alignment: right; vertical-alignment: center; }
                         }
 
                         HorizontalLayout {
-                            alignment: space-between;
-                            Text { text: root.i18n.lbl_modal_models; font-size: 10px; color: #a1a1aa; }
-                            Text { text: root.info_account_models; font-size: 10px; color: #e4e4e7; }
+                            spacing: 8px;
+                            Text { text: root.i18n.lbl_modal_models; width: 140px; font-size: 10px; color: #a1a1aa; vertical-alignment: center; }
+                            Text { text: root.info_account_models; horizontal-stretch: 1; overflow: elide; font-size: 10px; color: #e4e4e7; horizontal-alignment: right; vertical-alignment: center; }
                         }
 
                         HorizontalLayout {
@@ -3514,7 +3535,7 @@ export component MainWindow inherits Window {
                 // Row 1: Test Prompt
                 LineEdit {
                     text <=> root.test_prompt;
-                    placeholder-text: root.i18n.test_prompt_placeholder;
+                    placeholder-text: root.is_image_test_model ? root.i18n.lbl_test_image_prompt_placeholder : root.i18n.test_prompt_placeholder;
                 }
 
                 // Row 2: Compact Parameters & Action Controls Bar
@@ -3529,21 +3550,21 @@ export component MainWindow inherits Window {
                         Text { text: root.i18n.test_timeout_label; font-size: 10px; font-weight: 600; color: #71717a; }
                         LineEdit { text <=> root.test_timeout_secs; }
                     }
-                    VerticalLayout {
+                    if !root.is_image_test_model: VerticalLayout {
                         horizontal-stretch: 1;
                         min-width: 80px;
                         spacing: 2px;
                         Text { text: root.i18n.test_max_tokens_label; font-size: 10px; font-weight: 600; color: #71717a; }
                         LineEdit { text <=> root.test_max_tokens; }
                     }
-                    VerticalLayout {
+                    if !root.is_image_test_model: VerticalLayout {
                         horizontal-stretch: 1;
                         min-width: 65px;
                         spacing: 2px;
                         Text { text: root.i18n.test_temp_label; font-size: 10px; font-weight: 600; color: #71717a; }
                         LineEdit { text <=> root.test_temperature; }
                     }
-                    VerticalLayout {
+                    if !root.is_image_test_model: VerticalLayout {
                         min-width: 100px;
                         spacing: 2px;
                         Text { text: root.i18n.lbl_reasoning_effort; font-size: 10px; font-weight: 600; color: #71717a; }
@@ -3558,7 +3579,7 @@ export component MainWindow inherits Window {
                             clicked => { root.test_reasoning_effort_index = root.test_reasoning_effort_index >= 4 ? 0 : root.test_reasoning_effort_index + 1; }
                         }
                     }
-                    VerticalLayout {
+                    if !root.is_image_test_model: VerticalLayout {
                         min-width: 60px;
                         spacing: 2px;
                         alignment: center;

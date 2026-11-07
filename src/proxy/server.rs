@@ -678,6 +678,11 @@ async fn execute_chat_request(
                                             } else {
                                                 full_text.push_str(txt);
                                             }
+                                        } else if let Some(inline) = part.get("inlineData") {
+                                            let mime = inline.get("mimeType").and_then(|m| m.as_str()).unwrap_or("image/png");
+                                            if let Some(b64) = inline.get("data").and_then(|d| d.as_str()) {
+                                                full_text.push_str(&format!("[Generated Image: {} bytes, {}]\n![Generated Image](data:{};base64,{})", b64.len(), mime, mime, b64));
+                                            }
                                         }
                                     }
                                 }
@@ -1308,6 +1313,11 @@ async fn execute_claude_request(
                                                 entry.push_str(txt);
                                             } else {
                                                 full_text.push_str(txt);
+                                            }
+                                        } else if let Some(inline) = part.get("inlineData") {
+                                            let mime = inline.get("mimeType").and_then(|m| m.as_str()).unwrap_or("image/png");
+                                            if let Some(b64) = inline.get("data").and_then(|d| d.as_str()) {
+                                                full_text.push_str(&format!("[Generated Image: {} bytes, {}]\n![Generated Image](data:{};base64,{})", b64.len(), mime, mime, b64));
                                             }
                                         }
                                     }

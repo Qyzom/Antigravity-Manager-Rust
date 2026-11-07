@@ -48,9 +48,11 @@ src/
    - All 15+ router, mapper, balancer, and model tests must pass at all times (`cargo test`).
 
 ## Release Packaging & Artifacts
-The release workflow (`.github/workflows/release.yml`) builds exactly two standalone release artifacts:
-- `AMR-0.1.3-x86_64.AppImage` (Linux)
-- `AMR-0.1.3-x86_64.exe` (Windows)
+The release workflow (`.github/workflows/release.yml`) builds standalone release packages in 4 architecture pairs (x86_64 & arm64):
+- **Linux AppImage:** `AMR-*-x86_64.AppImage` & `AMR-*-aarch64.AppImage`
+- **Debian / Ubuntu DEB:** `AMR_*_amd64.deb` & `AMR_*_arm64.deb`
+- **Fedora / RHEL RPM:** `AMR-*-1.x86_64.rpm` & `AMR-*-1.aarch64.rpm`
+- **Windows Portable EXE:** `AMR-*-x86_64.exe` & `AMR-*-arm64.exe`
 
 Do not add unnecessary packaging formats or complex installer wrappers.
 

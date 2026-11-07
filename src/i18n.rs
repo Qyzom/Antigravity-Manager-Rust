@@ -371,6 +371,12 @@ pub struct TranslationBundle {
     pub about_spec_license_val: String,
     pub lbl_endpoints_openai: String,
     pub lbl_endpoints_claude: String,
+    pub lbl_tag_stable: String,
+    pub lbl_test_image_prompt: String,
+    pub lbl_test_image_prompt_placeholder: String,
+    pub opt_cache_first_desc: String,
+    pub opt_cache_balanced_desc: String,
+    pub opt_cache_spread_desc: String,
 }
 
 pub fn get_translations(lang: Language) -> TranslationBundle {
