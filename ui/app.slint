@@ -692,6 +692,7 @@ export component MainWindow inherits Window {
     in-out property <string> master_key_status_text: "";
     in-out property <string> github_update_status: "";
     in-out property <bool> github_checking_update: false;
+    in-out property <string> copied_model_id: "";
 
     // Modal 2: Test Model Dialog
     in-out property <bool> show_test_dialog: false;
@@ -815,6 +816,7 @@ export component MainWindow inherits Window {
     callback cancel_test_request();
     callback open_log_details(string);
     callback toggle_model(string);
+    callback copy_model_id(string);
     callback toggle_reasoning_clones_grouping();
     callback set_routing_strategy(int);
     callback set_cache_affinity_mode(int);
@@ -1599,18 +1601,62 @@ export component MainWindow inherits Window {
                                                 color: model.is_enabled ? #ffffff : #71717a;
                                                 vertical-alignment: center;
                                             }
-                                            Text {
-                                                text: "— " + model.id;
-                                                font-size: 11px;
-                                                color: #71717a;
-                                                vertical-alignment: center;
+
+                                            // Interactive Model ID with Copy Icon
+                                            Rectangle {
+                                                height: 22px;
+                                                border-radius: 4px;
+                                                background: root.copied_model_id == model.id 
+                                                    ? #10b98126 
+                                                    : (id_touch.has-hover ? #27272a : #00000000);
+                                                border-width: 1px;
+                                                border-color: root.copied_model_id == model.id 
+                                                    ? #10b98160 
+                                                    : (id_touch.has-hover ? #3f3f46 : #00000000);
+                                                animate background { duration: 120ms; }
+                                                animate border-color { duration: 120ms; }
+
+                                                HorizontalLayout {
+                                                    padding-left: 6px;
+                                                    padding-right: 6px;
+                                                    spacing: 4px;
+                                                    alignment: center;
+
+                                                    Text {
+                                                        text: root.copied_model_id == model.id 
+                                                            ? "✓ " + root.i18n.lbl_copied 
+                                                            : "— " + model.id;
+                                                        font-size: 11px;
+                                                        font-weight: root.copied_model_id == model.id ? 700 : 500;
+                                                        color: root.copied_model_id == model.id 
+                                                            ? #34d399 
+                                                            : (id_touch.has-hover ? #e4e4e7 : #71717a);
+                                                        vertical-alignment: center;
+                                                        animate color { duration: 120ms; }
+                                                    }
+
+                                                    if root.copied_model_id != model.id: Text {
+                                                        text: "⧉";
+                                                        font-size: 11px;
+                                                        color: id_touch.has-hover ? #38bdf8 : #52525b;
+                                                        vertical-alignment: center;
+                                                        animate color { duration: 120ms; }
+                                                    }
+                                                }
+
+                                                id_touch := TouchArea {
+                                                    mouse-cursor: pointer;
+                                                    clicked => { root.copy_model_id(model.id); }
+                                                }
                                             }
+
+                                            // Thinking badge (sleek uniform grey)
                                             Rectangle {
                                                 height: 18px;
                                                 border-radius: 4px;
-                                                background: model.supports_thinking ? #0284c726 : #27272a80;
+                                                background: #27272a80;
                                                 border-width: 1px;
-                                                border-color: model.supports_thinking ? #0284c760 : #3f3f46;
+                                                border-color: #3f3f46;
                                                 HorizontalLayout {
                                                     padding-left: 6px;
                                                     padding-right: 6px;
@@ -1618,7 +1664,7 @@ export component MainWindow inherits Window {
                                                         text: model.supports_thinking ? root.i18n.lbl_badge_thinking : root.i18n.lbl_badge_no_thinking;
                                                         font-size: 9px;
                                                         font-weight: 700;
-                                                        color: model.supports_thinking ? #38bdf8 : #a1a1aa;
+                                                        color: #a1a1aa;
                                                         vertical-alignment: center;
                                                     }
                                                 }
@@ -3698,6 +3744,12 @@ export component MainWindow inherits Window {
                         spacing: 8px;
                         alignment: start;
                         Text { text: root.i18n.test_dialog_title + ": " + root.test_model_id; font-size: 13px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
+                        ActionButton {
+                            custom_height: 24px;
+                            text: root.copied_model_id == root.test_model_id ? ("✓ " + root.i18n.lbl_copied) : ("⧉ " + root.i18n.btn_copy);
+                            is_primary: false;
+                            clicked => { root.copy_model_id(root.test_model_id); }
+                        }
                     }
                     ActionButton {
                         text: root.i18n.btn_close;

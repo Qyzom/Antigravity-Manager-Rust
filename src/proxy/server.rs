@@ -72,28 +72,29 @@ pub fn build_upstream_headers(
     target_model: &str,
 ) -> reqwest::header::HeaderMap {
     let mut req_headers = reqwest::header::HeaderMap::new();
-    req_headers.insert(
-        reqwest::header::AUTHORIZATION,
-        format!("Bearer {}", token).parse().unwrap(),
-    );
-    req_headers.insert(
-        reqwest::header::ACCEPT,
-        "text/event-stream".parse().unwrap(),
-    );
-    req_headers.insert(
-        reqwest::header::CONTENT_TYPE,
-        "application/json".parse().unwrap(),
-    );
+    if let Ok(v) = format!("Bearer {}", token.trim()).parse() {
+        req_headers.insert(reqwest::header::AUTHORIZATION, v);
+    }
+    if let Ok(v) = "text/event-stream".parse() {
+        req_headers.insert(reqwest::header::ACCEPT, v);
+    }
+    if let Ok(v) = "application/json".parse() {
+        req_headers.insert(reqwest::header::CONTENT_TYPE, v);
+    }
 
     let ua = crate::proxy::antigravity::get_official_hub_user_agent_with_meta(
         Some(platform_str),
         Some(ide_ver),
         Some(spoof_arch),
     );
-    req_headers.insert(reqwest::header::USER_AGENT, ua.parse().unwrap());
+    if let Ok(v) = ua.parse() {
+        req_headers.insert(reqwest::header::USER_AGENT, v);
+    }
 
     if target_model.to_lowercase().contains("claude") {
-        req_headers.insert("anthropic-beta", "claude-code-20250219".parse().unwrap());
+        if let Ok(v) = "claude-code-20250219".parse() {
+            req_headers.insert("anthropic-beta", v);
+        }
     }
 
     req_headers
@@ -843,16 +844,18 @@ async fn execute_chat_request(
 
             let req_id = format!("req_{}", uuid::Uuid::new_v4().simple());
             let mut response = Json(oai_resp).into_response();
-            response.headers_mut().insert("x-request-id", req_id.parse().unwrap());
-            response.headers_mut().insert("openai-organization", "user-personal".parse().unwrap());
-            response.headers_mut().insert("openai-processing-ms", lat.to_string().parse().unwrap());
-            response.headers_mut().insert("openai-version", "2020-10-01".parse().unwrap());
+            if let Ok(v) = req_id.parse() { response.headers_mut().insert("x-request-id", v); }
+            if let Ok(v) = "user-personal".parse() { response.headers_mut().insert("openai-organization", v); }
+            if let Ok(v) = lat.to_string().parse() { response.headers_mut().insert("openai-processing-ms", v); }
+            if let Ok(v) = "2020-10-01".parse() { response.headers_mut().insert("openai-version", v); }
             (response, false)
         }
     } else if account.provider == "anthropic" {
         let claude_req = convert_openai_to_claude(payload, &target_model, reasoning_effort);
         let mut req_headers = reqwest::header::HeaderMap::new();
-        req_headers.insert("x-api-key", account.api_key.parse().unwrap());
+        if let Ok(v) = account.api_key.parse() {
+            req_headers.insert("x-api-key", v);
+        }
         apply_fingerprint(&mut req_headers, &account.fingerprint);
 
         let upstream_url = format!("{}/v1/messages", account.base_url.trim_end_matches('/'));
@@ -1003,10 +1006,10 @@ async fn execute_chat_request(
 
             let req_id = format!("req_{}", uuid::Uuid::new_v4().simple());
             let mut response = Json(oai_resp).into_response();
-            response.headers_mut().insert("x-request-id", req_id.parse().unwrap());
-            response.headers_mut().insert("openai-organization", "user-personal".parse().unwrap());
-            response.headers_mut().insert("openai-processing-ms", lat.to_string().parse().unwrap());
-            response.headers_mut().insert("openai-version", "2020-10-01".parse().unwrap());
+            if let Ok(v) = req_id.parse() { response.headers_mut().insert("x-request-id", v); }
+            if let Ok(v) = "user-personal".parse() { response.headers_mut().insert("openai-organization", v); }
+            if let Ok(v) = lat.to_string().parse() { response.headers_mut().insert("openai-processing-ms", v); }
+            if let Ok(v) = "2020-10-01".parse() { response.headers_mut().insert("openai-version", v); }
             (response, false)
         }
     } else {
@@ -1023,7 +1026,9 @@ async fn execute_chat_request(
         }
 
         let mut req_headers = reqwest::header::HeaderMap::new();
-        req_headers.insert("authorization", format!("Bearer {}", account.api_key).parse().unwrap());
+        if let Ok(v) = format!("Bearer {}", account.api_key.trim()).parse() {
+            req_headers.insert("authorization", v);
+        }
         apply_fingerprint(&mut req_headers, &account.fingerprint);
 
         let upstream_url = format!("{}/v1/chat/completions", account.base_url.trim_end_matches('/'));
@@ -1540,13 +1545,17 @@ async fn execute_claude_request(
             );
 
             let mut response = Json(claude_resp).into_response();
-            response.headers_mut().insert("anthropic-version", "2023-06-01".parse().unwrap());
+            if let Ok(v) = "2023-06-01".parse() {
+                response.headers_mut().insert("anthropic-version", v);
+            }
             (response, false)
         }
     } else {
         // Direct Anthropic API pass-through
         let mut req_headers = reqwest::header::HeaderMap::new();
-        req_headers.insert("x-api-key", account.api_key.parse().unwrap());
+        if let Ok(v) = account.api_key.parse() {
+            req_headers.insert("x-api-key", v);
+        }
         apply_fingerprint(&mut req_headers, &account.fingerprint);
 
         let upstream_url = format!("{}/v1/messages", account.base_url.trim_end_matches('/'));

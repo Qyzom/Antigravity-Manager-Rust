@@ -2721,12 +2721,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text));
     });
 
+    let h_copy_model = window_handle.clone();
+    main_window.on_copy_model_id(move |model_id_slint| {
+        let model_id = model_id_slint.to_string();
+        let _ = arboard::Clipboard::new().and_then(|mut cb| cb.set_text(model_id));
+        if let Some(ui) = h_copy_model.upgrade() {
+            ui.set_copied_model_id(model_id_slint);
+            let ui_weak = h_copy_model.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(ui) = ui_weak.upgrade() {
+                        ui.set_copied_model_id("".into());
+                    }
+                });
+            });
+        }
+    });
+
     main_window.on_open_github_repo(move || {
-        open_in_system("https://github.com/Qyzom/Antigravity-Proxy-Rust");
+        open_in_system("https://github.com/Qyzom/Antigravity-Manager-Rust");
     });
 
     main_window.on_open_github_releases(move || {
-        open_in_system("https://github.com/Qyzom/Antigravity-Proxy-Rust/releases");
+        open_in_system("https://github.com/Qyzom/Antigravity-Manager-Rust/releases");
     });
 
     let c_pport = Arc::clone(&config_arc);

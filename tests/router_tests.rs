@@ -950,4 +950,72 @@ mod tests {
         assert!(reset.remaining_secs.is_none());
         assert!(reset.last_failure_reason.is_none());
     }
+
+    #[test]
+    fn test_upstream_spoofing_headers_cleanliness_and_resilience() {
+        use amr::proxy::server::build_upstream_headers;
+        use amr::proxy::antigravity::{QUOTA_SUMMARY_ENDPOINTS, STREAM_ENDPOINTS, LOAD_PROJECT_ENDPOINTS, FETCH_MODELS_ENDPOINTS, get_official_hub_user_agent};
+
+        // 1. Verify all endpoints never contain public unauthenticated/broken prod endpoint
+        for ep in QUOTA_SUMMARY_ENDPOINTS.iter()
+            .chain(STREAM_ENDPOINTS.iter())
+            .chain(LOAD_PROJECT_ENDPOINTS.iter())
+            .chain(FETCH_MODELS_ENDPOINTS.iter()) {
+            assert!(!ep.starts_with("https://cloudcode-pa.googleapis.com"), "Endpoint {} should not be bare prod endpoint", ep);
+            assert!(ep.contains("daily-cloudcode-pa"), "Endpoint {} must target daily-cloudcode-pa", ep);
+        }
+
+        // 2. Verify Claude upstream headers
+        let headers_claude = build_upstream_headers(
+            " ya29.test_token_with_whitespace \n",
+            "dummy_client_id",
+            "dummy_machine_id",
+            "LINUX",
+            "2.28.1",
+            "x86_64",
+            "stable",
+            true,
+            true,
+            "claude-sonnet-4-6",
+        );
+
+        assert_eq!(headers_claude.get("authorization").unwrap(), "Bearer ya29.test_token_with_whitespace");
+        assert_eq!(headers_claude.get("accept").unwrap(), "text/event-stream");
+        assert_eq!(headers_claude.get("content-type").unwrap(), "application/json");
+        assert_eq!(headers_claude.get("anthropic-beta").unwrap(), "claude-code-20250219");
+        let ua = headers_claude.get("user-agent").unwrap().to_str().unwrap();
+        assert!(ua.starts_with("antigravity/hub/2.28.1"));
+        assert!(ua.contains("os_type=linux"));
+        assert!(ua.contains("arch=x86_64"));
+
+        // Critical anti-leak check: ensure synthetic headers are NEVER attached to upstream requests
+        assert!(!headers_claude.contains_key("x-goog-api-client"));
+        assert!(!headers_claude.contains_key("x-client-id"));
+        assert!(!headers_claude.contains_key("x-machine-id"));
+        assert!(!headers_claude.contains_key("x-client-channel"));
+        assert!(!headers_claude.contains_key("x-session-id"));
+        assert!(!headers_claude.contains_key("x-api-key"));
+
+        // 3. Verify Gemini upstream headers (must not attach anthropic-beta)
+        let headers_gemini = build_upstream_headers(
+            "ya29.gemini_token",
+            "dummy_client_id",
+            "dummy_machine_id",
+            "WINDOWS",
+            "2.28.1",
+            "arm64",
+            "stable",
+            false,
+            false,
+            "gemini-3.8-flash-medium",
+        );
+        assert!(!headers_gemini.contains_key("anthropic-beta"));
+        let ua_win = headers_gemini.get("user-agent").unwrap().to_str().unwrap();
+        assert!(ua_win.contains("os_type=windows"));
+        assert!(ua_win.contains("arch=arm64"));
+
+        // 4. Verify get_official_hub_user_agent
+        let official_ua = get_official_hub_user_agent();
+        assert!(official_ua.starts_with("antigravity/hub/2.28.1"));
+    }
 }

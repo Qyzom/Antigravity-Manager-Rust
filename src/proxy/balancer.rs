@@ -526,7 +526,7 @@ impl LoadBalancer {
                     return Ok(acc.clone());
                 }
             }
-            return Ok(healthy_accounts.first().cloned().unwrap());
+            return healthy_accounts.first().cloned().ok_or(RoutingError::NoAccounts);
         }
 
         // 4. Cache Affinity Evaluation
@@ -609,7 +609,7 @@ impl LoadBalancer {
                         ModelFamily::ClaudeOrGpt => a.claude_gpt_percent.min(a.claude_gpt_weekly_percent),
                         ModelFamily::Gemini => a.gemini_percent.min(a.gemini_weekly_percent),
                     })
-                    .unwrap()
+                    .ok_or(RoutingError::NoAccounts)?
             }
         };
 

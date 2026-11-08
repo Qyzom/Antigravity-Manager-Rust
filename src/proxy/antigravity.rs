@@ -58,7 +58,7 @@ pub fn get_official_hub_user_agent() -> String {
 }
 
 pub const OFFICIAL_USER_AGENT: &str =
-    "antigravity/hub/2.23.1 (aidev_client; os_type=linux; arch=x86_64; cl=998881661)";
+    "antigravity/hub/2.28.1 (aidev_client; os_type=linux; arch=x86_64; cl=1000353293)";
 
 pub fn get_google_client_id() -> String {
     let p1 = "1071006060591-tmhss";
@@ -294,9 +294,10 @@ pub async fn exchange_code(
         ("redirect_uri", redirect_uri),
     ];
 
+    let ua = get_official_hub_user_agent();
     let resp = client
         .post(GOOGLE_TOKEN_URL)
-        .header("User-Agent", OFFICIAL_USER_AGENT)
+        .header("User-Agent", &ua)
         .form(&params)
         .send()
         .await
@@ -325,9 +326,10 @@ pub async fn refresh_token(
         ("grant_type", "refresh_token"),
     ];
 
+    let ua = get_official_hub_user_agent();
     let resp = client
         .post(GOOGLE_TOKEN_URL)
-        .header("User-Agent", OFFICIAL_USER_AGENT)
+        .header("User-Agent", &ua)
         .form(&params)
         .send()
         .await
@@ -375,11 +377,12 @@ pub async fn fetch_project_and_tier(
 
     let mut project_id = Some("aicode-consumers".to_string());
     let mut tier = "PRO".to_string();
+    let ua = get_official_hub_user_agent();
 
     for endpoint in LOAD_PROJECT_ENDPOINTS {
         if let Ok(resp) = client
             .post(endpoint)
-            .header("User-Agent", OFFICIAL_USER_AGENT)
+            .header("User-Agent", &ua)
             .bearer_auth(access_token)
             .json(&meta)
             .send()
@@ -418,8 +421,7 @@ pub async fn fetch_project_and_tier(
     (project_id, tier)
 }
 
-const QUOTA_SUMMARY_ENDPOINTS: [&str; 3] = [
-    "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+pub const QUOTA_SUMMARY_ENDPOINTS: [&str; 2] = [
     "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
     "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:retrieveUserQuotaSummary",
 ];
@@ -466,10 +468,11 @@ pub async fn fetch_user_quota_summary(
     client: &reqwest::Client,
     access_token: &str,
 ) -> DetailedQuotaInfo {
+    let ua = get_official_hub_user_agent();
     for endpoint in QUOTA_SUMMARY_ENDPOINTS {
         if let Ok(resp) = client
             .post(endpoint)
-            .header("User-Agent", OFFICIAL_USER_AGENT)
+            .header("User-Agent", &ua)
             .bearer_auth(access_token)
             .header("Content-Type", "application/json")
             .json(&serde_json::json!({}))
@@ -587,10 +590,11 @@ pub async fn fetch_models_and_quota(
         serde_json::json!({})
     };
 
+    let ua = get_official_hub_user_agent();
     for endpoint in FETCH_MODELS_ENDPOINTS {
         if let Ok(resp) = client
             .post(endpoint)
-            .header("User-Agent", OFFICIAL_USER_AGENT)
+            .header("User-Agent", &ua)
             .bearer_auth(access_token)
             .json(&payload)
             .send()
@@ -1135,7 +1139,7 @@ pub fn build_antigravity_payload_from_claude_with_meta(
         }
     }
 
-    if !gen_config.as_object().unwrap().contains_key("thinkingConfig") {
+    if !gen_config.as_object().is_some_and(|obj| obj.contains_key("thinkingConfig")) {
         if let Some(temp) = req.get("temperature").and_then(|v| v.as_f64()) {
             gen_config["temperature"] = serde_json::json!(temp);
         }
