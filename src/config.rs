@@ -505,9 +505,25 @@ impl Default for AppConfig {
                     supports_thinking: true,
                 },
                 ModelCatalogItem {
-                    id: "Image generator".to_string(),
-                    display_name: "Image generator".to_string(),
-                    provider: "Google".to_string(),
+                    id: "gemini-3.1-flash-image".to_string(),
+                    display_name: "Gemini 3.1 Flash Image".to_string(),
+                    provider: "gemini".to_string(),
+                    tier: "PRO".to_string(),
+                    is_enabled: true,
+                    supports_thinking: false,
+                },
+                ModelCatalogItem {
+                    id: "whisper-1".to_string(),
+                    display_name: "Whisper 1 (Audio STT)".to_string(),
+                    provider: "openai".to_string(),
+                    tier: "PRO".to_string(),
+                    is_enabled: true,
+                    supports_thinking: false,
+                },
+                ModelCatalogItem {
+                    id: "tts-1".to_string(),
+                    display_name: "TTS 1 (Audio Speech)".to_string(),
+                    provider: "openai".to_string(),
                     tier: "PRO".to_string(),
                     is_enabled: true,
                     supports_thinking: false,
@@ -563,7 +579,7 @@ impl AppConfig {
                 && !m.id.contains("gemini-3-flash")
                 && !m.id.contains("gemini-3.7")
                 && !m.id.contains("gemini-3.6")
-                && !m.id.contains("gemini-3.1")
+                && !(m.id != "gemini-3.1-flash-image" && m.id.contains("gemini-3.1"))
                 && !m.id.contains("flash-lite")
                 && !m.id.contains("lite")
                 && !m.id.contains("preview")
@@ -635,10 +651,21 @@ impl AppConfig {
             } else if m.id == "Image generator"
                 || m.id.to_lowercase().contains("imagen")
                 || m.id == "image-generator"
+                || m.id == "gemini-3.1-flash-image"
             {
-                m.id = "Image generator".to_string();
-                m.display_name = "Image generator".to_string();
-                m.provider = "Google".to_string();
+                m.id = "gemini-3.1-flash-image".to_string();
+                m.display_name = "Gemini 3.1 Flash Image".to_string();
+                m.provider = "gemini".to_string();
+                m.supports_thinking = false;
+            } else if m.id == "whisper-1" || m.id == "stt" {
+                m.id = "whisper-1".to_string();
+                m.display_name = "Whisper 1 (Audio STT)".to_string();
+                m.provider = "openai".to_string();
+                m.supports_thinking = false;
+            } else if m.id == "tts-1" || m.id == "tts" {
+                m.id = "tts-1".to_string();
+                m.display_name = "TTS 1 (Audio Speech)".to_string();
+                m.provider = "openai".to_string();
                 m.supports_thinking = false;
             }
         }
@@ -964,12 +991,18 @@ impl AppConfig {
                 continue;
             }
 
+            let owned_by = if m.provider == "gemini" {
+                "google"
+            } else {
+                m.provider.as_str()
+            };
+
             // Base model enriched with reasoning and capability metadata
             let mut model_json = serde_json::json!({
                 "id": base_id,
                 "object": "model",
                 "created": 1700000000,
-                "owned_by": m.provider,
+                "owned_by": owned_by,
                 "display_name": m.display_name,
                 "tier": m.tier,
                 "context_window": 1000000,
@@ -979,24 +1012,61 @@ impl AppConfig {
                     "chat_completions": true,
                     "reasoning": m.supports_thinking,
                     "thinking": m.supports_thinking,
+                    "reasoning_effort": m.supports_thinking,
+                    "reasoningEffort": m.supports_thinking,
+                    "thinking_budget": m.supports_thinking,
+                    "max_thinking_budget": m.supports_thinking,
                     "images": true
                 },
                 "supported_parameters": [
                     "reasoning_effort",
+                    "reasoningEffort",
                     "temperature",
                     "max_tokens",
                     "max_completion_tokens",
                     "thinking",
+                    "thinking_budget",
+                    "budget_tokens",
+                    "max_thinking_budget",
+                    "reasoning_budget",
                     "tools"
                 ]
             });
 
             if m.supports_thinking {
+                model_json["reasoning_effort"] = serde_json::json!("medium");
+                model_json["supported_reasoning_efforts"] =
+                    serde_json::json!(["low", "medium", "high", "none"]);
+                model_json["reasoning_efforts"] =
+                    serde_json::json!(["low", "medium", "high", "none"]);
+                model_json["reasoningEfforts"] = serde_json::json!({
+                    "low": "low",
+                    "medium": "medium",
+                    "high": "high",
+                    "none": "none"
+                });
+                model_json["max_thinking_budget"] = serde_json::json!(32768);
+                model_json["min_thinking_budget"] = serde_json::json!(0);
+                model_json["default_thinking_budget"] = serde_json::json!(4000);
+                model_json["thinking_budget"] = serde_json::json!(4000);
+                model_json["thinking"] = serde_json::json!({
+                    "supported": true,
+                    "type": "enabled",
+                    "budget_tokens": 4000,
+                    "min_budget": 0,
+                    "max_budget": 32768,
+                    "default_budget": 4000
+                });
                 model_json["reasoning"] = serde_json::json!({
                     "mandatory": false,
                     "default_enabled": true,
                     "default_effort": "medium",
-                    "supported_efforts": ["high", "medium", "low", "none"]
+                    "supported_efforts": ["high", "medium", "low", "none"],
+                    "supported_reasoning_efforts": ["high", "medium", "low", "none"],
+                    "reasoning_efforts": ["high", "medium", "low", "none"],
+                    "min_budget": 0,
+                    "max_budget": 32768,
+                    "default_budget": 4000
                 });
             }
 

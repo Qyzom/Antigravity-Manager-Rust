@@ -1,7 +1,47 @@
 # AGENTS.md — AMR Architecture & Maintenance Guide
 
-## Overview
-AMR is an ultra-lightweight, high-performance cross-platform AI protocol proxy and emulator written in pure Rust (Tokio, Axum, reqwest) with a native Slint GUI (using `backend-winit` and `renderer-femtovg`).
+## Overview & Release History
+Below is the definitive record of changes and protocol advancements implemented across all versions:
+
+### Version Changelog (English)
+- **v0.1.5 (Latest)**:
+  - **Upstream Image Generation Fix**: Resolved upstream `404 Not Found (Requested entity was not found)` by correctly mapping image generation requests to `gemini-3.1-flash-image` (and aliases `image-generator`, `dall-e-3`).
+  - **OpenAI Standard Model Compliance**: Enforced standard lower-case hyphenated model identifiers across catalogs, removing spaced names (`Image generator` → `gemini-3.1-flash-image`).
+  - **OpenAI Audio STT (`/v1/audio/transcriptions`)**: Added full OpenAI Whisper protocol compatibility accepting multipart/form-data audio (`file`, `model`, `prompt`, `response_format`), automatically converting raw audio into base64 `inlineData` for Gemini speech transcription.
+  - **OpenAI Audio TTS (`/v1/audio/speech`) & Audio Models**: Added `/v1/audio/speech` endpoint and cataloged `whisper-1` (STT) and `tts-1` (TTS) into `/v1/models` broadcast.
+  - **Automated Dynamic Packaging**: Refactored `build_appimage.sh`, `build_deb.sh`, `build_rpm.sh`, and `.github/workflows/release.yml` to automatically extract the release version dynamically from `Cargo.toml` instead of hardcoded fallbacks.
+
+- **v0.1.4**:
+  - **Window & Tray Integration**: Fixed window minimize-to-tray lifecycle on Linux/Windows and preserved dynamic tray context actions.
+  - **Prompt Caching & Telemetry**: Integrated real prompt caching ratios, request latency counters, and token tracking.
+  - **UI / Model Explorer**: Added model ID copy chip, grey thinking badges, and sanitized upstream headers.
+  - **Windows Dependencies**: Added `Win32_System_ProcessStatus` and `Win32_System_Threading` features to `windows-sys`.
+
+- **v0.1.3**:
+  - **Protocol Alignment**: Eliminated problematic upstream endpoints causing synthetic 429 errors and aligned request schemas to native Pa API parameters.
+
+- **v0.1.2**:
+  - **Windows Subsystem**: Configured `#![windows_subsystem = "windows"]` to suppress unwanted background console windows.
+  - **OAuth & State**: Fixed URL escaping and token keeper persistence across application reboots.
+  - **UI Quota**: Fixed rendering when quota reaches 0%.
+
+- **v0.1.1**:
+  - **Packaging**: Streamlined AppImage, DEB, RPM, and EXE build scripts with cross-distro compatibility.
+
+- **v0.1.0**:
+  - **Multi-Architecture CI**: Introduced standalone 64-bit ARM (`aarch64` Linux & `arm64` Windows) build matrix.
+
+- **v0.0.4**:
+  - **Antifraud & Identity**: Implemented randomized jitter refresh (±15%), hardware fingerprint generators, and comprehensive trilingual i18n (EN, RU, ZH).
+
+- **v0.0.3**:
+  - **Security & Storage**: Added persistent SQLite token cache, device isolation, and per-account proxy support.
+
+- **v0.0.2**:
+  - **Models**: Enriched `/v1/models` broadcast with reasoning capabilities and reasoning clone toggle.
+
+- **v0.0.1**:
+  - **Core**: Initial release of pure Rust AI API proxy and protocol emulator under MIT License.
 
 ## Core Architecture & Module Layout
 ```
@@ -16,6 +56,7 @@ src/
 ├── tray/            # System tray integration (muda / tray-icon) with dynamic localization
 └── proxy/
     ├── server.rs    # Axum HTTP proxy router (/v1/chat/completions, /v1/messages, /v1/models)
+    ├── audio.rs     # Audio STT (/v1/audio/transcriptions), TTS (/v1/audio/speech), Images (/v1/images/generations)
     ├── balancer.rs  # Quota-aware load balancing, session stickiness & KV cache retention
     ├── router.rs    # Suffix table & native reasoning effort parser, model name translation
     ├── antigravity.rs # Upstream OAuth token refresh, Cloud Code Pa API mapping, device profiles

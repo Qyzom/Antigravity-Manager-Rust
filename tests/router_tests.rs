@@ -1133,9 +1133,11 @@ mod tests {
         });
 
         cfg.sanitize_models();
-        // After sanitization, 7 unique flagship models remain (including Image generator)
-        assert_eq!(cfg.models.len(), 7);
-        assert!(cfg.models.iter().any(|m| m.id == "Image generator"));
+        // After sanitization, 9 unique models remain (including gemini-3.1-flash-image, whisper-1, tts-1)
+        assert_eq!(cfg.models.len(), 9);
+        assert!(cfg.models.iter().any(|m| m.id == "gemini-3.1-flash-image"));
+        assert!(cfg.models.iter().any(|m| m.id == "whisper-1"));
+        assert!(cfg.models.iter().any(|m| m.id == "tts-1"));
         assert!(cfg.models.iter().any(|m| m.id == "gemini-3.8-flash"));
         assert!(!cfg.models.iter().any(|m| m.id == "gemini-3.8-flash-medium"));
         let opus46 = cfg
@@ -1395,5 +1397,178 @@ mod tests {
         // 4. Verify get_official_hub_user_agent
         let official_ua = get_official_hub_user_agent();
         assert!(official_ua.starts_with("antigravity/hub/2.28.1"));
+    }
+
+    #[test]
+    fn test_audio_mime_detection_and_image_route() {
+        use amr::proxy::antigravity::build_antigravity_payload;
+        use amr::proxy::audio::{detect_audio_mime, normalize_audio_mime};
+        use amr::proxy::router::resolve_model;
+
+        // Test audio MIME detection
+        assert_eq!(detect_audio_mime("recording.mp3"), "audio/mp3");
+        assert_eq!(detect_audio_mime("voice.wav"), "audio/wav");
+        assert_eq!(detect_audio_mime("audio.m4a"), "audio/aac");
+        assert_eq!(detect_audio_mime("speech.ogg"), "audio/ogg");
+        assert_eq!(detect_audio_mime("track.flac"), "audio/flac");
+        assert_eq!(detect_audio_mime("clip.webm"), "audio/webm");
+
+        assert_eq!(normalize_audio_mime("audio/wav"), "audio/wav");
+        assert_eq!(normalize_audio_mime("mp3"), "audio/mp3");
+
+        // Test image model resolution to gemini-3.1-flash-image
+        let account = UpstreamAccount {
+            id: "1".into(),
+            name: "test".into(),
+            provider: "google".into(),
+            base_url: "https://cloudcode-pa.googleapis.com".into(),
+            api_key: "test".into(),
+            fingerprint: "Antigravity".into(),
+            tier: "Pro".into(),
+            quota_used: 0,
+            quota_limit: 100000,
+            quota_reset: "in 2h".into(),
+            claude_gpt_percent: 100,
+            claude_gpt_reset: "in 2h".into(),
+            gemini_percent: 100,
+            gemini_reset: "in 2h".into(),
+            claude_gpt_weekly_percent: 100,
+            claude_gpt_weekly_reset: "in 7d".into(),
+            gemini_weekly_percent: 100,
+            gemini_weekly_reset: "in 7d".into(),
+            status: "Active".into(),
+            error_message: None,
+            refresh_token: None,
+            project_id: None,
+            is_active: true,
+            added_at: None,
+            device_profile: None,
+            proxy_url: None,
+        };
+
+        assert_eq!(resolve_model("gemini-3.1-flash-image", &account), "gemini-3.1-flash-image");
+
+        // Verify image generation payload conforms to official Antigravity schema:
+        // requestType: "image_gen", no thinkingConfig, no systemInstruction, no tools
+        let img_req = OpenAIChatRequest {
+            model: "gemini-3.1-flash-image".into(),
+            messages: vec![OpenAIMessage {
+                role: "user".into(),
+                content: serde_json::Value::String("A cybernetic cityscape".into()),
+                reasoning_content: None,
+                refusal: None,
+                name: None,
+                tool_calls: None,
+                tool_call_id: None,
+            }],
+            stream: false,
+            temperature: Some(0.7),
+            max_tokens: Some(2048),
+            max_completion_tokens: None,
+            reasoning_effort: None,
+            stream_options: None,
+            tools: None,
+            tool_choice: None,
+            extra: Default::default(),
+        };
+
+        let payload = build_antigravity_payload(&img_req, "gemini-3.1-flash-image", Some("test-proj"), None);
+        assert_eq!(payload["model"], "gemini-3.1-flash-image");
+        assert_eq!(payload["requestType"], "image_gen");
+        assert!(payload["request"].get("thinkingConfig").is_none());
+        assert!(payload["request"].get("systemInstruction").is_none());
+        assert!(payload["request"].get("tools").is_none());
+    }
+
+    #[test]
+    fn test_deepseek_harness_reasoning_metadata_and_dispatch() {
+        let mut cfg = AppConfig::default();
+        cfg.group_reasoning_clones = true;
+
+        let models = cfg.get_broadcast_models();
+        let gemini = models.iter().find(|m| m["id"] == "gemini-3.8-flash").expect("gemini-3.8-flash not found");
+
+        // Verify DeepSeek Harness & OpenAI standard capability and reasoning metadata
+        assert_eq!(gemini["owned_by"], "google");
+        assert_eq!(gemini["capabilities"]["reasoning_effort"], true);
+        assert_eq!(gemini["capabilities"]["reasoningEffort"], true);
+        assert_eq!(gemini["capabilities"]["thinking_budget"], true);
+        assert_eq!(gemini["max_thinking_budget"], 32768);
+        assert_eq!(gemini["min_thinking_budget"], 0);
+        assert_eq!(gemini["thinking"]["budget_tokens"], 4000);
+        assert!(gemini["supported_parameters"].as_array().unwrap().iter().any(|p| p == "reasoningEffort"));
+        assert!(gemini["supported_parameters"].as_array().unwrap().iter().any(|p| p == "thinking_budget"));
+        assert!(gemini["supported_reasoning_efforts"].as_array().unwrap().iter().any(|e| e == "high"));
+        assert!(gemini["reasoning_efforts"].as_array().unwrap().iter().any(|e| e == "low"));
+        assert_eq!(gemini["reasoningEfforts"]["high"], "high");
+        assert_eq!(gemini["reasoning"]["default_effort"], "medium");
+
+        // Test OpenAIChatRequest deserialization with camelCase reasoningEffort
+        let json_camel = r#"{
+            "model": "gemini-3.8-flash",
+            "messages": [{"role": "user", "content": "hi"}],
+            "reasoningEffort": "high"
+        }"#;
+        let req_camel: OpenAIChatRequest = serde_json::from_str(json_camel).unwrap();
+        assert_eq!(req_camel.reasoning_effort.as_deref(), Some("high"));
+
+        let json_kebab = r#"{
+            "model": "gemini-3.8-flash",
+            "messages": [{"role": "user", "content": "hi"}],
+            "reasoning-effort": "low"
+        }"#;
+        let req_kebab: OpenAIChatRequest = serde_json::from_str(json_kebab).unwrap();
+        assert_eq!(req_kebab.reasoning_effort.as_deref(), Some("low"));
+
+        // Test router resolution for all effort tiers
+        use amr::proxy::router::resolve_model_with_effort;
+        let acc = UpstreamAccount {
+            id: "acc_1".into(),
+            name: "test".into(),
+            provider: "antigravity".into(),
+            base_url: "https://api.test".into(),
+            api_key: "key".into(),
+            fingerprint: "Default".into(),
+            tier: "PRO".into(),
+            quota_used: 0,
+            quota_limit: 100,
+            quota_reset: "in 2h".into(),
+            claude_gpt_percent: 100,
+            claude_gpt_reset: "in 4h".into(),
+            claude_gpt_weekly_percent: 100,
+            claude_gpt_weekly_reset: "in 7d".into(),
+            gemini_percent: 100,
+            gemini_reset: "in 4h".into(),
+            gemini_weekly_percent: 100,
+            gemini_weekly_reset: "in 7d".into(),
+            status: "Active".into(),
+            error_message: None,
+            refresh_token: None,
+            project_id: None,
+            is_active: true,
+            added_at: None,
+            device_profile: None,
+            proxy_url: None,
+        };
+
+        let (m_low, eff_low) = resolve_model_with_effort("gemini-3.8-flash", &acc, Some(ReasoningEffort::Low));
+        assert_eq!(m_low, "gemini-3.8-flash-low");
+        assert_eq!(eff_low, Some(ReasoningEffort::Low));
+
+        let (m_med, eff_med) = resolve_model_with_effort("gemini-3.8-flash", &acc, Some(ReasoningEffort::Medium));
+        assert_eq!(m_med, "gemini-3.8-flash-medium");
+        assert_eq!(eff_med, Some(ReasoningEffort::Medium));
+
+        let (m_high, eff_high) = resolve_model_with_effort("gemini-3.8-flash", &acc, Some(ReasoningEffort::High));
+        assert_eq!(m_high, "gemini-3.8-flash-high");
+        assert_eq!(eff_high, Some(ReasoningEffort::High));
+
+        let (m_off, eff_off) = resolve_model_with_effort("gemini-3.8-flash", &acc, Some(ReasoningEffort::Off));
+        assert_eq!(m_off, "gemini-3.8-flash");
+        assert_eq!(eff_off, Some(ReasoningEffort::Off));
+
+        // Test sanitize_models preservation of gemini-3.1-flash-image
+        cfg.sanitize_models();
+        assert!(cfg.models.iter().any(|m| m.id == "gemini-3.1-flash-image"));
     }
 }

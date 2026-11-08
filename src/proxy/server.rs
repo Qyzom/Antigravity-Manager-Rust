@@ -119,6 +119,18 @@ pub fn create_proxy_router(state: AppState) -> Router {
         .route("/chat/completions/", post(chat_completions))
         .route("/v1/messages", post(claude_messages))
         .route("/v1/messages/", post(claude_messages))
+        .route("/v1/audio/transcriptions", post(crate::proxy::audio::handle_audio_transcriptions))
+        .route("/v1/audio/transcriptions/", post(crate::proxy::audio::handle_audio_transcriptions))
+        .route("/audio/transcriptions", post(crate::proxy::audio::handle_audio_transcriptions))
+        .route("/audio/transcriptions/", post(crate::proxy::audio::handle_audio_transcriptions))
+        .route("/v1/audio/speech", post(crate::proxy::audio::handle_audio_speech))
+        .route("/v1/audio/speech/", post(crate::proxy::audio::handle_audio_speech))
+        .route("/audio/speech", post(crate::proxy::audio::handle_audio_speech))
+        .route("/audio/speech/", post(crate::proxy::audio::handle_audio_speech))
+        .route("/v1/images/generations", post(crate::proxy::audio::handle_image_generations))
+        .route("/v1/images/generations/", post(crate::proxy::audio::handle_image_generations))
+        .route("/images/generations", post(crate::proxy::audio::handle_image_generations))
+        .route("/images/generations/", post(crate::proxy::audio::handle_image_generations))
         .route(
             "/v1/dashboard/billing/subscription",
             get(billing_subscription),
@@ -556,24 +568,48 @@ async fn execute_chat_request(
     let is_streaming = payload.stream;
 
     // Parse model name for reasoning suffixes or native reasoning_effort / thinking config
+    let budget_str = payload
+        .extra
+        .get("budget_tokens")
+        .or_else(|| payload.extra.get("reasoning_budget"))
+        .or_else(|| payload.extra.get("thinking_budget"))
+        .and_then(|v| v.as_u64())
+        .map(|b| {
+            if b == 0 {
+                "off"
+            } else if b <= 1500 {
+                "low"
+            } else if b <= 6000 {
+                "medium"
+            } else {
+                "high"
+            }
+        });
+
     let native_effort = payload
         .reasoning_effort
         .as_deref()
+        .or_else(|| payload.extra.get("reasoning_effort").and_then(|e| e.as_str()))
+        .or_else(|| payload.extra.get("reasoningEffort").and_then(|e| e.as_str()))
         .or_else(|| {
             payload.extra.get("reasoning").and_then(|r| {
                 if let Some(s) = r.as_str() {
                     Some(s)
                 } else {
-                    r.get("effort").and_then(|e| e.as_str())
+                    r.get("effort")
+                        .or_else(|| r.get("reasoningEffort"))
+                        .and_then(|e| e.as_str())
                 }
             })
         })
         .or_else(|| {
-            payload
-                .extra
-                .get("thinking")
-                .and_then(|t| t.get("type").and_then(|typ| typ.as_str()))
-        });
+            payload.extra.get("thinking").and_then(|t| {
+                t.get("effort")
+                    .or_else(|| t.get("type"))
+                    .and_then(|typ| typ.as_str())
+            })
+        })
+        .or(budget_str);
 
     let (base_clean, reasoning_effort) = parse_model_and_reasoning(requested_model, native_effort);
     let (target_model, effective_effort) =
@@ -1543,12 +1579,19 @@ async fn execute_claude_request(
         .and_then(|s| s.as_bool())
         .unwrap_or(false);
 
+    let claude_effort = payload
+        .get("thinking")
+        .and_then(|t| {
+            t.get("effort")
+                .or_else(|| t.get("type"))
+                .and_then(|v| v.as_str())
+        })
+        .or_else(|| payload.get("reasoning_effort").and_then(|v| v.as_str()))
+        .or_else(|| payload.get("reasoningEffort").and_then(|v| v.as_str()));
+
     let (base_clean, reasoning_effort) = parse_model_and_reasoning(
         requested_model,
-        payload
-            .get("thinking")
-            .and_then(|t| t.get("type"))
-            .and_then(|v| v.as_str()),
+        claude_effort,
     );
     let (target_model, effective_effort) =
         crate::proxy::router::resolve_model_with_effort(&base_clean, account, reasoning_effort);

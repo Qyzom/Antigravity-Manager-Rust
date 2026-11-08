@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-VERSION="${1:-0.1.3}"
+VERSION="${1:-$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)}"
 ARCH="${2:-amd64}"
 DEB_DIR="target/deb_pkg"
 rm -rf "$DEB_DIR"

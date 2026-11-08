@@ -14,7 +14,7 @@ i-slint-backend-winit = { version = "1.9", default-features = false }
 
 # Async runtime & HTTP Server
 tokio = { version = "1", features = ["full"] }
-axum = { version = "0.8", default-features = false, features = ["tokio", "http1", "http2", "json", "query", "macros"] }
+axum = { version = "0.8", default-features = false, features = ["tokio", "http1", "http2", "json", "query", "macros", "multipart"] }
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls", "socks"] }

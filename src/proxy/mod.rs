@@ -1,4 +1,5 @@
 pub mod antigravity;
+pub mod audio;
 pub mod balancer;
 pub mod fingerprint;
 pub mod mappers;

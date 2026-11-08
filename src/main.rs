@@ -1,4 +1,4 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![windows_subsystem = "windows"]
 
 slint::include_modules!();
 
@@ -41,8 +41,10 @@ fn open_in_system(target: &str) {
             )
         };
         if res as usize <= 32 {
+            use std::os::windows::process::CommandExt;
             let _ = std::process::Command::new("cmd")
                 .args(["/C", "start", "", target])
+                .creation_flags(0x08000000) // CREATE_NO_WINDOW
                 .spawn();
         }
     }
@@ -688,15 +690,21 @@ fn setup_linux_desktop_integration() {
 
         let _ = std::process::Command::new("update-desktop-database")
             .arg(&app_dir)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .output();
         let _ = std::process::Command::new("gtk-update-icon-cache")
             .arg("-f")
             .arg("-t")
             .arg(&icons_base)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .output();
         let _ = std::process::Command::new("fc-cache")
             .arg("-f")
             .arg(&fonts_dir)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .output();
     }
 }
@@ -2436,7 +2444,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     main_window.on_open_test_dialog(move |model_id_slint| {
         if let Some(h) = h_test_dlg.upgrade() {
             let is_image =
-                model_id_slint == "Image generator" || model_id_slint == "image-generator";
+                model_id_slint == "gemini-3.1-flash-image" || model_id_slint.to_lowercase().contains("image");
             let lang = Language::from_str_code(&c_test_dlg.read().language);
             let t = get_translations(lang);
             h.set_test_model_id(model_id_slint);

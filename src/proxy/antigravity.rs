@@ -176,6 +176,8 @@ pub fn normalize_antigravity_upstream_model(requested: &str) -> &'static str {
         "gemini-3.8-flash-high"
     } else if clean == "gemini-3.8-flash-tiered" {
         "gemini-3.8-flash-tiered"
+    } else if clean == "gemini-3.8-flash" {
+        "gemini-3.8-flash"
     } else if clean.contains("claude-sonnet-4-6")
         || clean.contains("sonnet-4-6")
         || clean.contains("sonnet-4.6")
@@ -209,7 +211,7 @@ pub fn normalize_antigravity_upstream_model(requested: &str) -> &'static str {
             "gemini-4-argon"
         }
     } else if clean.contains("image") || clean.contains("imagen") {
-        "imagen-3.0-generate-002"
+        "gemini-3.1-flash-image"
     } else if clean.contains("pro") {
         "gemini-2.5-pro"
     } else if clean.contains("gemini-2.5-flash") {
@@ -690,7 +692,7 @@ pub async fn fetch_models_and_quota(
                             || id.contains("gemini-3.9")
                             || id.contains("gemini-3.7")
                             || id.contains("gemini-3.6")
-                            || id.contains("gemini-3.1")
+                            || (id != "gemini-3.1-flash-image" && id.contains("gemini-3.1"))
                             || id.contains("flash-lite")
                             || id.contains("lite")
                             || id.contains("gpt-oss")
@@ -749,7 +751,7 @@ pub async fn fetch_models_and_quota(
                             "openai".to_string()
                         };
 
-                        let supports_thinking = clean_id != "Image generator";
+                        let supports_thinking = !clean_id.to_lowercase().contains("image") && clean_id != "Image generator";
 
                         let tier = "PRO".to_string();
 
@@ -829,6 +831,7 @@ pub fn build_antigravity_payload_with_meta(
     _ide_version_override: Option<&str>,
 ) -> Value {
     let upstream_model = normalize_antigravity_upstream_model(target_model);
+    let is_image_request = target_model.contains("image") || upstream_model.contains("image");
     let mut contents: Vec<Value> = Vec::new();
     let mut system_parts = Vec::new();
 
@@ -1033,106 +1036,108 @@ pub fn build_antigravity_payload_with_meta(
     gen_config["maxOutputTokens"] = serde_json::json!(max_output_tok);
 
     // Configure thinking / reasoning according to model architecture and user selection
-    match reasoning_effort {
-        Some(ReasoningEffort::Off) => {
-            if target_model.contains("argon") {
-                gen_config["thinkingConfig"] = serde_json::json!({
-                    "thinkingLevel": "OFF",
-                    "thinkingBudget": 0
-                });
-            } else if target_model.contains("flash") {
-                gen_config["thinkingConfig"] = serde_json::json!({
-                    "thinkingBudget": 0
-                });
-            }
-        }
-        Some(ReasoningEffort::Low) => {
-            if target_model.contains("argon") {
-                gen_config["thinkingConfig"] = serde_json::json!({
-                    "includeThoughts": true,
-                    "thinkingLevel": "LOW"
-                });
-            } else if target_model.contains("flash") {
-                gen_config["thinkingConfig"] = serde_json::json!({
-                    "includeThoughts": true,
-                    "thinkingBudget": 1000
-                });
-            } else {
-                gen_config["thinkingConfig"] = serde_json::json!({
-                    "includeThoughts": true,
-                    "thinkingBudget": 1024
-                });
-            }
-        }
-        Some(ReasoningEffort::Medium) => {
-            if target_model.contains("argon") {
-                gen_config["thinkingConfig"] = serde_json::json!({
-                    "includeThoughts": true,
-                    "thinkingLevel": "MEDIUM"
-                });
-            } else if target_model.contains("flash") {
-                gen_config["thinkingConfig"] = serde_json::json!({
-                    "includeThoughts": true,
-                    "thinkingBudget": 4000
-                });
-            } else {
-                gen_config["thinkingConfig"] = serde_json::json!({
-                    "includeThoughts": true,
-                    "thinkingBudget": 4096
-                });
-            }
-        }
-        Some(ReasoningEffort::High) => {
-            if target_model.contains("argon") {
-                gen_config["thinkingConfig"] = serde_json::json!({
-                    "includeThoughts": true,
-                    "thinkingLevel": "HIGH"
-                });
-            } else if target_model.contains("flash") {
-                gen_config["thinkingConfig"] = serde_json::json!({
-                    "includeThoughts": true,
-                    "thinkingBudget": -1
-                });
-            } else {
-                gen_config["thinkingConfig"] = serde_json::json!({
-                    "includeThoughts": true,
-                    "thinkingBudget": 16384
-                });
-            }
-        }
-        None => {
-            if target_model.contains("argon") {
-                if target_model.ends_with("-low") {
-                    gen_config["thinkingConfig"] =
-                        serde_json::json!({ "includeThoughts": true, "thinkingLevel": "LOW" });
-                } else if target_model.ends_with("-high") {
-                    gen_config["thinkingConfig"] =
-                        serde_json::json!({ "includeThoughts": true, "thinkingLevel": "HIGH" });
-                } else if target_model.ends_with("-medium") || target_model == "gemini-4-argon" {
-                    gen_config["thinkingConfig"] =
-                        serde_json::json!({ "includeThoughts": true, "thinkingLevel": "MEDIUM" });
+    if !is_image_request {
+        match reasoning_effort {
+            Some(ReasoningEffort::Off) => {
+                if target_model.contains("argon") {
+                    gen_config["thinkingConfig"] = serde_json::json!({
+                        "thinkingLevel": "OFF",
+                        "thinkingBudget": 0
+                    });
+                } else if target_model.contains("flash") {
+                    gen_config["thinkingConfig"] = serde_json::json!({
+                        "thinkingBudget": 0
+                    });
                 }
-            } else if target_model.contains("flash") {
-                if target_model.ends_with("-low") {
-                    gen_config["thinkingConfig"] =
-                        serde_json::json!({ "includeThoughts": true, "thinkingBudget": 1000 });
-                } else if target_model.ends_with("-medium") {
-                    gen_config["thinkingConfig"] =
-                        serde_json::json!({ "includeThoughts": true, "thinkingBudget": 4000 });
-                } else if target_model.ends_with("-high") {
-                    gen_config["thinkingConfig"] =
-                        serde_json::json!({ "includeThoughts": true, "thinkingBudget": -1 });
+            }
+            Some(ReasoningEffort::Low) => {
+                if target_model.contains("argon") {
+                    gen_config["thinkingConfig"] = serde_json::json!({
+                        "includeThoughts": true,
+                        "thinkingLevel": "LOW"
+                    });
+                } else if target_model.contains("flash") {
+                    gen_config["thinkingConfig"] = serde_json::json!({
+                        "includeThoughts": true,
+                        "thinkingBudget": 1000
+                    });
+                } else {
+                    gen_config["thinkingConfig"] = serde_json::json!({
+                        "includeThoughts": true,
+                        "thinkingBudget": 1024
+                    });
                 }
-            } else if target_model.contains("claude") {
-                if target_model.ends_with("-low") {
-                    gen_config["thinkingConfig"] =
-                        serde_json::json!({ "includeThoughts": true, "thinkingBudget": 1024 });
-                } else if target_model.ends_with("-medium") {
-                    gen_config["thinkingConfig"] =
-                        serde_json::json!({ "includeThoughts": true, "thinkingBudget": 4096 });
-                } else if target_model.ends_with("-high") {
-                    gen_config["thinkingConfig"] =
-                        serde_json::json!({ "includeThoughts": true, "thinkingBudget": 16384 });
+            }
+            Some(ReasoningEffort::Medium) => {
+                if target_model.contains("argon") {
+                    gen_config["thinkingConfig"] = serde_json::json!({
+                        "includeThoughts": true,
+                        "thinkingLevel": "MEDIUM"
+                    });
+                } else if target_model.contains("flash") {
+                    gen_config["thinkingConfig"] = serde_json::json!({
+                        "includeThoughts": true,
+                        "thinkingBudget": 4000
+                    });
+                } else {
+                    gen_config["thinkingConfig"] = serde_json::json!({
+                        "includeThoughts": true,
+                        "thinkingBudget": 4096
+                    });
+                }
+            }
+            Some(ReasoningEffort::High) => {
+                if target_model.contains("argon") {
+                    gen_config["thinkingConfig"] = serde_json::json!({
+                        "includeThoughts": true,
+                        "thinkingLevel": "HIGH"
+                    });
+                } else if target_model.contains("flash") {
+                    gen_config["thinkingConfig"] = serde_json::json!({
+                        "includeThoughts": true,
+                        "thinkingBudget": -1
+                    });
+                } else {
+                    gen_config["thinkingConfig"] = serde_json::json!({
+                        "includeThoughts": true,
+                        "thinkingBudget": 16384
+                    });
+                }
+            }
+            None => {
+                if target_model.contains("argon") {
+                    if target_model.ends_with("-low") {
+                        gen_config["thinkingConfig"] =
+                            serde_json::json!({ "includeThoughts": true, "thinkingLevel": "LOW" });
+                    } else if target_model.ends_with("-high") {
+                        gen_config["thinkingConfig"] =
+                            serde_json::json!({ "includeThoughts": true, "thinkingLevel": "HIGH" });
+                    } else if target_model.ends_with("-medium") || target_model == "gemini-4-argon" {
+                        gen_config["thinkingConfig"] =
+                            serde_json::json!({ "includeThoughts": true, "thinkingLevel": "MEDIUM" });
+                    }
+                } else if target_model.contains("flash") {
+                    if target_model.ends_with("-low") {
+                        gen_config["thinkingConfig"] =
+                            serde_json::json!({ "includeThoughts": true, "thinkingBudget": 1000 });
+                    } else if target_model.ends_with("-medium") {
+                        gen_config["thinkingConfig"] =
+                            serde_json::json!({ "includeThoughts": true, "thinkingBudget": 4000 });
+                    } else if target_model.ends_with("-high") {
+                        gen_config["thinkingConfig"] =
+                            serde_json::json!({ "includeThoughts": true, "thinkingBudget": -1 });
+                    }
+                } else if target_model.contains("claude") {
+                    if target_model.ends_with("-low") {
+                        gen_config["thinkingConfig"] =
+                            serde_json::json!({ "includeThoughts": true, "thinkingBudget": 1024 });
+                    } else if target_model.ends_with("-medium") {
+                        gen_config["thinkingConfig"] =
+                            serde_json::json!({ "includeThoughts": true, "thinkingBudget": 4096 });
+                    } else if target_model.ends_with("-high") {
+                        gen_config["thinkingConfig"] =
+                            serde_json::json!({ "includeThoughts": true, "thinkingBudget": 16384 });
+                    }
                 }
             }
         }
@@ -1193,7 +1198,7 @@ pub fn build_antigravity_payload_with_meta(
             }
         }
     }
-    if !function_declarations.is_empty() {
+    if !is_image_request && !function_declarations.is_empty() {
         inner_request["tools"] = serde_json::json!([
             {
                 "functionDeclarations": function_declarations
@@ -1201,7 +1206,7 @@ pub fn build_antigravity_payload_with_meta(
         ]);
     }
 
-    if !system_parts.is_empty() {
+    if !is_image_request && !system_parts.is_empty() {
         inner_request["systemInstruction"] = serde_json::json!({
             "role": "user",
             "parts": system_parts
@@ -1213,6 +1218,7 @@ pub fn build_antigravity_payload_with_meta(
     let conv = &uuid::Uuid::new_v4().simple().to_string()[..16];
     let traj = &uuid::Uuid::new_v4().simple().to_string()[..8];
     let request_id = format!("agent/{}/{}/{}/1", conv, ts, traj);
+    let request_type = if is_image_request { "image_gen" } else { "agent" };
 
     serde_json::json!({
         "project": pid,
@@ -1220,7 +1226,7 @@ pub fn build_antigravity_payload_with_meta(
         "request": inner_request,
         "model": upstream_model,
         "userAgent": "antigravity",
-        "requestType": "agent",
+        "requestType": request_type,
     })
 }
 
@@ -1249,6 +1255,7 @@ pub fn build_antigravity_payload_from_claude_with_meta(
     _ide_version_override: Option<&str>,
 ) -> Value {
     let upstream_model = normalize_antigravity_upstream_model(target_model);
+    let is_image_request = target_model.contains("image") || upstream_model.contains("image");
     let mut contents: Vec<Value> = Vec::new();
     let mut system_parts = Vec::new();
 
@@ -1379,80 +1386,82 @@ pub fn build_antigravity_payload_from_claude_with_meta(
         gen_config["maxOutputTokens"] = serde_json::json!(65536);
     }
 
-    match reasoning_effort {
-        Some(ReasoningEffort::Off) => {
-            if target_model.contains("argon") {
-                gen_config["thinkingConfig"] = serde_json::json!({
-                    "thinkingLevel": "OFF",
-                    "thinkingBudget": 0
-                });
-            } else if target_model.contains("flash") {
-                gen_config["thinkingConfig"] = serde_json::json!({
-                    "thinkingBudget": 0
-                });
-            }
-        }
-        Some(ReasoningEffort::Low) => {
-            if target_model.contains("argon") {
-                gen_config["thinkingConfig"] =
-                    serde_json::json!({ "includeThoughts": true, "thinkingLevel": "LOW" });
-            } else if target_model.contains("flash") {
-                gen_config["thinkingConfig"] =
-                    serde_json::json!({ "includeThoughts": true, "thinkingBudget": 1000 });
-            } else {
-                gen_config["thinkingConfig"] =
-                    serde_json::json!({ "includeThoughts": true, "thinkingBudget": 1024 });
-            }
-        }
-        Some(ReasoningEffort::Medium) => {
-            if target_model.contains("argon") {
-                gen_config["thinkingConfig"] =
-                    serde_json::json!({ "includeThoughts": true, "thinkingLevel": "MEDIUM" });
-            } else if target_model.contains("flash") {
-                gen_config["thinkingConfig"] =
-                    serde_json::json!({ "includeThoughts": true, "thinkingBudget": 4000 });
-            } else {
-                gen_config["thinkingConfig"] =
-                    serde_json::json!({ "includeThoughts": true, "thinkingBudget": 4096 });
-            }
-        }
-        Some(ReasoningEffort::High) => {
-            if target_model.contains("argon") {
-                gen_config["thinkingConfig"] =
-                    serde_json::json!({ "includeThoughts": true, "thinkingLevel": "HIGH" });
-            } else if target_model.contains("flash") {
-                gen_config["thinkingConfig"] =
-                    serde_json::json!({ "includeThoughts": true, "thinkingBudget": -1 });
-            } else {
-                gen_config["thinkingConfig"] =
-                    serde_json::json!({ "includeThoughts": true, "thinkingBudget": 16384 });
-            }
-        }
-        None => {
-            if let Some(th) = req.get("thinking") {
-                if th.get("type").and_then(|t| t.as_str()) == Some("enabled") {
-                    let budget = th
-                        .get("budget_tokens")
-                        .and_then(|b| b.as_u64())
-                        .unwrap_or(4096)
-                        .max(1024);
+    if !is_image_request {
+        match reasoning_effort {
+            Some(ReasoningEffort::Off) => {
+                if target_model.contains("argon") {
                     gen_config["thinkingConfig"] = serde_json::json!({
-                        "includeThoughts": true,
-                        "thinkingBudget": budget
+                        "thinkingLevel": "OFF",
+                        "thinkingBudget": 0
+                    });
+                } else if target_model.contains("flash") {
+                    gen_config["thinkingConfig"] = serde_json::json!({
+                        "thinkingBudget": 0
                     });
                 }
-            } else if target_model.contains("argon") {
-                gen_config["thinkingConfig"] =
-                    serde_json::json!({ "includeThoughts": true, "thinkingLevel": "MEDIUM" });
-            } else if target_model.ends_with("-high") {
-                gen_config["thinkingConfig"] =
-                    serde_json::json!({ "includeThoughts": true, "thinkingBudget": -1 });
-            } else if target_model.ends_with("-medium") {
-                gen_config["thinkingConfig"] =
-                    serde_json::json!({ "includeThoughts": true, "thinkingBudget": 4000 });
-            } else if target_model.ends_with("-low") {
-                gen_config["thinkingConfig"] =
-                    serde_json::json!({ "includeThoughts": true, "thinkingBudget": 1000 });
+            }
+            Some(ReasoningEffort::Low) => {
+                if target_model.contains("argon") {
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingLevel": "LOW" });
+                } else if target_model.contains("flash") {
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingBudget": 1000 });
+                } else {
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingBudget": 1024 });
+                }
+            }
+            Some(ReasoningEffort::Medium) => {
+                if target_model.contains("argon") {
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingLevel": "MEDIUM" });
+                } else if target_model.contains("flash") {
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingBudget": 4000 });
+                } else {
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingBudget": 4096 });
+                }
+            }
+            Some(ReasoningEffort::High) => {
+                if target_model.contains("argon") {
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingLevel": "HIGH" });
+                } else if target_model.contains("flash") {
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingBudget": -1 });
+                } else {
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingBudget": 16384 });
+                }
+            }
+            None => {
+                if let Some(th) = req.get("thinking") {
+                    if th.get("type").and_then(|t| t.as_str()) == Some("enabled") {
+                        let budget = th
+                            .get("budget_tokens")
+                            .and_then(|b| b.as_u64())
+                            .unwrap_or(4096)
+                            .max(1024);
+                        gen_config["thinkingConfig"] = serde_json::json!({
+                            "includeThoughts": true,
+                            "thinkingBudget": budget
+                        });
+                    }
+                } else if target_model.contains("argon") {
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingLevel": "MEDIUM" });
+                } else if target_model.ends_with("-high") {
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingBudget": -1 });
+                } else if target_model.ends_with("-medium") {
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingBudget": 4000 });
+                } else if target_model.ends_with("-low") {
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingBudget": 1000 });
+                }
             }
         }
     }
@@ -1510,7 +1519,7 @@ pub fn build_antigravity_payload_from_claude_with_meta(
             }
         }
     }
-    if !function_declarations.is_empty() {
+    if !is_image_request && !function_declarations.is_empty() {
         inner_request["tools"] = serde_json::json!([
             {
                 "functionDeclarations": function_declarations
@@ -1518,7 +1527,7 @@ pub fn build_antigravity_payload_from_claude_with_meta(
         ]);
     }
 
-    if !system_parts.is_empty() {
+    if !is_image_request && !system_parts.is_empty() {
         inner_request["systemInstruction"] = serde_json::json!({
             "role": "user",
             "parts": system_parts
@@ -1530,6 +1539,7 @@ pub fn build_antigravity_payload_from_claude_with_meta(
     let conv = &uuid::Uuid::new_v4().simple().to_string()[..16];
     let traj = &uuid::Uuid::new_v4().simple().to_string()[..8];
     let request_id = format!("agent/{}/{}/{}/1", conv, ts, traj);
+    let request_type = if is_image_request { "image_gen" } else { "agent" };
 
     serde_json::json!({
         "project": pid,
@@ -1537,7 +1547,7 @@ pub fn build_antigravity_payload_from_claude_with_meta(
         "request": inner_request,
         "model": upstream_model,
         "userAgent": "antigravity",
-        "requestType": "agent",
+        "requestType": request_type,
     })
 }
 

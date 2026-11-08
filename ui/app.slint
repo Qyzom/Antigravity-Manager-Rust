@@ -697,7 +697,7 @@ export component MainWindow inherits Window {
     // Modal 2: Test Model Dialog
     in-out property <bool> show_test_dialog: false;
     in-out property <string> test_model_id: "claude-3-7-sonnet";
-    property <bool> is_image_test_model: root.test_model_id == "Image generator" || root.test_model_id == "image-generator";
+    property <bool> is_image_test_model: root.test_model_id == "gemini-3.1-flash-image";
     in-out property <string> test_prompt: "";
     in-out property <string> test_timeout_secs: "60";
     in-out property <string> test_max_tokens: "2048";
