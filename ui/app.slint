@@ -712,6 +712,7 @@ export component MainWindow inherits Window {
 
     // Modal 3: Log Details Inspector
     in-out property <bool> show_log_modal: false;
+    in-out property <bool> modal_log_copied: false;
     in-out property <string> modal_log_time: "";
     in-out property <string> modal_log_method: "";
     in-out property <string> modal_log_path: "";
@@ -743,7 +744,7 @@ export component MainWindow inherits Window {
     in-out property <int> stealth_cooldown_duration: 300;
     in-out property <bool> stealth_request_jitter: true;
     in-out property <string> stealth_spoof_platform: "AUTO";
-    in-out property <string> stealth_spoof_ide_version: "2.28.1";
+    in-out property <string> stealth_spoof_ide_version: "2.23.1";
     in-out property <string> stealth_spoof_arch: "AUTO";
     in-out property <string> stealth_spoof_channel: "stable";
     in-out property <bool> stealth_strip_telemetry: true;
@@ -775,6 +776,10 @@ export component MainWindow inherits Window {
     in-out property <string> stat_max_latency: "0 ms";
     in-out property <int> stat_claude_pct: 50;
     in-out property <int> stat_gemini_pct: 50;
+    in-out property <string> stat_cache_hit_rate: "0.0%";
+    in-out property <string> stat_p50_latency: "0 ms";
+    in-out property <string> stat_p95_latency: "0 ms";
+    in-out property <string> stat_p99_latency: "0 ms";
 
     // Circular Chart Vector Paths
     in-out property <string> stat_chart1_path_bg: "M 55.0 13.0 A 42.0 42.0 0 1 1 55.0 97.0 A 42.0 42.0 0 1 1 55.0 13.0";
@@ -1624,21 +1629,13 @@ export component MainWindow inherits Window {
 
                                                     Text {
                                                         text: root.copied_model_id == model.id 
-                                                            ? "✓ " + root.i18n.lbl_copied 
+                                                            ? root.i18n.lbl_copied 
                                                             : "— " + model.id;
                                                         font-size: 11px;
                                                         font-weight: root.copied_model_id == model.id ? 700 : 500;
                                                         color: root.copied_model_id == model.id 
                                                             ? #34d399 
                                                             : (id_touch.has-hover ? #e4e4e7 : #71717a);
-                                                        vertical-alignment: center;
-                                                        animate color { duration: 120ms; }
-                                                    }
-
-                                                    if root.copied_model_id != model.id: Text {
-                                                        text: "⧉";
-                                                        font-size: 11px;
-                                                        color: id_touch.has-hover ? #38bdf8 : #52525b;
                                                         vertical-alignment: center;
                                                         animate color { duration: 120ms; }
                                                     }
@@ -2856,22 +2853,22 @@ export component MainWindow inherits Window {
                             spacing: 10px;
                             StatCard {
                                 title: root.i18n.stat_card_cache_hit;
-                                value: "96.4%";
+                                value: root.stat_cache_hit_rate;
                                 subtext: root.i18n.stat_sub_cache_match;
                             }
                             StatCard {
                                 title: root.i18n.stat_card_p50;
-                                value: "18 ms";
+                                value: root.stat_p50_latency;
                                 subtext: root.i18n.stat_sub_median_lat;
                             }
                             StatCard {
                                 title: root.i18n.stat_card_p95;
-                                value: "45 ms";
+                                value: root.stat_p95_latency;
                                 subtext: root.i18n.stat_sub_stream_lat;
                             }
                             StatCard {
                                 title: root.i18n.stat_card_p99;
-                                value: "82 ms";
+                                value: root.stat_p99_latency;
                                 subtext: root.i18n.stat_sub_max_regular_lat;
                             }
                         }
@@ -3746,7 +3743,7 @@ export component MainWindow inherits Window {
                         Text { text: root.i18n.test_dialog_title + ": " + root.test_model_id; font-size: 13px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
                         ActionButton {
                             custom_height: 24px;
-                            text: root.copied_model_id == root.test_model_id ? ("✓ " + root.i18n.lbl_copied) : ("⧉ " + root.i18n.btn_copy);
+                            text: root.copied_model_id == root.test_model_id ? root.i18n.lbl_copied : root.i18n.btn_copy;
                             is_primary: false;
                             clicked => { root.copy_model_id(root.test_model_id); }
                         }
@@ -3885,8 +3882,8 @@ export component MainWindow inherits Window {
         }
 
         modal_card3 := Rectangle {
-            width: 860px;
-            height: 560px;
+            width: 900px;
+            height: 580px;
             background: #141416;
             border-radius: 12px;
             border-width: 1px;
@@ -3899,7 +3896,7 @@ export component MainWindow inherits Window {
             TouchArea { clicked => { } }
 
             modal_inner3 := VerticalLayout {
-                padding: 16px;
+                padding: 18px;
                 spacing: 12px;
 
                 // Top Header Row
@@ -3908,7 +3905,7 @@ export component MainWindow inherits Window {
                     height: 32px;
                     HorizontalLayout {
                         spacing: 10px;
-                        Text { text: root.i18n.lbl_inspector_title; font-size: 14px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
+                        Text { text: root.i18n.lbl_inspector_title; font-size: 15px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
                         VerticalLayout {
                             alignment: center;
                             Badge { text: root.modal_log_account; }
@@ -3921,21 +3918,39 @@ export component MainWindow inherits Window {
                     }
                 }
 
-                // Request Summary Row
-                HorizontalLayout {
-                    spacing: 8px;
-                    alignment: start;
-                    height: 24px;
-                    VerticalLayout { alignment: center; Badge { text: root.modal_log_method; is_green: true; } }
-                    Text { text: root.modal_log_path; font-size: 12px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
-                    VerticalLayout { alignment: center; Badge { text: root.modal_log_status; is_green: root.modal_log_status == "200 OK"; is_danger: root.modal_log_status != "" && root.modal_log_status != "200 OK"; } }
-                    VerticalLayout { alignment: center; Badge { text: root.modal_log_model; } }
-                    if root.modal_log_effort != "": VerticalLayout { alignment: center; Badge { text: root.i18n.lbl_modal_effort_prefix + root.modal_log_effort; is_amber: root.modal_log_effort != "off"; is_green: root.modal_log_effort == "off"; } }
-                    VerticalLayout { alignment: center; Badge { text: root.modal_log_tokens + " tok"; } }
-                    VerticalLayout { alignment: center; Badge { text: root.modal_log_latency; } }
-                }
+                // Request Summary Hero Card
+                Rectangle {
+                    background: #18181b;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: #27272a;
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        padding-top: 8px;
+                        padding-bottom: 8px;
+                        spacing: 10px;
+                        alignment: space-between;
 
-                Rectangle { height: 1px; background: #27272a; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+                            VerticalLayout { alignment: center; Badge { text: root.modal_log_method; is_green: true; } }
+                            Text { text: root.modal_log_path; font-family: "monospace"; font-size: 12px; font-weight: 700; color: #f4f4f5; vertical-alignment: center; }
+                            VerticalLayout { alignment: center; Badge { text: root.modal_log_status; is_green: root.modal_log_status == "200 OK"; is_danger: root.modal_log_status != "" && root.modal_log_status != "200 OK"; } }
+                            VerticalLayout { alignment: center; Badge { text: root.modal_log_model; } }
+                            if root.modal_log_effort != "": VerticalLayout { alignment: center; Badge { text: root.i18n.lbl_modal_effort_prefix + root.modal_log_effort; is_amber: root.modal_log_effort != "off"; is_green: root.modal_log_effort == "off"; } }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 10px;
+                            alignment: end;
+                            Text { text: root.modal_log_latency; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
+                            Text { text: root.modal_log_tokens + " tok"; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
+                            Text { text: root.modal_log_time; font-size: 11px; color: #71717a; vertical-alignment: center; }
+                        }
+                    }
+                }
 
                 // Tabs Toolbar & Copy Button
                 HorizontalLayout {
@@ -3967,9 +3982,10 @@ export component MainWindow inherits Window {
 
                     ActionButton {
                         custom_height: 28px;
-                        text: root.i18n.btn_copy;
-                        is_primary: false;
+                        text: root.modal_log_copied ? root.i18n.lbl_copied : root.i18n.btn_copy;
+                        is_primary: root.modal_log_copied;
                         clicked => {
+                            root.modal_log_copied = true;
                             if root.modal_inspector_tab == 0 {
                                 root.copy_text_to_clipboard(root.modal_log_req_body);
                             } else if root.modal_inspector_tab == 1 {
@@ -3992,7 +4008,7 @@ export component MainWindow inherits Window {
 
                     ScrollView {
                         VerticalLayout {
-                            padding: 12px;
+                            padding: 14px;
                             alignment: start;
 
                             if root.modal_inspector_tab == 0: Text {
@@ -4012,17 +4028,70 @@ export component MainWindow inherits Window {
                             }
 
                             if root.modal_inspector_tab == 2: VerticalLayout {
-                                spacing: 6px;
-                                Text { text: root.i18n.log_detail_account + root.modal_log_account; font-size: 11px; font-weight: 700; color: #ffffff; }
-                                Text { text: root.i18n.log_detail_timestamp + root.modal_log_time; font-size: 11px; color: #a1a1aa; }
-                                Text { text: root.i18n.log_detail_model + root.modal_log_model; font-size: 11px; color: #a1a1aa; }
-                                if root.modal_log_effort != "": Text { text: root.i18n.lbl_reasoning_effort + ": " + root.modal_log_effort; font-size: 11px; font-weight: 700; color: root.modal_log_effort == "off" ? #4ade80 : #fbbf24; }
-                                Text { text: root.i18n.log_detail_tokens + root.modal_log_tokens; font-size: 11px; color: #a1a1aa; }
-                                Text { text: root.i18n.log_detail_latency + root.modal_log_latency; font-size: 11px; color: #a1a1aa; }
-                                if root.modal_log_error != "": Text { text: root.i18n.log_detail_error + root.modal_log_error; font-size: 11px; font-weight: 700; color: #f87171; }
-                                Rectangle { height: 1px; background: #27272a; }
-                                Text { text: root.i18n.log_detail_headers; font-size: 11px; font-weight: 700; color: #71717a; }
-                                Text { text: root.modal_log_headers != "" ? root.modal_log_headers : "Content-Type: application/json"; font-size: 11px; color: #94a3b8; wrap: word-wrap; }
+                                spacing: 10px;
+
+                                // Metadata Grid Cards
+                                HorizontalLayout {
+                                    spacing: 12px;
+                                    Rectangle {
+                                        horizontal-stretch: 1;
+                                        background: #141416;
+                                        border-radius: 6px;
+                                        border-width: 1px;
+                                        border-color: #27272a;
+                                        VerticalLayout {
+                                            padding: 10px;
+                                            spacing: 6px;
+                                            Text { text: "Session & Model"; font-size: 11px; font-weight: 800; color: #71717a; }
+                                            Text { text: root.i18n.log_detail_account + root.modal_log_account; font-size: 11px; font-weight: 600; color: #ffffff; }
+                                            Text { text: root.i18n.log_detail_model + root.modal_log_model; font-size: 11px; color: #a1a1aa; }
+                                            if root.modal_log_effort != "": Text { text: root.i18n.lbl_reasoning_effort + ": " + root.modal_log_effort; font-size: 11px; font-weight: 700; color: root.modal_log_effort == "off" ? #4ade80 : #fbbf24; }
+                                            Text { text: root.i18n.log_detail_timestamp + root.modal_log_time; font-size: 11px; color: #71717a; }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        horizontal-stretch: 1;
+                                        background: #141416;
+                                        border-radius: 6px;
+                                        border-width: 1px;
+                                        border-color: #27272a;
+                                        VerticalLayout {
+                                            padding: 10px;
+                                            spacing: 6px;
+                                            Text { text: "Performance & Status"; font-size: 11px; font-weight: 800; color: #71717a; }
+                                            Text { text: "Status: " + root.modal_log_status; font-size: 11px; font-weight: 700; color: root.modal_log_status == "200 OK" ? #4ade80 : #f87171; }
+                                            Text { text: root.i18n.log_detail_latency + root.modal_log_latency; font-size: 11px; color: #a1a1aa; }
+                                            Text { text: root.i18n.log_detail_tokens + root.modal_log_tokens; font-size: 11px; color: #a1a1aa; }
+                                        }
+                                    }
+                                }
+
+                                if root.modal_log_error != "": Rectangle {
+                                    background: #450a0a33;
+                                    border-radius: 6px;
+                                    border-width: 1px;
+                                    border-color: #ef444455;
+                                    VerticalLayout {
+                                        padding: 10px;
+                                        spacing: 4px;
+                                        Text { text: "Error Details"; font-size: 11px; font-weight: 800; color: #f87171; }
+                                        Text { text: root.modal_log_error; font-size: 11px; color: #fca5a5; wrap: word-wrap; }
+                                    }
+                                }
+
+                                Rectangle {
+                                    background: #141416;
+                                    border-radius: 6px;
+                                    border-width: 1px;
+                                    border-color: #27272a;
+                                    VerticalLayout {
+                                        padding: 10px;
+                                        spacing: 6px;
+                                        Text { text: root.i18n.log_detail_headers; font-size: 11px; font-weight: 800; color: #71717a; }
+                                        Text { text: root.modal_log_headers != "" ? root.modal_log_headers : "Content-Type: application/json"; font-family: "monospace"; font-size: 11px; color: #94a3b8; wrap: word-wrap; }
+                                    }
+                                }
                             }
                         }
                     }

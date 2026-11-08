@@ -60,8 +60,8 @@ impl SystemTray {
             }));
 
             let cb_tray = std::sync::Arc::clone(&action_cb);
-            tray_icon::TrayIconEvent::set_event_handler(Some(move |event: tray_icon::TrayIconEvent| {
-                match event {
+            tray_icon::TrayIconEvent::set_event_handler(Some(
+                move |event: tray_icon::TrayIconEvent| match event {
                     tray_icon::TrayIconEvent::Click {
                         button: MouseButton::Left,
                         button_state: MouseButtonState::Up,
@@ -76,8 +76,8 @@ impl SystemTray {
                         cb_tray(TrayAction::Show);
                     }
                     _ => {}
-                }
-            }));
+                },
+            ));
 
             Ok::<SystemTray, String>(Self {
                 _tray_icon: tray_icon,

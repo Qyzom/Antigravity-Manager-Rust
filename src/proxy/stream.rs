@@ -1,4 +1,7 @@
-use crate::proxy::mappers::openai::{create_stream_chunk, create_stream_chunk_with_usage, create_stream_usage_chunk, OpenAIUsage};
+use crate::proxy::mappers::openai::{
+    create_stream_chunk, create_stream_chunk_with_usage, create_stream_tool_chunk,
+    create_stream_usage_chunk, OpenAIUsage, PromptTokensDetails,
+};
 use bytes::Bytes;
 use futures_util::Stream;
 use futures_util::StreamExt;
@@ -30,7 +33,10 @@ pub fn emit_smooth_chunks(text: &str) -> Vec<&str> {
     let mut last = 0;
     for (i, c) in text.char_indices() {
         let chunk_len = i - last;
-        let is_delimiter = matches!(c, ' ' | '\n' | '\t' | '.' | ',' | ';' | '}' | ')' | '{' | '(');
+        let is_delimiter = matches!(
+            c,
+            ' ' | '\n' | '\t' | '.' | ',' | ';' | '}' | ')' | '{' | '('
+        );
         if (is_delimiter && chunk_len >= 8) || chunk_len >= 28 {
             let next_idx = i + c.len_utf8();
             parts.push(&text[last..next_idx]);
@@ -57,6 +63,7 @@ pub fn process_claude_to_openai_stream(
 
         let mut total_input_tokens: u64 = 0;
         let mut total_output_tokens: u64 = 0;
+        let mut total_cached_tokens: u64 = 0;
         let mut accumulated_response = String::new();
 
         loop {
@@ -87,6 +94,9 @@ pub fn process_claude_to_openai_stream(
                                                         if let Some(usage) = msg.get("usage") {
                                                             if let Some(it) = usage.get("input_tokens").and_then(|v| v.as_u64()) {
                                                                 total_input_tokens = it;
+                                                            }
+                                                            if let Some(crt) = usage.get("cache_read_input_tokens").and_then(|v| v.as_u64()) {
+                                                                total_cached_tokens = crt;
                                                             }
                                                         }
                                                     }
@@ -130,8 +140,13 @@ pub fn process_claude_to_openai_stream(
                                                             prompt_tokens: in_tok,
                                                             completion_tokens: out_tok,
                                                             total_tokens: in_tok + out_tok,
-                                                            prompt_tokens_details: None,
+                                                            prompt_tokens_details: Some(PromptTokensDetails {
+                                                                cached_tokens: total_cached_tokens,
+                                                                audio_tokens: 0,
+                                                            }),
                                                             completion_tokens_details: None,
+                                                            prompt_cache_hit_tokens: if total_cached_tokens > 0 { Some(total_cached_tokens) } else { None },
+                                                            prompt_cache_miss_tokens: if total_cached_tokens > 0 { Some(in_tok.saturating_sub(total_cached_tokens)) } else { None },
                                                         };
                                                         let chunk = create_stream_chunk_with_usage(&stream_id, &model_name, None, None, Some(stop_reason), Some(usage_val.clone()));
                                                         yield Ok(Bytes::from(chunk));
@@ -151,7 +166,7 @@ pub fn process_claude_to_openai_stream(
                                                         } else {
                                                             accumulated_response.clone()
                                                         };
-                                                        ctx.stats.record_detailed_request_exact(
+                                                        ctx.stats.record_detailed_request_full(
                                                             ctx.method,
                                                             ctx.path,
                                                             &ctx.model,
@@ -159,6 +174,7 @@ pub fn process_claude_to_openai_stream(
                                                             in_tok + out_tok,
                                                             in_tok,
                                                             out_tok,
+                                                            total_cached_tokens,
                                                             elapsed,
                                                             &ctx.account_name,
                                                             &ctx.reasoning_effort,
@@ -190,8 +206,13 @@ pub fn process_claude_to_openai_stream(
             prompt_tokens: in_tok,
             completion_tokens: out_tok,
             total_tokens: in_tok + out_tok,
-            prompt_tokens_details: None,
+            prompt_tokens_details: Some(PromptTokensDetails {
+                cached_tokens: total_cached_tokens,
+                audio_tokens: 0,
+            }),
             completion_tokens_details: None,
+            prompt_cache_hit_tokens: if total_cached_tokens > 0 { Some(total_cached_tokens) } else { None },
+            prompt_cache_miss_tokens: if total_cached_tokens > 0 { Some(in_tok.saturating_sub(total_cached_tokens)) } else { None },
         };
         let chunk = create_stream_chunk_with_usage(&stream_id, &model_name, None, None, Some("stop"), Some(usage_val.clone()));
         yield Ok(Bytes::from(chunk));
@@ -206,7 +227,7 @@ pub fn process_claude_to_openai_stream(
             } else {
                 accumulated_response
             };
-            ctx.stats.record_detailed_request_exact(
+            ctx.stats.record_detailed_request_full(
                 ctx.method,
                 ctx.path,
                 &ctx.model,
@@ -214,6 +235,7 @@ pub fn process_claude_to_openai_stream(
                 in_tok + out_tok,
                 in_tok,
                 out_tok,
+                total_cached_tokens,
                 elapsed,
                 &ctx.account_name,
                 &ctx.reasoning_effort,
@@ -239,8 +261,11 @@ pub fn process_antigravity_to_openai_stream(
 
         let mut total_input_tokens: u64 = 0;
         let mut total_output_tokens: u64 = 0;
+        let mut total_cached_tokens: u64 = 0;
         let mut estimated_output_tokens: u64 = 0;
         let mut accumulated_response = String::new();
+        let mut tool_call_index: usize = 0;
+        let mut has_emitted_tools: bool = false;
 
         loop {
             tokio::select! {
@@ -274,8 +299,13 @@ pub fn process_antigravity_to_openai_stream(
                                                     prompt_tokens: in_tok,
                                                     completion_tokens: out_tok,
                                                     total_tokens: in_tok + out_tok,
-                                                    prompt_tokens_details: None,
+                                                    prompt_tokens_details: Some(PromptTokensDetails {
+                                                        cached_tokens: total_cached_tokens,
+                                                        audio_tokens: 0,
+                                                    }),
                                                     completion_tokens_details: None,
+                                                    prompt_cache_hit_tokens: if total_cached_tokens > 0 { Some(total_cached_tokens) } else { None },
+                                                    prompt_cache_miss_tokens: if total_cached_tokens > 0 { Some(in_tok.saturating_sub(total_cached_tokens)) } else { None },
                                                 };
                                                 let u_chunk = create_stream_usage_chunk(&stream_id, &model_name, usage_val);
                                                 yield Ok(Bytes::from(u_chunk));
@@ -288,7 +318,7 @@ pub fn process_antigravity_to_openai_stream(
                                                     } else {
                                                         accumulated_response.clone()
                                                     };
-                                                    ctx.stats.record_detailed_request_exact(
+                                                    ctx.stats.record_detailed_request_full(
                                                         ctx.method,
                                                         ctx.path,
                                                         &ctx.model,
@@ -296,6 +326,7 @@ pub fn process_antigravity_to_openai_stream(
                                                         in_tok + out_tok,
                                                         in_tok,
                                                         out_tok,
+                                                        total_cached_tokens,
                                                         elapsed,
                                                         &ctx.account_name,
                                                         &ctx.reasoning_effort,
@@ -319,6 +350,9 @@ pub fn process_antigravity_to_openai_stream(
                                                     if let Some(ct) = usage.get("candidatesTokenCount").and_then(|v| v.as_u64()) {
                                                         total_output_tokens = ct;
                                                     }
+                                                    if let Some(cct) = usage.get("cachedContentTokenCount").and_then(|v| v.as_u64()) {
+                                                        total_cached_tokens = cct;
+                                                    }
                                                 }
 
                                                 if let Some(candidates) = actual.get("candidates").and_then(|c| c.as_array()) {
@@ -326,24 +360,63 @@ pub fn process_antigravity_to_openai_stream(
                                                         if let Some(parts) = candidate.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array()) {
                                                             for part in parts {
                                                                 let is_thought = part.get("thought").and_then(|v| v.as_bool()).unwrap_or(false);
-                                                                if let Some(txt) = part.get("text").and_then(|t| t.as_str()) {
-                                                                    if accumulated_response.len() < 65536 {
-                                                                        accumulated_response.push_str(txt);
-                                                                    }
-                                                                    estimated_output_tokens += (txt.len() / 4).max(1) as u64;
+                                                                if let Some(fc) = part.get("functionCall") {
+                                                                    let name = fc.get("name").and_then(|n| n.as_str()).unwrap_or("tool");
+                                                                    let args_val = fc.get("args").cloned().unwrap_or(serde_json::json!({}));
+                                                                    let args_str = serde_json::to_string(&args_val).unwrap_or_else(|_| "{}".to_string());
+                                                                    let call_id = fc.get("id").and_then(|i| i.as_str()).map(|s| s.to_string())
+                                                                        .unwrap_or_else(|| format!("call_{}", uuid::Uuid::new_v4().simple()));
 
-                                                                    if is_thought {
-                                                                        let chunk = create_stream_chunk(&stream_id, &model_name, None, Some(txt), None);
-                                                                        yield Ok(Bytes::from(chunk));
-                                                                    } else {
-                                                                        // Emit smooth micro-chunks with zero artificial latency
-                                                                        let sub_chunks = emit_smooth_chunks(txt);
-                                                                        let count = sub_chunks.len();
-                                                                        for (i, sub) in sub_chunks.into_iter().enumerate() {
-                                                                            let chunk = create_stream_chunk(&stream_id, &model_name, Some(sub), None, None);
+                                                                    if let Some(sig) = part.get("thoughtSignature")
+                                                                        .or_else(|| part.get("thought_signature"))
+                                                                        .or_else(|| candidate.get("thoughtSignature"))
+                                                                        .or_else(|| candidate.get("thought_signature"))
+                                                                        .and_then(|s| s.as_str())
+                                                                    {
+                                                                        crate::proxy::antigravity::record_thought_signature(&call_id, name, sig);
+                                                                    }
+
+                                                                    if accumulated_response.len() < 65536 {
+                                                                        accumulated_response.push_str(&format!("[Call: {}({})]", name, args_str));
+                                                                    }
+                                                                    estimated_output_tokens += (args_str.len() / 4).max(1) as u64;
+
+                                                                    let tool_call_obj = serde_json::json!({
+                                                                        "index": tool_call_index,
+                                                                        "id": call_id,
+                                                                        "type": "function",
+                                                                        "function": {
+                                                                            "name": name,
+                                                                            "arguments": args_str
+                                                                        }
+                                                                    });
+                                                                    tool_call_index += 1;
+                                                                    has_emitted_tools = true;
+
+                                                                    let chunk = create_stream_tool_chunk(&stream_id, &model_name, vec![tool_call_obj]);
+                                                                    yield Ok(Bytes::from(chunk));
+                                                                } else if let Some(txt) = part.get("text").and_then(|t| t.as_str()) {
+                                                                    if !txt.is_empty() {
+                                                                        if accumulated_response.len() < 65536 {
+                                                                            accumulated_response.push_str(txt);
+                                                                        }
+                                                                        estimated_output_tokens += (txt.len() / 4).max(1) as u64;
+
+                                                                        if is_thought {
+                                                                            let chunk = create_stream_chunk(&stream_id, &model_name, None, Some(txt), None);
                                                                             yield Ok(Bytes::from(chunk));
-                                                                            if count > 1 && i + 1 < count {
-                                                                                tokio::task::yield_now().await;
+                                                                        } else {
+                                                                            // Emit smooth micro-chunks with zero artificial latency
+                                                                            let sub_chunks = emit_smooth_chunks(txt);
+                                                                            let count = sub_chunks.len();
+                                                                            for (i, sub) in sub_chunks.into_iter().enumerate() {
+                                                                                if !sub.is_empty() {
+                                                                                    let chunk = create_stream_chunk(&stream_id, &model_name, Some(sub), None, None);
+                                                                                    yield Ok(Bytes::from(chunk));
+                                                                                    if count > 1 && i + 1 < count {
+                                                                                        tokio::task::yield_now().await;
+                                                                                    }
+                                                                                }
                                                                             }
                                                                         }
                                                                     }
@@ -361,11 +434,15 @@ pub fn process_antigravity_to_openai_stream(
                                                             }
                                                         }
                                                         if let Some(finish) = candidate.get("finishReason").and_then(|f| f.as_str()) {
-                                                            let stop_reason = match finish {
-                                                                "STOP" => "stop",
-                                                                "MAX_TOKENS" => "length",
-                                                                "SAFETY" => "content_filter",
-                                                                _ => "stop",
+                                                            let stop_reason = if has_emitted_tools {
+                                                                "tool_calls"
+                                                            } else {
+                                                                match finish {
+                                                                    "STOP" => "stop",
+                                                                    "MAX_TOKENS" => "length",
+                                                                    "SAFETY" => "content_filter",
+                                                                    _ => "stop",
+                                                                }
                                                             };
 
                                                             let in_tok = if total_input_tokens > 0 {
@@ -378,8 +455,13 @@ pub fn process_antigravity_to_openai_stream(
                                                                 prompt_tokens: in_tok,
                                                                 completion_tokens: out_tok,
                                                                 total_tokens: in_tok + out_tok,
-                                                                prompt_tokens_details: None,
+                                                                prompt_tokens_details: Some(PromptTokensDetails {
+                                                                    cached_tokens: total_cached_tokens,
+                                                                    audio_tokens: 0,
+                                                                }),
                                                                 completion_tokens_details: None,
+                                                                prompt_cache_hit_tokens: if total_cached_tokens > 0 { Some(total_cached_tokens) } else { None },
+                                                                prompt_cache_miss_tokens: if total_cached_tokens > 0 { Some(in_tok.saturating_sub(total_cached_tokens)) } else { None },
                                                             };
 
                                                             // 1. Emit chunk with stop reason (OpenAI standard: delta is empty {})
@@ -400,7 +482,7 @@ pub fn process_antigravity_to_openai_stream(
                                                                 } else {
                                                                     accumulated_response.clone()
                                                                 };
-                                                                ctx.stats.record_detailed_request_exact(
+                                                                ctx.stats.record_detailed_request_full(
                                                                     ctx.method,
                                                                     ctx.path,
                                                                     &ctx.model,
@@ -408,6 +490,7 @@ pub fn process_antigravity_to_openai_stream(
                                                                     in_tok + out_tok,
                                                                     in_tok,
                                                                     out_tok,
+                                                                    total_cached_tokens,
                                                                     elapsed,
                                                                     &ctx.account_name,
                                                                     &ctx.reasoning_effort,
@@ -445,11 +528,17 @@ pub fn process_antigravity_to_openai_stream(
             prompt_tokens: in_tok,
             completion_tokens: out_tok,
             total_tokens: in_tok + out_tok,
-            prompt_tokens_details: None,
+            prompt_tokens_details: Some(PromptTokensDetails {
+                cached_tokens: total_cached_tokens,
+                audio_tokens: 0,
+            }),
             completion_tokens_details: None,
+            prompt_cache_hit_tokens: if total_cached_tokens > 0 { Some(total_cached_tokens) } else { None },
+            prompt_cache_miss_tokens: if total_cached_tokens > 0 { Some(in_tok.saturating_sub(total_cached_tokens)) } else { None },
         };
 
-        let chunk = create_stream_chunk_with_usage(&stream_id, &model_name, None, None, Some("stop"), Some(usage_val.clone()));
+        let fallback_stop = if has_emitted_tools { "tool_calls" } else { "stop" };
+        let chunk = create_stream_chunk_with_usage(&stream_id, &model_name, None, None, Some(fallback_stop), Some(usage_val.clone()));
         yield Ok(Bytes::from(chunk));
         let u_chunk = create_stream_usage_chunk(&stream_id, &model_name, usage_val);
         yield Ok(Bytes::from(u_chunk));
@@ -462,7 +551,7 @@ pub fn process_antigravity_to_openai_stream(
             } else {
                 accumulated_response
             };
-            ctx.stats.record_detailed_request_exact(
+            ctx.stats.record_detailed_request_full(
                 ctx.method,
                 ctx.path,
                 &ctx.model,
@@ -470,6 +559,7 @@ pub fn process_antigravity_to_openai_stream(
                 in_tok + out_tok,
                 in_tok,
                 out_tok,
+                total_cached_tokens,
                 elapsed,
                 &ctx.account_name,
                 &ctx.reasoning_effort,
@@ -498,6 +588,7 @@ pub fn process_antigravity_to_claude_stream(
         let mut block_index: usize = 0;
         let mut total_output_tokens: u64 = 0;
         let mut total_input_tokens: u64 = 50;
+        let mut total_cached_tokens: u64 = 0;
         let mut accumulated_response = String::new();
 
         loop {
@@ -535,7 +626,7 @@ pub fn process_antigravity_to_claude_stream(
                                                     } else {
                                                         accumulated_response.clone()
                                                     };
-                                                    ctx.stats.record_detailed_request_exact(
+                                                    ctx.stats.record_detailed_request_full(
                                                         ctx.method,
                                                         ctx.path,
                                                         &ctx.model,
@@ -543,6 +634,7 @@ pub fn process_antigravity_to_claude_stream(
                                                         total_input_tokens + total_output_tokens,
                                                         total_input_tokens,
                                                         total_output_tokens,
+                                                        total_cached_tokens,
                                                         elapsed,
                                                         &ctx.account_name,
                                                         &ctx.reasoning_effort,
@@ -565,11 +657,21 @@ pub fn process_antigravity_to_claude_stream(
                                                     if let Some(ct) = usage.get("candidatesTokenCount").and_then(|v| v.as_u64()) {
                                                         total_output_tokens = ct;
                                                     }
+                                                    if let Some(cct) = usage.get("cachedContentTokenCount").and_then(|v| v.as_u64()) {
+                                                        total_cached_tokens = cct;
+                                                    }
                                                 }
 
                                                 // 1. Emit message_start on first valid response frame
                                                 if !message_start_sent {
                                                     message_start_sent = true;
+                                                    let mut start_usage = serde_json::json!({
+                                                        "input_tokens": total_input_tokens,
+                                                        "output_tokens": 0
+                                                    });
+                                                    if total_cached_tokens > 0 {
+                                                        start_usage["cache_read_input_tokens"] = serde_json::json!(total_cached_tokens);
+                                                    }
                                                     let start_event = serde_json::json!({
                                                         "type": "message_start",
                                                         "message": {
@@ -580,10 +682,7 @@ pub fn process_antigravity_to_claude_stream(
                                                             "model": &model_name,
                                                             "stop_reason": null,
                                                             "stop_sequence": null,
-                                                            "usage": {
-                                                                "input_tokens": total_input_tokens,
-                                                                "output_tokens": 0
-                                                            }
+                                                            "usage": start_usage
                                                         }
                                                     });
                                                     yield Ok(Bytes::from(format!("event: message_start\ndata: {}\n\n", start_event)));
@@ -703,7 +802,7 @@ pub fn process_antigravity_to_claude_stream(
                                                                     } else {
                                                                         accumulated_response.clone()
                                                                     };
-                                                                    ctx.stats.record_detailed_request_exact(
+                                                                    ctx.stats.record_detailed_request_full(
                                                                         ctx.method,
                                                                         ctx.path,
                                                                         &ctx.model,
@@ -711,6 +810,7 @@ pub fn process_antigravity_to_claude_stream(
                                                                         total_input_tokens + total_output_tokens,
                                                                         total_input_tokens,
                                                                         total_output_tokens,
+                                                                        total_cached_tokens,
                                                                         elapsed,
                                                                         &ctx.account_name,
                                                                         &ctx.reasoning_effort,
@@ -754,7 +854,7 @@ pub fn process_antigravity_to_claude_stream(
             } else {
                 accumulated_response
             };
-            ctx.stats.record_detailed_request_exact(
+            ctx.stats.record_detailed_request_full(
                 ctx.method,
                 ctx.path,
                 &ctx.model,
@@ -762,6 +862,7 @@ pub fn process_antigravity_to_claude_stream(
                 total_input_tokens + total_output_tokens,
                 total_input_tokens,
                 total_output_tokens,
+                total_cached_tokens,
                 elapsed,
                 &ctx.account_name,
                 &ctx.reasoning_effort,

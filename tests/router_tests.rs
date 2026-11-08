@@ -43,10 +43,22 @@ mod tests {
             proxy_url: None,
         };
 
-        assert_eq!(resolve_model("claude-3-7-sonnet", &account), "claude-3-7-sonnet-20250219");
-        assert_eq!(resolve_model("claude-3-7-sonnet (low)", &account), "claude-3-7-sonnet-20250219");
-        assert_eq!(resolve_model("sonnet-3.7 (high)", &account), "claude-3-7-sonnet-20250219");
-        assert_eq!(resolve_model("claude-3-5-sonnet", &account), "claude-3-5-sonnet-20241022");
+        assert_eq!(
+            resolve_model("claude-3-7-sonnet", &account),
+            "claude-3-7-sonnet-20250219"
+        );
+        assert_eq!(
+            resolve_model("claude-3-7-sonnet (low)", &account),
+            "claude-3-7-sonnet-20250219"
+        );
+        assert_eq!(
+            resolve_model("sonnet-3.7 (high)", &account),
+            "claude-3-7-sonnet-20250219"
+        );
+        assert_eq!(
+            resolve_model("claude-3-5-sonnet", &account),
+            "claude-3-5-sonnet-20241022"
+        );
     }
 
     #[test]
@@ -67,7 +79,8 @@ mod tests {
         assert_eq!(eff_high, Some(ReasoningEffort::High));
         assert_eq!(eff_high.unwrap().budget_tokens(), 16384);
 
-        let (base_off, eff_off) = parse_model_and_reasoning("claude-3-7-sonnet (no-thinking)", None);
+        let (base_off, eff_off) =
+            parse_model_and_reasoning("claude-3-7-sonnet (no-thinking)", None);
         assert_eq!(base_off, "claude-3-7-sonnet");
         assert_eq!(eff_off, Some(ReasoningEffort::Off));
 
@@ -93,16 +106,27 @@ mod tests {
 
         let broadcasted = cfg.get_broadcast_models();
         assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6"));
-        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6 (low)"));
-        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6 (medium)"));
-        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6 (high)"));
-        assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6 (no-thinking)"));
+        assert!(broadcasted
+            .iter()
+            .any(|m| m["id"] == "claude-sonnet-4-6 (low)"));
+        assert!(broadcasted
+            .iter()
+            .any(|m| m["id"] == "claude-sonnet-4-6 (medium)"));
+        assert!(broadcasted
+            .iter()
+            .any(|m| m["id"] == "claude-sonnet-4-6 (high)"));
+        assert!(broadcasted
+            .iter()
+            .any(|m| m["id"] == "claude-sonnet-4-6 (no-thinking)"));
 
         // When group_reasoning_clones is enabled, clones should NOT be present
         cfg.group_reasoning_clones = true;
         let grouped = cfg.get_broadcast_models();
         assert!(grouped.iter().any(|m| m["id"] == "claude-sonnet-4-6"));
-        assert!(grouped.iter().any(|m| m["id"] == "claude-sonnet-4-6" && m["reasoning"]["supported_efforts"].is_array()));
+        assert!(grouped
+            .iter()
+            .any(|m| m["id"] == "claude-sonnet-4-6"
+                && m["reasoning"]["supported_efforts"].is_array()));
         assert!(!grouped.iter().any(|m| m["id"] == "claude-sonnet-4-6 (low)"));
     }
 
@@ -117,6 +141,8 @@ mod tests {
                     reasoning_content: None,
                     refusal: None,
                     name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
                 },
                 OpenAIMessage {
                     role: "user".into(),
@@ -124,6 +150,8 @@ mod tests {
                     reasoning_content: None,
                     refusal: None,
                     name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
                 },
             ],
             stream: true,
@@ -132,10 +160,16 @@ mod tests {
             max_completion_tokens: None,
             reasoning_effort: None,
             stream_options: None,
+            tools: None,
+            tool_choice: None,
             extra: Default::default(),
         };
 
-        let claude_req = convert_openai_to_claude(&req, "claude-3-7-sonnet-20250219", Some(ReasoningEffort::Low));
+        let claude_req = convert_openai_to_claude(
+            &req,
+            "claude-3-7-sonnet-20250219",
+            Some(ReasoningEffort::Low),
+        );
         assert_eq!(claude_req.model, "claude-3-7-sonnet-20250219");
         assert_eq!(claude_req.messages.len(), 1);
         assert!(claude_req.thinking.is_some());
@@ -162,6 +196,8 @@ mod tests {
             usage: ClaudeUsage {
                 input_tokens: 50,
                 output_tokens: 120,
+                cache_creation_input_tokens: None,
+                cache_read_input_tokens: None,
             },
         };
 
@@ -181,7 +217,13 @@ mod tests {
 
     #[test]
     fn test_create_stream_chunk() {
-        let chunk = create_stream_chunk("chatcmpl-test", "claude-3-7-sonnet", Some("chunk text"), None, None);
+        let chunk = create_stream_chunk(
+            "chatcmpl-test",
+            "claude-3-7-sonnet",
+            Some("chunk text"),
+            None,
+            None,
+        );
         assert!(chunk.starts_with("data: "));
         assert!(chunk.contains("chunk text"));
         assert!(chunk.ends_with("\n\n"));
@@ -193,8 +235,16 @@ mod tests {
         apply_fingerprint(&mut headers, "Claude Code 2.x");
 
         assert!(headers.contains_key("user-agent"));
-        assert!(headers.get("user-agent").unwrap().to_str().unwrap().contains("claude-code"));
-        assert_eq!(headers.get("anthropic-version").unwrap().to_str().unwrap(), "2023-06-01");
+        assert!(headers
+            .get("user-agent")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("claude-code"));
+        assert_eq!(
+            headers.get("anthropic-version").unwrap().to_str().unwrap(),
+            "2023-06-01"
+        );
     }
 
     #[test]
@@ -216,7 +266,9 @@ mod tests {
 
     #[test]
     fn test_antigravity_payload_conversion() {
-        use amr::proxy::antigravity::{build_antigravity_payload, convert_antigravity_response_to_openai};
+        use amr::proxy::antigravity::{
+            build_antigravity_payload, convert_antigravity_response_to_openai,
+        };
 
         let req = OpenAIChatRequest {
             model: "claude-3-7-sonnet".into(),
@@ -227,6 +279,8 @@ mod tests {
                     reasoning_content: None,
                     refusal: None,
                     name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
                 },
                 OpenAIMessage {
                     role: "user".into(),
@@ -234,6 +288,8 @@ mod tests {
                     reasoning_content: None,
                     refusal: None,
                     name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
                 },
             ],
             stream: false,
@@ -242,21 +298,109 @@ mod tests {
             max_completion_tokens: None,
             reasoning_effort: None,
             stream_options: None,
+            tools: None,
+            tool_choice: None,
             extra: Default::default(),
         };
 
-        let payload_46 = build_antigravity_payload(&req, "claude-sonnet-4-6", Some("test-project"), Some(ReasoningEffort::Medium));
+        let payload_46 = build_antigravity_payload(
+            &req,
+            "claude-sonnet-4-6",
+            Some("test-project"),
+            Some(ReasoningEffort::Medium),
+        );
         assert_eq!(payload_46["model"], "claude-sonnet-4-6");
 
-        let payload = build_antigravity_payload(&req, "claude-sonnet-5-5", Some("test-project"), Some(ReasoningEffort::Medium));
+        let payload = build_antigravity_payload(
+            &req,
+            "claude-sonnet-5-5",
+            Some("test-project"),
+            Some(ReasoningEffort::Medium),
+        );
         assert_eq!(payload["model"], "claude-sonnet-5-5-high");
         assert_eq!(payload["project"], "test-project");
         assert_eq!(payload["userAgent"], "antigravity");
-        assert!(payload["request"]["systemInstruction"]["parts"][0]["text"].as_str().unwrap().contains("Antigravity"));
+        assert!(payload["request"]["systemInstruction"]["parts"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Antigravity"));
         assert_eq!(payload["request"]["contents"][0]["role"], "user");
-        assert_eq!(payload["request"]["generationConfig"]["thinkingConfig"]["thinkingBudget"], 4096);
+        assert_eq!(
+            payload["request"]["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+            4096
+        );
 
-        // Test Antigravity Response conversion
+        // Test Antigravity Response conversion with functionCall
+        let raw_upstream_tools = serde_json::json!({
+            "response": {
+                "candidates": [{
+                    "finishReason": "STOP",
+                    "content": {
+                        "parts": [
+                            {
+                                "functionCall": {
+                                    "name": "cordis-plugin-development:skill",
+                                    "args": { "param1": "val1" },
+                                    "id": "call_123"
+                                }
+                            }
+                        ]
+                    }
+                }]
+            }
+        });
+
+        let oai_tools =
+            convert_antigravity_response_to_openai(&raw_upstream_tools, "gemini-3.8-flash");
+        assert_eq!(
+            oai_tools.choices[0].finish_reason.as_deref(),
+            Some("tool_calls")
+        );
+        let tc = oai_tools.choices[0].message.tool_calls.as_ref().unwrap();
+        assert_eq!(tc.len(), 1);
+        assert_eq!(tc[0]["id"], "call_123");
+        assert_eq!(tc[0]["function"]["name"], "cordis-plugin-development:skill");
+
+        // Test Antigravity request with tools mapping
+        let req_with_tools = OpenAIChatRequest {
+            model: "gemini-3.8-flash".into(),
+            messages: vec![OpenAIMessage {
+                role: "user".into(),
+                content: Value::String("hi".into()),
+                reasoning_content: None,
+                refusal: None,
+                name: None,
+                tool_calls: None,
+                tool_call_id: None,
+            }],
+            stream: true,
+            temperature: None,
+            max_tokens: None,
+            max_completion_tokens: None,
+            reasoning_effort: None,
+            stream_options: None,
+            tools: Some(vec![serde_json::json!({
+                "type": "function",
+                "function": {
+                    "name": "search",
+                    "description": "search tool",
+                    "parameters": { "type": "object" }
+                }
+            })]),
+            tool_choice: None,
+            extra: Default::default(),
+        };
+        let payload_with_tools =
+            build_antigravity_payload(&req_with_tools, "gemini-3.8-flash", None, None);
+        assert!(
+            payload_with_tools["request"]["tools"][0]["functionDeclarations"]
+                .as_array()
+                .is_some()
+        );
+        assert_eq!(
+            payload_with_tools["request"]["tools"][0]["functionDeclarations"][0]["name"],
+            "search"
+        );
         let raw_upstream = serde_json::json!({
             "response": {
                 "candidates": [{
@@ -272,9 +416,125 @@ mod tests {
         });
 
         let oai = convert_antigravity_response_to_openai(&raw_upstream, "claude-3-7-sonnet");
-        assert_eq!(oai.choices[0].message.reasoning_content.as_deref(), Some("Deep thinking step..."));
-        assert_eq!(oai.choices[0].message.content, Value::String("Code output here.".into()));
+        assert_eq!(
+            oai.choices[0].message.reasoning_content.as_deref(),
+            Some("Deep thinking step...")
+        );
+        assert_eq!(
+            oai.choices[0].message.content,
+            Value::String("Code output here.".into())
+        );
         assert_eq!(oai.choices[0].finish_reason.as_deref(), Some("stop"));
+    }
+
+    #[test]
+    fn test_thought_signature_cache_and_turn2_handling() {
+        use amr::proxy::antigravity::{
+            build_antigravity_payload, get_thought_signature, record_thought_signature,
+        };
+
+        // 1. Record thought signature for a tool call
+        let call_id = "call_signed_12345";
+        let sig = "EJgCGI4EGgBteWNyeXB0b3NpZw==";
+        record_thought_signature(call_id, "search_web", sig);
+
+        assert_eq!(get_thought_signature(call_id).as_deref(), Some(sig));
+        assert_eq!(get_thought_signature("call_unknown"), None);
+
+        // 2. Build Turn 2 payload with one signed call and one unsigned call
+        let turn2_req = OpenAIChatRequest {
+            model: "gemini-3.8-flash".into(),
+            messages: vec![
+                OpenAIMessage {
+                    role: "user".into(),
+                    content: Value::String("Please search for weather".into()),
+                    reasoning_content: None,
+                    refusal: None,
+                    name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
+                },
+                OpenAIMessage {
+                    role: "assistant".into(),
+                    content: Value::Null,
+                    reasoning_content: None,
+                    refusal: None,
+                    name: None,
+                    tool_calls: Some(vec![
+                        serde_json::json!({
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": "search_web",
+                                "arguments": "{\"query\":\"weather\"}"
+                            }
+                        }),
+                        serde_json::json!({
+                            "id": "call_unsigned_67890",
+                            "type": "function",
+                            "function": {
+                                "name": "calc",
+                                "arguments": "{\"expr\":\"2+2\"}"
+                            }
+                        }),
+                    ]),
+                    tool_call_id: None,
+                },
+                OpenAIMessage {
+                    role: "tool".into(),
+                    content: Value::String("Sunny, 20C".into()),
+                    reasoning_content: None,
+                    refusal: None,
+                    name: None,
+                    tool_calls: None,
+                    tool_call_id: Some(call_id.into()),
+                },
+                OpenAIMessage {
+                    role: "tool".into(),
+                    content: Value::String("4".into()),
+                    reasoning_content: None,
+                    refusal: None,
+                    name: None,
+                    tool_calls: None,
+                    tool_call_id: Some("call_unsigned_67890".into()),
+                },
+            ],
+            stream: true,
+            temperature: None,
+            max_tokens: None,
+            max_completion_tokens: None,
+            reasoning_effort: None,
+            stream_options: None,
+            tools: None,
+            tool_choice: None,
+            extra: Default::default(),
+        };
+
+        let payload = build_antigravity_payload(&turn2_req, "gemini-3.8-flash", None, None);
+        let contents = payload["request"]["contents"].as_array().expect("contents array");
+
+        // Contents structure:
+        // [0]: user ("Please search for weather")
+        // [1]: model with parts:
+        //      part 0: functionCall with thoughtSignature
+        //      part 1: text fallback for unsigned call
+        // [2]: user with merged tool responses
+
+        assert_eq!(contents.len(), 3);
+        assert_eq!(contents[0]["role"], "user");
+        assert_eq!(contents[1]["role"], "model");
+        assert_eq!(contents[2]["role"], "user");
+
+        let model_parts = contents[1]["parts"].as_array().expect("model parts");
+        assert_eq!(model_parts[0]["thoughtSignature"], sig);
+        assert_eq!(model_parts[0]["functionCall"]["name"], "search_web");
+        assert!(model_parts[1]["text"].as_str().unwrap().contains("[Called tool calc"));
+
+        let user_tool_parts = contents[2]["parts"].as_array().expect("user parts");
+        // tool responses are merged into the same user message
+        assert_eq!(user_tool_parts.len(), 2);
+        assert_eq!(user_tool_parts[0]["functionResponse"]["name"], "search_web");
+        assert!(user_tool_parts[1]["text"].as_str().unwrap().contains("[Tool result for"));
     }
 
     #[test]
@@ -350,11 +610,15 @@ mod tests {
         cfg.accounts = vec![acc_a.clone(), acc_b.clone()];
 
         // Request 1 in conversation session "chat-1": should pick acc_a (80% remaining > 50% remaining)
-        let chosen1 = balancer.select_account(&cfg, "claude-sonnet-4-6", Some("chat-1")).expect("must pick account");
+        let chosen1 = balancer
+            .select_account(&cfg, "claude-sonnet-4-6", Some("chat-1"))
+            .expect("must pick account");
         assert_eq!(chosen1.id, "acc-a");
 
         // Request 2 in same session: should stick to acc_a for prompt caching (Cache hit!)
-        let chosen2 = balancer.select_account(&cfg, "claude-sonnet-4-6", Some("chat-1")).expect("must pick account");
+        let chosen2 = balancer
+            .select_account(&cfg, "claude-sonnet-4-6", Some("chat-1"))
+            .expect("must pick account");
         assert_eq!(chosen2.id, "acc-a");
 
         let (_, hits, _, _, active_pins) = balancer.get_metrics();
@@ -363,7 +627,9 @@ mod tests {
 
         // Test Cooldown Failover: mark acc-a as rate-limited (429)
         balancer.mark_cooldown("acc-a", 30);
-        let chosen3 = balancer.select_account(&cfg, "claude-sonnet-4-6", Some("chat-1")).expect("must failover");
+        let chosen3 = balancer
+            .select_account(&cfg, "claude-sonnet-4-6", Some("chat-1"))
+            .expect("must failover");
         assert_eq!(chosen3.id, "acc-b"); // Automatically routed to acc-b!
     }
 
@@ -440,17 +706,23 @@ mod tests {
         cfg.accounts = vec![acc_free.clone(), acc_pro.clone()];
 
         // 1. Claude request: Free account MUST NOT be selected; must route to acc-pro!
-        let claude_chosen = balancer.select_account(&cfg, "claude-3-7-sonnet", None).expect("must route to pro");
+        let claude_chosen = balancer
+            .select_account(&cfg, "claude-3-7-sonnet", None)
+            .expect("must route to pro");
         assert_eq!(claude_chosen.id, "acc-pro");
 
         // 2. Gemini request: Both accounts are eligible, Free account has higher Gemini quota (100% > 90%), so selects acc-free!
-        let gemini_chosen = balancer.select_account(&cfg, "gemini-3.8-flash", None).expect("must route to free");
+        let gemini_chosen = balancer
+            .select_account(&cfg, "gemini-3.8-flash", None)
+            .expect("must route to free");
         assert_eq!(gemini_chosen.id, "acc-free");
 
         // 3. If acc-pro is disabled or exhausted, Claude requests return clean quota exhausted error!
         let mut cfg_only_free = cfg.clone();
         cfg_only_free.accounts = vec![acc_free.clone()];
-        let err = balancer.select_account(&cfg_only_free, "claude-opus-4-6", None).unwrap_err();
+        let err = balancer
+            .select_account(&cfg_only_free, "claude-opus-4-6", None)
+            .unwrap_err();
         match err {
             amr::proxy::balancer::RoutingError::ClaudeQuotaExhausted { reset } => {
                 assert!(reset.contains("4h"));
@@ -473,6 +745,8 @@ mod tests {
                     reasoning_content: None,
                     refusal: None,
                     name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
                 },
                 OpenAIMessage {
                     role: "user".into(),
@@ -480,6 +754,8 @@ mod tests {
                     reasoning_content: None,
                     refusal: None,
                     name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
                 },
             ],
             stream: true,
@@ -488,6 +764,8 @@ mod tests {
             max_completion_tokens: None,
             reasoning_effort: None,
             stream_options: None,
+            tools: None,
+            tool_choice: None,
             extra: Default::default(),
         };
 
@@ -501,6 +779,8 @@ mod tests {
                     reasoning_content: None,
                     refusal: None,
                     name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
                 },
                 OpenAIMessage {
                     role: "user".into(),
@@ -508,6 +788,8 @@ mod tests {
                     reasoning_content: None,
                     refusal: None,
                     name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
                 },
                 OpenAIMessage {
                     role: "assistant".into(),
@@ -515,6 +797,8 @@ mod tests {
                     reasoning_content: None,
                     refusal: None,
                     name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
                 },
                 OpenAIMessage {
                     role: "user".into(),
@@ -522,6 +806,8 @@ mod tests {
                     reasoning_content: None,
                     refusal: None,
                     name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
                 },
             ],
             stream: true,
@@ -530,6 +816,8 @@ mod tests {
             max_completion_tokens: None,
             reasoning_effort: None,
             stream_options: None,
+            tools: None,
+            tool_choice: None,
             extra: Default::default(),
         };
 
@@ -542,7 +830,9 @@ mod tests {
 
     #[test]
     fn test_multimodal_vision_conversion() {
-        use amr::proxy::antigravity::{build_antigravity_payload, build_antigravity_payload_from_claude};
+        use amr::proxy::antigravity::{
+            build_antigravity_payload, build_antigravity_payload_from_claude,
+        };
         use amr::proxy::mappers::openai::{OpenAIChatRequest, OpenAIMessage};
         use serde_json::json;
 
@@ -567,50 +857,67 @@ mod tests {
             ]
         });
 
-        let pa_payload1 = build_antigravity_payload_from_claude(&anthropic_img_req, "gemini-2.5-pro", None, None);
-        let contents1 = pa_payload1["request"]["contents"].as_array().expect("must have contents array");
-        let parts1 = contents1[0]["parts"].as_array().expect("must have parts array");
+        let pa_payload1 =
+            build_antigravity_payload_from_claude(&anthropic_img_req, "gemini-2.5-pro", None, None);
+        let contents1 = pa_payload1["request"]["contents"]
+            .as_array()
+            .expect("must have contents array");
+        let parts1 = contents1[0]["parts"]
+            .as_array()
+            .expect("must have parts array");
         assert_eq!(parts1.len(), 2);
         assert_eq!(parts1[0]["text"], "What is in this screenshot?");
         assert_eq!(parts1[1]["inlineData"]["mimeType"], "image/png");
-        assert!(parts1[1]["inlineData"]["data"].as_str().unwrap().starts_with("iVBORw"));
+        assert!(parts1[1]["inlineData"]["data"]
+            .as_str()
+            .unwrap()
+            .starts_with("iVBORw"));
 
         // 2. OpenAI-style image_url data URI
         let openai_img_req = OpenAIChatRequest {
             model: "gpt-4o".into(),
-            messages: vec![
-                OpenAIMessage {
-                    role: "user".into(),
-                    content: json!([
-                        { "type": "text", "text": "Inspect this image" },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/"
-                            }
+            messages: vec![OpenAIMessage {
+                role: "user".into(),
+                content: json!([
+                    { "type": "text", "text": "Inspect this image" },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/"
                         }
-                    ]),
-                    reasoning_content: None,
-                    refusal: None,
-                    name: None,
-                }
-            ],
+                    }
+                ]),
+                reasoning_content: None,
+                refusal: None,
+                name: None,
+                tool_calls: None,
+                tool_call_id: None,
+            }],
             stream: false,
             temperature: None,
             max_tokens: None,
             max_completion_tokens: None,
             reasoning_effort: None,
             stream_options: None,
+            tools: None,
+            tool_choice: None,
             extra: Default::default(),
         };
 
         let pa_payload2 = build_antigravity_payload(&openai_img_req, "gemini-2.5-pro", None, None);
-        let contents2 = pa_payload2["request"]["contents"].as_array().expect("must have contents array");
-        let parts2 = contents2[0]["parts"].as_array().expect("must have parts array");
+        let contents2 = pa_payload2["request"]["contents"]
+            .as_array()
+            .expect("must have contents array");
+        let parts2 = contents2[0]["parts"]
+            .as_array()
+            .expect("must have parts array");
         assert_eq!(parts2.len(), 2);
         assert_eq!(parts2[0]["text"], "Inspect this image");
         assert_eq!(parts2[1]["inlineData"]["mimeType"], "image/jpeg");
-        assert_eq!(parts2[1]["inlineData"]["data"], "/9j/4AAQSkZJRgABAQEASABIAAD/");
+        assert_eq!(
+            parts2[1]["inlineData"]["data"],
+            "/9j/4AAQSkZJRgABAQEASABIAAD/"
+        );
     }
 
     #[test]
@@ -714,12 +1021,16 @@ mod tests {
 
         // acc_error must be completely ignored.
         // acc_low is under threshold (5% < 10%), so balancer routes to acc-healthy.
-        let chosen = balancer.select_account(&cfg, "claude-sonnet-4-6", None).expect("must select account");
+        let chosen = balancer
+            .select_account(&cfg, "claude-sonnet-4-6", None)
+            .expect("must select account");
         assert_eq!(chosen.id, "acc-healthy");
 
         // If only acc_low and acc_error exist, balancer falls back gracefully to acc_low rather than failing
         cfg.accounts = vec![acc_low.clone(), acc_error.clone()];
-        let fallback = balancer.select_account(&cfg, "claude-sonnet-4-6", None).expect("must select fallback");
+        let fallback = balancer
+            .select_account(&cfg, "claude-sonnet-4-6", None)
+            .expect("must select fallback");
         assert_eq!(fallback.id, "acc-low");
     }
 
@@ -741,7 +1052,9 @@ mod tests {
 
     #[test]
     fn test_stream_usage_chunk_and_smoothing() {
-        use amr::proxy::mappers::openai::{create_stream_chunk_with_usage, create_stream_usage_chunk, OpenAIUsage};
+        use amr::proxy::mappers::openai::{
+            create_stream_chunk_with_usage, create_stream_usage_chunk, OpenAIUsage,
+        };
         use amr::proxy::stream::emit_smooth_chunks;
 
         let usage = OpenAIUsage {
@@ -750,17 +1063,44 @@ mod tests {
             total_tokens: 57,
             prompt_tokens_details: None,
             completion_tokens_details: None,
+            prompt_cache_hit_tokens: None,
+            prompt_cache_miss_tokens: None,
         };
 
         // 1. Verify usage chunk format for DeepSeek Harness / OpenAI standard
-        let chunk_with_usage = create_stream_chunk_with_usage("chatcmpl-123", "gemini-3.8-flash", None, None, Some("stop"), Some(usage.clone()));
+        let chunk_with_usage = create_stream_chunk_with_usage(
+            "chatcmpl-123",
+            "gemini-3.8-flash",
+            None,
+            None,
+            Some("stop"),
+            Some(usage.clone()),
+        );
         assert!(chunk_with_usage.contains("\"prompt_tokens\":15"));
         assert!(chunk_with_usage.contains("\"completion_tokens\":42"));
         assert!(chunk_with_usage.contains("\"finish_reason\":\"stop\""));
 
-        let final_usage_chunk = create_stream_usage_chunk("chatcmpl-123", "gemini-3.8-flash", usage);
+        let final_usage_chunk =
+            create_stream_usage_chunk("chatcmpl-123", "gemini-3.8-flash", usage);
         assert!(final_usage_chunk.contains("\"prompt_tokens\":15"));
         assert!(final_usage_chunk.contains("\"choices\":[]"));
+
+        let cached_usage = OpenAIUsage {
+            prompt_tokens: 100,
+            completion_tokens: 50,
+            total_tokens: 150,
+            prompt_tokens_details: Some(amr::proxy::mappers::openai::PromptTokensDetails {
+                cached_tokens: 80,
+                audio_tokens: 0,
+            }),
+            completion_tokens_details: None,
+            prompt_cache_hit_tokens: None,
+            prompt_cache_miss_tokens: None,
+        };
+        let cached_chunk = create_stream_usage_chunk("chatcmpl-123", "gemini-3.8-flash", cached_usage);
+        assert!(cached_chunk.contains("\"cached_tokens\":80"));
+        assert!(cached_chunk.contains("\"prompt_cache_hit_tokens\":80"));
+        assert!(cached_chunk.contains("\"prompt_cache_miss_tokens\":20"));
 
         // 2. Verify smooth micro-chunking for natural streaming UI rendering
         let text = "fn calculate_fast_matrix_multiplication(a: &[f64], b: &[f64]) -> Vec<f64> {";
@@ -798,7 +1138,11 @@ mod tests {
         assert!(cfg.models.iter().any(|m| m.id == "Image generator"));
         assert!(cfg.models.iter().any(|m| m.id == "gemini-3.8-flash"));
         assert!(!cfg.models.iter().any(|m| m.id == "gemini-3.8-flash-medium"));
-        let opus46 = cfg.models.iter().find(|m| m.id == "claude-opus-4-6").unwrap();
+        let opus46 = cfg
+            .models
+            .iter()
+            .find(|m| m.id == "claude-opus-4-6")
+            .unwrap();
         assert!(opus46.supports_thinking);
     }
 
@@ -926,19 +1270,31 @@ mod tests {
         assert!(initial.remaining_secs.is_none());
 
         // Record failure with specific reason
-        balancer.record_failure_with_reason(acc_id, 429, 90, 0, Some("HTTP 429: Resource exhausted"));
+        balancer.record_failure_with_reason(
+            acc_id,
+            429,
+            90,
+            0,
+            Some("HTTP 429: Resource exhausted"),
+        );
         let step1 = balancer.get_detailed_health(acc_id);
         assert_eq!(step1.stage, HealthStage::SoftPause);
         assert_eq!(step1.stage_level, 1);
         assert_eq!(step1.failure_count, 1);
         assert!(step1.is_cooling);
         assert_eq!(step1.last_status_code, Some(429));
-        assert_eq!(step1.last_failure_reason.as_deref(), Some("HTTP 429: Resource exhausted"));
+        assert_eq!(
+            step1.last_failure_reason.as_deref(),
+            Some("HTTP 429: Resource exhausted")
+        );
 
         // Update reason
         balancer.update_failure_reason(acc_id, 429, "HTTP 429: Updated quota details");
         let updated = balancer.get_detailed_health(acc_id);
-        assert_eq!(updated.last_failure_reason.as_deref(), Some("HTTP 429: Updated quota details"));
+        assert_eq!(
+            updated.last_failure_reason.as_deref(),
+            Some("HTTP 429: Updated quota details")
+        );
 
         // Manual reset back to healthy
         balancer.reset_health(acc_id);
@@ -953,16 +1309,29 @@ mod tests {
 
     #[test]
     fn test_upstream_spoofing_headers_cleanliness_and_resilience() {
+        use amr::proxy::antigravity::{
+            get_official_hub_user_agent, FETCH_MODELS_ENDPOINTS, LOAD_PROJECT_ENDPOINTS,
+            QUOTA_SUMMARY_ENDPOINTS, STREAM_ENDPOINTS,
+        };
         use amr::proxy::server::build_upstream_headers;
-        use amr::proxy::antigravity::{QUOTA_SUMMARY_ENDPOINTS, STREAM_ENDPOINTS, LOAD_PROJECT_ENDPOINTS, FETCH_MODELS_ENDPOINTS, get_official_hub_user_agent};
 
         // 1. Verify all endpoints never contain public unauthenticated/broken prod endpoint
-        for ep in QUOTA_SUMMARY_ENDPOINTS.iter()
+        for ep in QUOTA_SUMMARY_ENDPOINTS
+            .iter()
             .chain(STREAM_ENDPOINTS.iter())
             .chain(LOAD_PROJECT_ENDPOINTS.iter())
-            .chain(FETCH_MODELS_ENDPOINTS.iter()) {
-            assert!(!ep.starts_with("https://cloudcode-pa.googleapis.com"), "Endpoint {} should not be bare prod endpoint", ep);
-            assert!(ep.contains("daily-cloudcode-pa"), "Endpoint {} must target daily-cloudcode-pa", ep);
+            .chain(FETCH_MODELS_ENDPOINTS.iter())
+        {
+            assert!(
+                !ep.starts_with("https://cloudcode-pa.googleapis.com"),
+                "Endpoint {} should not be bare prod endpoint",
+                ep
+            );
+            assert!(
+                ep.contains("daily-cloudcode-pa"),
+                "Endpoint {} must target daily-cloudcode-pa",
+                ep
+            );
         }
 
         // 2. Verify Claude upstream headers
@@ -979,10 +1348,19 @@ mod tests {
             "claude-sonnet-4-6",
         );
 
-        assert_eq!(headers_claude.get("authorization").unwrap(), "Bearer ya29.test_token_with_whitespace");
+        assert_eq!(
+            headers_claude.get("authorization").unwrap(),
+            "Bearer ya29.test_token_with_whitespace"
+        );
         assert_eq!(headers_claude.get("accept").unwrap(), "text/event-stream");
-        assert_eq!(headers_claude.get("content-type").unwrap(), "application/json");
-        assert_eq!(headers_claude.get("anthropic-beta").unwrap(), "claude-code-20250219");
+        assert_eq!(
+            headers_claude.get("content-type").unwrap(),
+            "application/json"
+        );
+        assert_eq!(
+            headers_claude.get("anthropic-beta").unwrap(),
+            "claude-code-20250219"
+        );
         let ua = headers_claude.get("user-agent").unwrap().to_str().unwrap();
         assert!(ua.starts_with("antigravity/hub/2.28.1"));
         assert!(ua.contains("os_type=linux"));

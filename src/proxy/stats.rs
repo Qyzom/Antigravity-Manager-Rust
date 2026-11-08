@@ -1,11 +1,11 @@
 use chrono::Local;
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use parking_lot::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogItem {
@@ -20,6 +20,8 @@ pub struct LogItem {
     pub prompt_tokens: u64,
     #[serde(default)]
     pub completion_tokens: u64,
+    #[serde(default)]
+    pub cached_tokens: u64,
     pub latency_ms: u64,
     #[serde(default)]
     pub account: String,
@@ -43,6 +45,8 @@ pub struct PersistentStats {
     pub total_tokens: u64,
     pub prompt_tokens: u64,
     pub completion_tokens: u64,
+    #[serde(default)]
+    pub cached_tokens: u64,
     pub thinking_tokens: u64,
     pub total_latency_ms: u64,
     pub max_latency_ms: u64,
@@ -55,6 +59,7 @@ pub struct ProxyStats {
     pub total_tokens: AtomicU64,
     pub prompt_tokens: AtomicU64,
     pub completion_tokens: AtomicU64,
+    pub cached_tokens: AtomicU64,
     pub thinking_tokens: AtomicU64,
     pub total_latency_ms: AtomicU64,
     pub max_latency_ms: AtomicU64,
@@ -78,6 +83,7 @@ impl ProxyStats {
             total_tokens: AtomicU64::new(0),
             prompt_tokens: AtomicU64::new(0),
             completion_tokens: AtomicU64::new(0),
+            cached_tokens: AtomicU64::new(0),
             thinking_tokens: AtomicU64::new(0),
             total_latency_ms: AtomicU64::new(0),
             max_latency_ms: AtomicU64::new(0),
@@ -88,15 +94,36 @@ impl ProxyStats {
 
         // Try load previous stats from stats.json
         if let Some(loaded) = Self::load_persistent_stats() {
-            stats.total_requests.store(loaded.total_requests, Ordering::Relaxed);
-            stats.successful_requests.store(loaded.successful_requests, Ordering::Relaxed);
-            stats.error_requests.store(loaded.error_requests, Ordering::Relaxed);
-            stats.total_tokens.store(loaded.total_tokens, Ordering::Relaxed);
-            stats.prompt_tokens.store(loaded.prompt_tokens, Ordering::Relaxed);
-            stats.completion_tokens.store(loaded.completion_tokens, Ordering::Relaxed);
-            stats.thinking_tokens.store(loaded.thinking_tokens, Ordering::Relaxed);
-            stats.total_latency_ms.store(loaded.total_latency_ms, Ordering::Relaxed);
-            stats.max_latency_ms.store(loaded.max_latency_ms, Ordering::Relaxed);
+            stats
+                .total_requests
+                .store(loaded.total_requests, Ordering::Relaxed);
+            stats
+                .successful_requests
+                .store(loaded.successful_requests, Ordering::Relaxed);
+            stats
+                .error_requests
+                .store(loaded.error_requests, Ordering::Relaxed);
+            stats
+                .total_tokens
+                .store(loaded.total_tokens, Ordering::Relaxed);
+            stats
+                .prompt_tokens
+                .store(loaded.prompt_tokens, Ordering::Relaxed);
+            stats
+                .completion_tokens
+                .store(loaded.completion_tokens, Ordering::Relaxed);
+            stats
+                .cached_tokens
+                .store(loaded.cached_tokens, Ordering::Relaxed);
+            stats
+                .thinking_tokens
+                .store(loaded.thinking_tokens, Ordering::Relaxed);
+            stats
+                .total_latency_ms
+                .store(loaded.total_latency_ms, Ordering::Relaxed);
+            stats
+                .max_latency_ms
+                .store(loaded.max_latency_ms, Ordering::Relaxed);
         }
 
         stats
@@ -114,7 +141,10 @@ impl ProxyStats {
 
     pub fn logs_folder_path() -> PathBuf {
         let cfg_path = crate::config::AppConfig::config_path();
-        cfg_path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."))
+        cfg_path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("."))
     }
 
     fn load_persistent_stats() -> Option<PersistentStats> {
@@ -135,6 +165,7 @@ impl ProxyStats {
             total_tokens: self.total_tokens.load(Ordering::Relaxed),
             prompt_tokens: self.prompt_tokens.load(Ordering::Relaxed),
             completion_tokens: self.completion_tokens.load(Ordering::Relaxed),
+            cached_tokens: self.cached_tokens.load(Ordering::Relaxed),
             thinking_tokens: self.thinking_tokens.load(Ordering::Relaxed),
             total_latency_ms: self.total_latency_ms.load(Ordering::Relaxed),
             max_latency_ms: self.max_latency_ms.load(Ordering::Relaxed),
@@ -155,6 +186,7 @@ impl ProxyStats {
         self.total_tokens.store(0, Ordering::Relaxed);
         self.prompt_tokens.store(0, Ordering::Relaxed);
         self.completion_tokens.store(0, Ordering::Relaxed);
+        self.cached_tokens.store(0, Ordering::Relaxed);
         self.thinking_tokens.store(0, Ordering::Relaxed);
         self.total_latency_ms.store(0, Ordering::Relaxed);
         self.max_latency_ms.store(0, Ordering::Relaxed);
@@ -240,6 +272,44 @@ impl ProxyStats {
         response_body: &str,
         error_msg: Option<&str>,
     ) {
+        self.record_detailed_request_full(
+            method,
+            path,
+            model,
+            status,
+            tokens,
+            prompt_tokens,
+            completion_tokens,
+            0,
+            latency_ms,
+            account,
+            reasoning_effort,
+            request_headers,
+            request_body,
+            response_body,
+            error_msg,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn record_detailed_request_full(
+        &self,
+        method: &str,
+        path: &str,
+        model: &str,
+        status: u16,
+        tokens: u64,
+        prompt_tokens: u64,
+        completion_tokens: u64,
+        cached_tokens: u64,
+        latency_ms: u64,
+        account: &str,
+        reasoning_effort: &str,
+        request_headers: &str,
+        request_body: &str,
+        response_body: &str,
+        error_msg: Option<&str>,
+    ) {
         self.total_requests.fetch_add(1, Ordering::Relaxed);
         if (200..300).contains(&status) {
             self.successful_requests.fetch_add(1, Ordering::Relaxed);
@@ -249,18 +319,28 @@ impl ProxyStats {
 
         self.total_tokens.fetch_add(tokens, Ordering::Relaxed);
         let thinking_est = tokens.saturating_sub(prompt_tokens + completion_tokens);
-        self.prompt_tokens.fetch_add(prompt_tokens, Ordering::Relaxed);
-        self.completion_tokens.fetch_add(completion_tokens, Ordering::Relaxed);
-        self.thinking_tokens.fetch_add(thinking_est, Ordering::Relaxed);
+        self.prompt_tokens
+            .fetch_add(prompt_tokens, Ordering::Relaxed);
+        self.completion_tokens
+            .fetch_add(completion_tokens, Ordering::Relaxed);
+        self.cached_tokens
+            .fetch_add(cached_tokens, Ordering::Relaxed);
+        self.thinking_tokens
+            .fetch_add(thinking_est, Ordering::Relaxed);
 
-        self.total_latency_ms.fetch_add(latency_ms, Ordering::Relaxed);
+        self.total_latency_ms
+            .fetch_add(latency_ms, Ordering::Relaxed);
         let current_max = self.max_latency_ms.load(Ordering::Relaxed);
         if latency_ms > current_max {
             self.max_latency_ms.store(latency_ms, Ordering::Relaxed);
         }
 
         // Periodically save stats to stats.json
-        if self.total_requests.load(Ordering::Relaxed).is_multiple_of(5) {
+        if self
+            .total_requests
+            .load(Ordering::Relaxed)
+            .is_multiple_of(5)
+        {
             self.save_persistent_stats();
         }
 
@@ -276,6 +356,7 @@ impl ProxyStats {
                 tokens,
                 prompt_tokens,
                 completion_tokens,
+                cached_tokens,
                 latency_ms,
                 account: account.to_string(),
                 reasoning_effort: reasoning_effort.to_string(),
@@ -325,12 +406,43 @@ impl ProxyStats {
         let total_lat = self.total_latency_ms.load(Ordering::Relaxed);
         let avg_lat = total_lat.checked_div(reqs).unwrap_or(0);
         let max_lat = self.max_latency_ms.load(Ordering::Relaxed);
-        (reqs, success, errors, prompt, completion, thinking, avg_lat, max_lat)
+        (
+            reqs, success, errors, prompt, completion, thinking, avg_lat, max_lat,
+        )
     }
 
     pub fn get_recent_logs(&self) -> Vec<LogItem> {
         let logs = self.recent_logs.read();
         logs.iter().cloned().collect()
+    }
+
+    /// Returns real latency percentiles (p50, p95, p99) in milliseconds computed from recent requests
+    pub fn get_latency_percentiles(&self) -> (u64, u64, u64) {
+        let logs = self.recent_logs.read();
+        if logs.is_empty() {
+            return (0, 0, 0);
+        }
+        let mut latencies: Vec<u64> = logs.iter().map(|l| l.latency_ms).collect();
+        latencies.sort_unstable();
+        let len = latencies.len();
+        let p50 = latencies[len * 50 / 100];
+        let p95 = latencies[((len * 95) / 100).min(len - 1)];
+        let p99 = latencies[((len * 99) / 100).min(len - 1)];
+        (p50, p95, p99)
+    }
+
+    /// Computes real token cache hit rate percentage (and fallback to balancer hit rate if no token caching yet)
+    pub fn get_token_cache_hit_rate(&self, balancer_hit_rate: f64) -> f64 {
+        let cached = self.cached_tokens.load(Ordering::Relaxed);
+        let prompt = self.prompt_tokens.load(Ordering::Relaxed);
+        let total_prompt = prompt + cached;
+        if total_prompt > 0 && cached > 0 {
+            (cached as f64 / total_prompt as f64) * 100.0
+        } else if balancer_hit_rate > 0.0 {
+            balancer_hit_rate
+        } else {
+            0.0
+        }
     }
 
     pub fn clear_logs(&self) {

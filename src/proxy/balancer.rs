@@ -47,19 +47,22 @@ impl std::fmt::Display for RoutingError {
                 "Gemini quota exhausted across all connected accounts (resets {})",
                 reset
             ),
-            Self::AllCoolingDown => write!(f, "All upstream accounts are currently cooling down after rate limits"),
+            Self::AllCoolingDown => write!(
+                f,
+                "All upstream accounts are currently cooling down after rate limits"
+            ),
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HealthStage {
-    Healthy,       // Level 0: 0 failures, fully active
-    SoftPause,     // Level 1: 1 failure, ~3s pause (±15% jitter)
-    Backoff,       // Level 2: 2 failures, ~15s pause (±15% jitter)
-    Cooldown,      // Level 3: 3 failures, ~60s pause (±15% jitter)
-    Quarantine,    // Level 4+: 4+ failures, ~300s quarantine (±15% jitter)
-    Probing,       // Timer expired, in trial probe mode (auto-heal on next success)
+    Healthy,    // Level 0: 0 failures, fully active
+    SoftPause,  // Level 1: 1 failure, ~3s pause (±15% jitter)
+    Backoff,    // Level 2: 2 failures, ~15s pause (±15% jitter)
+    Cooldown,   // Level 3: 3 failures, ~60s pause (±15% jitter)
+    Quarantine, // Level 4+: 4+ failures, ~300s quarantine (±15% jitter)
+    Probing,    // Timer expired, in trial probe mode (auto-heal on next success)
 }
 
 #[derive(Debug, Clone)]
@@ -203,8 +206,20 @@ impl LoadBalancer {
     /// Record a failure on an account (e.g. 429 Too Many Requests or 5xx).
     /// Advances through the adaptive exponential backoff ladder (3s -> 15s -> 60s -> quarantine)
     /// with randomized jitter (default ±15%) to prevent synthetic machine periodicities.
-    pub fn record_failure(&self, account_id: &str, status_code: u16, max_quarantine_secs: u64, jitter_pct: u8) {
-        self.record_failure_with_reason(account_id, status_code, max_quarantine_secs, jitter_pct, None);
+    pub fn record_failure(
+        &self,
+        account_id: &str,
+        status_code: u16,
+        max_quarantine_secs: u64,
+        jitter_pct: u8,
+    ) {
+        self.record_failure_with_reason(
+            account_id,
+            status_code,
+            max_quarantine_secs,
+            jitter_pct,
+            None,
+        );
     }
 
     /// Record a failure with exact status code and descriptive reason.
@@ -297,7 +312,10 @@ impl LoadBalancer {
         }
         let mut cds = self.account_cooldowns.write();
         cds.remove(account_id);
-        log::info!("[LoadBalancer] Health manually reset for account {}. Cooldown cleared.", account_id);
+        log::info!(
+            "[LoadBalancer] Health manually reset for account {}. Cooldown cleared.",
+            account_id
+        );
     }
 
     /// Record successful response on an account.
@@ -324,7 +342,13 @@ impl LoadBalancer {
 
     /// Mark account in temporary cooldown on rate-limit (429) or transient 5xx error
     pub fn mark_cooldown(&self, account_id: &str, duration_secs: u64) {
-        self.record_failure_with_reason(account_id, 429, duration_secs, 15, Some("Manual Cooldown (429)"));
+        self.record_failure_with_reason(
+            account_id,
+            429,
+            duration_secs,
+            15,
+            Some("Manual Cooldown (429)"),
+        );
     }
 
     /// Retrieve live health status of an account: (HealthStage, failure_count, remaining_cooldown_secs)
@@ -507,8 +531,12 @@ impl LoadBalancer {
         let above_threshold: Vec<UpstreamAccount> = healthy_accounts
             .iter()
             .filter(|a| match family {
-                ModelFamily::ClaudeOrGpt => a.claude_gpt_percent > threshold && a.claude_gpt_weekly_percent > threshold,
-                ModelFamily::Gemini => a.gemini_percent > threshold && a.gemini_weekly_percent > threshold,
+                ModelFamily::ClaudeOrGpt => {
+                    a.claude_gpt_percent > threshold && a.claude_gpt_weekly_percent > threshold
+                }
+                ModelFamily::Gemini => {
+                    a.gemini_percent > threshold && a.gemini_weekly_percent > threshold
+                }
             })
             .cloned()
             .collect();
@@ -526,7 +554,10 @@ impl LoadBalancer {
                     return Ok(acc.clone());
                 }
             }
-            return healthy_accounts.first().cloned().ok_or(RoutingError::NoAccounts);
+            return healthy_accounts
+                .first()
+                .cloned()
+                .ok_or(RoutingError::NoAccounts);
         }
 
         // 4. Cache Affinity Evaluation
@@ -597,16 +628,16 @@ impl LoadBalancer {
         // 5. Fallback selection when no pin exists or pin was rotated
         let chosen_acc = match config.routing_strategy {
             RoutingStrategy::RoundRobin => {
-                let idx = (self.rr_counter.fetch_add(1, Ordering::Relaxed) as usize)
-                    % pool.len();
+                let idx = (self.rr_counter.fetch_add(1, Ordering::Relaxed) as usize) % pool.len();
                 pool[idx].clone()
             }
             RoutingStrategy::QuotaAware | RoutingStrategy::Failover => {
                 // Select account with maximum remaining percentage for this family
-                pool
-                    .into_iter()
+                pool.into_iter()
                     .max_by_key(|a| match family {
-                        ModelFamily::ClaudeOrGpt => a.claude_gpt_percent.min(a.claude_gpt_weekly_percent),
+                        ModelFamily::ClaudeOrGpt => {
+                            a.claude_gpt_percent.min(a.claude_gpt_weekly_percent)
+                        }
                         ModelFamily::Gemini => a.gemini_percent.min(a.gemini_weekly_percent),
                     })
                     .ok_or(RoutingError::NoAccounts)?
@@ -628,7 +659,8 @@ impl LoadBalancer {
     pub fn cleanup_expired_sessions(&self, ttl_secs: u64) {
         let now = Instant::now();
         let mut bindings = self.session_bindings.write();
-        bindings.retain(|_, (_, last_access)| now.duration_since(*last_access).as_secs() < ttl_secs);
+        bindings
+            .retain(|_, (_, last_access)| now.duration_since(*last_access).as_secs() < ttl_secs);
     }
 
     /// Balancer Telemetry Metrics: (total_routed, cache_hits, failovers, hit_rate_pct, active_pins)

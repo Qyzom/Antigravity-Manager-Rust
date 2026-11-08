@@ -17,6 +17,10 @@ pub struct OpenAIChatRequest {
     pub reasoning_effort: Option<String>,
     #[serde(default)]
     pub stream_options: Option<Value>,
+    #[serde(default)]
+    pub tools: Option<Vec<Value>>,
+    #[serde(default)]
+    pub tool_choice: Option<Value>,
     #[serde(flatten)]
     pub extra: std::collections::HashMap<String, Value>,
 }
@@ -31,6 +35,10 @@ pub struct OpenAIMessage {
     pub refusal: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<Value>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +71,10 @@ pub struct OpenAIUsage {
     pub prompt_tokens_details: Option<PromptTokensDetails>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub completion_tokens_details: Option<CompletionTokensDetails>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_cache_hit_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_cache_miss_tokens: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -112,6 +124,35 @@ pub struct OpenAIStreamDelta {
     pub reasoning: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub refusal: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<Value>>,
+}
+
+pub fn create_stream_tool_chunk(id: &str, model: &str, tool_calls: Vec<Value>) -> String {
+    let chunk = OpenAIStreamChunk {
+        id: id.to_string(),
+        object: "chat.completion.chunk".to_string(),
+        created: chrono::Utc::now().timestamp() as u64,
+        model: model.to_string(),
+        system_fingerprint: "fp_44709d6fcb".to_string(),
+        choices: vec![OpenAIStreamChoice {
+            index: 0,
+            delta: OpenAIStreamDelta {
+                role: None,
+                content: None,
+                reasoning_content: None,
+                reasoning: None,
+                refusal: None,
+                tool_calls: Some(tool_calls),
+            },
+            logprobs: None,
+            finish_reason: None,
+        }],
+        usage: None,
+    };
+
+    let json = serde_json::to_string(&chunk).unwrap_or_default();
+    format!("data: {}\n\n", json)
 }
 
 pub fn create_stream_chunk(
@@ -142,11 +183,16 @@ pub fn create_stream_chunk_with_usage(
         choices: vec![OpenAIStreamChoice {
             index: 0,
             delta: OpenAIStreamDelta {
-                role: if is_finish || content.is_some() || reasoning.is_some() { None } else { Some("assistant".to_string()) },
+                role: if is_finish || content.is_some() || reasoning.is_some() {
+                    None
+                } else {
+                    Some("assistant".to_string())
+                },
                 content: content.map(|s| s.to_string()),
                 reasoning_content: reasoning.map(|s| s.to_string()),
                 reasoning: reasoning.map(|s| s.to_string()),
                 refusal: None,
+                tool_calls: None,
             },
             logprobs: None,
             finish_reason: finish_reason.map(|s| s.to_string()),
@@ -158,16 +204,23 @@ pub fn create_stream_chunk_with_usage(
     format!("data: {}\n\n", json)
 }
 
-pub fn create_stream_usage_chunk(
-    id: &str,
-    model: &str,
-    mut usage: OpenAIUsage,
-) -> String {
+pub fn create_stream_usage_chunk(id: &str, model: &str, mut usage: OpenAIUsage) -> String {
+    let cached = usage
+        .prompt_tokens_details
+        .as_ref()
+        .map(|d| d.cached_tokens)
+        .unwrap_or(0);
     if usage.prompt_tokens_details.is_none() {
         usage.prompt_tokens_details = Some(PromptTokensDetails {
             cached_tokens: 0,
             audio_tokens: 0,
         });
+    }
+    if usage.prompt_cache_hit_tokens.is_none() && cached > 0 {
+        usage.prompt_cache_hit_tokens = Some(cached);
+    }
+    if usage.prompt_cache_miss_tokens.is_none() && cached > 0 {
+        usage.prompt_cache_miss_tokens = Some(usage.prompt_tokens.saturating_sub(cached));
     }
     if usage.completion_tokens_details.is_none() {
         usage.completion_tokens_details = Some(CompletionTokensDetails {

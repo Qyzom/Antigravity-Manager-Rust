@@ -1,6 +1,6 @@
 [package]
 name = "amr"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 authors = ["Qyzom <t0lotsmail@gmail.com>"]
 description = "Ultra-lightweight high-performance AI API proxy & protocol emulator in Rust (Antigravity Manager Rust)"
@@ -42,6 +42,10 @@ muda = { version = "0.15", default-features = false }
 arboard = "3.7.0"
 image = { version = "0.25", default-features = false, features = ["png"] }
 
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 auto-launch = "0.5"

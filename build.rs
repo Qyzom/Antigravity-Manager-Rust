@@ -10,7 +10,10 @@ fn main() {
         let mut res = winres::WindowsResource::new();
         res.set_icon("assets/icons/logo.ico");
         res.set("ProductName", "AMR");
-        res.set("FileDescription", "AMR AI Protocol Proxy & Quota Dispatcher");
+        res.set(
+            "FileDescription",
+            "AMR AI Protocol Proxy & Quota Dispatcher",
+        );
         res.set("LegalCopyright", "Copyright (c) 2026 Qyzom");
         let _ = res.compile();
     }

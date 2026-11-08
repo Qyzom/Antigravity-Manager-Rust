@@ -2,9 +2,76 @@ use crate::config::ModelCatalogItem;
 use crate::proxy::mappers::openai::*;
 use crate::proxy::router::ReasoningEffort;
 use chrono::{DateTime, Utc};
+use parking_lot::RwLock;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::OnceLock;
+
+struct ThoughtSignatureCache {
+    by_call_id: HashMap<String, String>,
+    call_id_to_name: HashMap<String, String>,
+    order: Vec<String>,
+}
+
+fn get_signature_cache() -> &'static RwLock<ThoughtSignatureCache> {
+    static CACHE: OnceLock<RwLock<ThoughtSignatureCache>> = OnceLock::new();
+    CACHE.get_or_init(|| {
+        RwLock::new(ThoughtSignatureCache {
+            by_call_id: HashMap::new(),
+            call_id_to_name: HashMap::new(),
+            order: Vec::new(),
+        })
+    })
+}
+
+pub fn record_thought_signature(call_id: &str, tool_name: &str, sig: &str) {
+    if call_id.is_empty() || sig.is_empty() {
+        return;
+    }
+    let mut cache = get_signature_cache().write();
+    if cache.order.len() >= 1000 {
+        if let Some(oldest) = cache.order.pop() {
+            cache.by_call_id.remove(&oldest);
+            cache.call_id_to_name.remove(&oldest);
+        }
+    }
+    cache.order.push(call_id.to_string());
+    cache.by_call_id.insert(call_id.to_string(), sig.to_string());
+    if !tool_name.is_empty() {
+        cache.call_id_to_name.insert(call_id.to_string(), tool_name.to_string());
+    }
+}
+
+pub fn get_thought_signature(call_id: &str) -> Option<String> {
+    if call_id.is_empty() {
+        return None;
+    }
+    let cache = get_signature_cache().read();
+    cache.by_call_id.get(call_id).cloned()
+}
+
+pub fn get_thought_signature_and_name(call_id: &str) -> Option<(String, String)> {
+    if call_id.is_empty() {
+        return None;
+    }
+    let cache = get_signature_cache().read();
+    let sig = cache.by_call_id.get(call_id)?;
+    let name = cache
+        .call_id_to_name
+        .get(call_id)
+        .cloned()
+        .unwrap_or_else(|| "tool".to_string());
+    Some((sig.clone(), name))
+}
+
+pub fn get_tool_name_for_call_id(call_id: &str) -> Option<String> {
+    if call_id.is_empty() {
+        return None;
+    }
+    let cache = get_signature_cache().read();
+    cache.call_id_to_name.get(call_id).cloned()
+}
 
 pub const OFFICIAL_HUB_VERSION: &str = "2.28.1";
 pub const OFFICIAL_HUB_CL: &str = "1000353293";
@@ -109,9 +176,15 @@ pub fn normalize_antigravity_upstream_model(requested: &str) -> &'static str {
         "gemini-3.8-flash-high"
     } else if clean == "gemini-3.8-flash-tiered" {
         "gemini-3.8-flash-tiered"
-    } else if clean.contains("claude-sonnet-4-6") || clean.contains("sonnet-4-6") || clean.contains("sonnet-4.6") {
+    } else if clean.contains("claude-sonnet-4-6")
+        || clean.contains("sonnet-4-6")
+        || clean.contains("sonnet-4.6")
+    {
         "claude-sonnet-4-6"
-    } else if clean.contains("claude-opus-4-6") || clean.contains("opus-4-6") || clean.contains("opus-4.6") {
+    } else if clean.contains("claude-opus-4-6")
+        || clean.contains("opus-4-6")
+        || clean.contains("opus-4.6")
+    {
         "claude-opus-4-6-thinking"
     } else if clean.contains("opus") {
         if clean.contains("5-5") || clean.contains("5.5") {
@@ -505,7 +578,8 @@ pub async fn fetch_user_quota_summary(
                             if let Some(rt) = bucket.reset_time {
                                 if let Ok(parsed_time) = DateTime::parse_from_rfc3339(&rt) {
                                     let now = Utc::now();
-                                    let dur = parsed_time.with_timezone(&Utc).signed_duration_since(now);
+                                    let dur =
+                                        parsed_time.with_timezone(&Utc).signed_duration_since(now);
                                     let total_min = dur.num_minutes().max(0);
                                     total_hours = dur.num_hours().max(0);
                                     let days = total_hours / 24;
@@ -521,7 +595,8 @@ pub async fn fetch_user_quota_summary(
                                 }
                             }
 
-                            let is_weekly = b_id.contains("week") || win.contains("week") || total_hours > 12;
+                            let is_weekly =
+                                b_id.contains("week") || win.contains("week") || total_hours > 12;
 
                             if is_gemini {
                                 if is_weekly {
@@ -628,14 +703,27 @@ pub async fn fetch_models_and_quota(
                         }
 
                         let clean_id = match id.as_str() {
-                            "claude-sonnet-5-5-high" | "claude-sonnet-5-5" | "claude-3-7-sonnet" => "claude-sonnet-5-5".to_string(),
-                            "claude-opus-5-5-high" | "claude-opus-5-5" => "claude-opus-5-5".to_string(),
+                            "claude-sonnet-5-5-high"
+                            | "claude-sonnet-5-5"
+                            | "claude-3-7-sonnet" => "claude-sonnet-5-5".to_string(),
+                            "claude-opus-5-5-high" | "claude-opus-5-5" => {
+                                "claude-opus-5-5".to_string()
+                            }
                             "claude-sonnet-4-6" => "claude-sonnet-4-6".to_string(),
-                            "claude-opus-4-6-thinking" | "claude-opus-4-6" => "claude-opus-4-6".to_string(),
-                            "gemini-3.8-flash-high" | "gemini-3.8-flash-medium" | "gemini-3.8-flash-low" | "gemini-3.8-flash-tiered" | "gemini-3.8-flash" | "gemini-2.5-flash-thinking" | "gemini-2.5-flash" => "gemini-3.8-flash".to_string(),
+                            "claude-opus-4-6-thinking" | "claude-opus-4-6" => {
+                                "claude-opus-4-6".to_string()
+                            }
+                            "gemini-3.8-flash-high"
+                            | "gemini-3.8-flash-medium"
+                            | "gemini-3.8-flash-low"
+                            | "gemini-3.8-flash-tiered"
+                            | "gemini-3.8-flash"
+                            | "gemini-2.5-flash-thinking"
+                            | "gemini-2.5-flash" => "gemini-3.8-flash".to_string(),
                             "gemini-4-argon" | "gemini-2.5-pro" => "gemini-4-argon".to_string(),
                             other => {
-                                let (base, _) = crate::proxy::router::parse_model_and_reasoning(other, None);
+                                let (base, _) =
+                                    crate::proxy::router::parse_model_and_reasoning(other, None);
                                 base
                             }
                         };
@@ -647,7 +735,10 @@ pub async fn fetch_models_and_quota(
                             "claude-opus-4-6" => "Claude Opus 4.6".to_string(),
                             "gemini-3.8-flash" => "Gemini 3.8 Flash".to_string(),
                             "gemini-4-argon" => "Gemini 4 Argon".to_string(),
-                            _ => entry.display_name.clone().unwrap_or_else(|| clean_id.clone()),
+                            _ => entry
+                                .display_name
+                                .clone()
+                                .unwrap_or_else(|| clean_id.clone()),
                         };
 
                         let provider = if clean_id.contains("claude") {
@@ -671,7 +762,8 @@ pub async fn fetch_models_and_quota(
                             if let Some(rt) = qi.reset_time {
                                 if let Ok(parsed_time) = DateTime::parse_from_rfc3339(&rt) {
                                     let now = Utc::now();
-                                    let dur = parsed_time.with_timezone(&Utc).signed_duration_since(now);
+                                    let dur =
+                                        parsed_time.with_timezone(&Utc).signed_duration_since(now);
                                     let minutes = dur.num_minutes().max(0);
                                     let hours = minutes / 60;
                                     let rem_min = minutes % 60;
@@ -703,7 +795,13 @@ pub async fn fetch_models_and_quota(
                     if !models.is_empty() {
                         let quota_limit = 100_000u64;
                         let quota_used = ((1.0 - min_fraction) * (quota_limit as f64)) as u64;
-                        return Ok((models, quota_used, quota_limit, nearest_reset, quota_summary));
+                        return Ok((
+                            models,
+                            quota_used,
+                            quota_limit,
+                            nearest_reset,
+                            quota_summary,
+                        ));
                     }
                 }
             }
@@ -731,14 +829,62 @@ pub fn build_antigravity_payload_with_meta(
     _ide_version_override: Option<&str>,
 ) -> Value {
     let upstream_model = normalize_antigravity_upstream_model(target_model);
-    let mut contents = Vec::new();
+    let mut contents: Vec<Value> = Vec::new();
     let mut system_parts = Vec::new();
 
     for msg in &req.messages {
+        if msg.role == "tool" {
+            let call_id = msg.tool_call_id.clone().unwrap_or_default();
+            let name = msg
+                .name
+                .clone()
+                .or_else(|| get_tool_name_for_call_id(&call_id))
+                .unwrap_or_else(|| "tool".to_string());
+            let content_str = match &msg.content {
+                Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+
+            let tool_part = if let Some((_sig, tool_name)) = get_thought_signature_and_name(&call_id) {
+                let res_obj = serde_json::from_str::<Value>(&content_str)
+                    .unwrap_or_else(|_| serde_json::json!({ "output": content_str }));
+                serde_json::json!({
+                    "functionResponse": {
+                        "name": tool_name,
+                        "response": { "result": res_obj },
+                        "id": call_id
+                    }
+                })
+            } else {
+                serde_json::json!({
+                    "text": format!("[Tool result for {}: {}]", name, content_str)
+                })
+            };
+
+            // Merge with preceding user message if present (Gemini requires grouping consecutive user/tool responses)
+            if let Some(last) = contents.last_mut() {
+                if last.get("role").and_then(|r| r.as_str()) == Some("user") {
+                    if let Some(parts) = last.get_mut("parts").and_then(|p| p.as_array_mut()) {
+                        parts.push(tool_part);
+                        continue;
+                    }
+                }
+            }
+
+            contents.push(serde_json::json!({
+                "role": "user",
+                "parts": [tool_part]
+            }));
+            continue;
+        }
+
         let mut msg_parts = Vec::new();
         match &msg.content {
+            Value::Null => {}
             Value::String(s) => {
-                msg_parts.push(serde_json::json!({ "text": s }));
+                if !s.is_empty() {
+                    msg_parts.push(serde_json::json!({ "text": s }));
+                }
             }
             Value::Array(arr) => {
                 for item in arr {
@@ -776,7 +922,10 @@ pub fn build_antigravity_payload_with_meta(
                         // Format B: Claude source block inside OpenAI
                         if !found_img {
                             if let Some(source) = item.get("source") {
-                                let media_type = source.get("media_type").and_then(|m| m.as_str()).unwrap_or("image/png");
+                                let media_type = source
+                                    .get("media_type")
+                                    .and_then(|m| m.as_str())
+                                    .unwrap_or("image/png");
                                 if let Some(b64) = source.get("data").and_then(|d| d.as_str()) {
                                     let clean_b64 = b64.replace(['\r', '\n', ' '], "");
                                     msg_parts.push(serde_json::json!({
@@ -799,10 +948,66 @@ pub fn build_antigravity_payload_with_meta(
         if msg.role == "system" || msg.role == "developer" {
             system_parts.extend(msg_parts);
         } else {
-            let role = if msg.role == "assistant" { "model" } else { "user" };
+            let role = if msg.role == "assistant" {
+                "model"
+            } else {
+                "user"
+            };
+            if msg.role == "assistant" {
+                if let Some(tool_calls) = &msg.tool_calls {
+                    for tc in tool_calls {
+                        let fn_obj = tc.get("function").unwrap_or(tc);
+                        let name = fn_obj
+                            .get("name")
+                            .and_then(|n| n.as_str())
+                            .unwrap_or("tool");
+                        let args_val = fn_obj
+                            .get("arguments")
+                            .and_then(|a| {
+                                if let Some(s) = a.as_str() {
+                                    serde_json::from_str::<Value>(s).ok()
+                                } else {
+                                    Some(a.clone())
+                                }
+                            })
+                            .unwrap_or(serde_json::json!({}));
+                        let id = tc.get("id").and_then(|i| i.as_str()).unwrap_or("");
+                        let args_str = serde_json::to_string(&args_val).unwrap_or_default();
+
+                        if let Some(sig) = get_thought_signature(id) {
+                            msg_parts.push(serde_json::json!({
+                                "thoughtSignature": sig,
+                                "functionCall": {
+                                    "name": name,
+                                    "args": args_val,
+                                    "id": id
+                                }
+                            }));
+                        } else {
+                            // Without thoughtSignature, Google Antigravity rejects functionCall with
+                            // 400 Bad Request: "Function call is missing a thought_signature in functionCall parts".
+                            // Formatting historical call as text preserves context for the model while returning 200 OK cleanly.
+                            msg_parts.push(serde_json::json!({
+                                "text": format!("[Called tool {}({})]", name, args_str)
+                            }));
+                        }
+                    }
+                }
+            }
             if msg_parts.is_empty() {
                 msg_parts.push(serde_json::json!({ "text": " " }));
             }
+
+            // Merge with preceding message if same role
+            if let Some(last) = contents.last_mut() {
+                if last.get("role").and_then(|r| r.as_str()) == Some(role) {
+                    if let Some(parts) = last.get_mut("parts").and_then(|p| p.as_array_mut()) {
+                        parts.extend(msg_parts);
+                        continue;
+                    }
+                }
+            }
+
             contents.push(serde_json::json!({
                 "role": role,
                 "parts": msg_parts
@@ -821,7 +1026,8 @@ pub fn build_antigravity_payload_with_meta(
     if let Some(temp) = req.temperature {
         gen_config["temperature"] = serde_json::json!(temp);
     }
-    let max_output_tok = req.max_completion_tokens
+    let max_output_tok = req
+        .max_completion_tokens
         .or(req.max_tokens)
         .unwrap_or(65536);
     gen_config["maxOutputTokens"] = serde_json::json!(max_output_tok);
@@ -897,36 +1103,52 @@ pub fn build_antigravity_payload_with_meta(
         None => {
             if target_model.contains("argon") {
                 if target_model.ends_with("-low") {
-                    gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingLevel": "LOW" });
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingLevel": "LOW" });
                 } else if target_model.ends_with("-high") {
-                    gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingLevel": "HIGH" });
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingLevel": "HIGH" });
                 } else if target_model.ends_with("-medium") || target_model == "gemini-4-argon" {
-                    gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingLevel": "MEDIUM" });
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingLevel": "MEDIUM" });
                 }
             } else if target_model.contains("flash") {
                 if target_model.ends_with("-low") {
-                    gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingBudget": 1000 });
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingBudget": 1000 });
                 } else if target_model.ends_with("-medium") {
-                    gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingBudget": 4000 });
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingBudget": 4000 });
                 } else if target_model.ends_with("-high") {
-                    gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingBudget": -1 });
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingBudget": -1 });
                 }
             } else if target_model.contains("claude") {
                 if target_model.ends_with("-low") {
-                    gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingBudget": 1024 });
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingBudget": 1024 });
                 } else if target_model.ends_with("-medium") {
-                    gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingBudget": 4096 });
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingBudget": 4096 });
                 } else if target_model.ends_with("-high") {
-                    gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingBudget": 16384 });
+                    gen_config["thinkingConfig"] =
+                        serde_json::json!({ "includeThoughts": true, "thinkingBudget": 16384 });
                 }
             }
         }
     }
 
     // Enforce maxOutputTokens > thinkingBudget for Claude and reasoning models
-    if let Some(budget) = gen_config.get("thinkingConfig").and_then(|tc| tc.get("thinkingBudget")).and_then(|b| b.as_i64()) {
+    if let Some(budget) = gen_config
+        .get("thinkingConfig")
+        .and_then(|tc| tc.get("thinkingBudget"))
+        .and_then(|b| b.as_i64())
+    {
         if budget > 0 {
-            let current_max = gen_config.get("maxOutputTokens").and_then(|m| m.as_i64()).unwrap_or(0);
+            let current_max = gen_config
+                .get("maxOutputTokens")
+                .and_then(|m| m.as_i64())
+                .unwrap_or(0);
             if current_max <= budget {
                 gen_config["maxOutputTokens"] = serde_json::json!(budget + 1024);
             }
@@ -937,6 +1159,47 @@ pub fn build_antigravity_payload_with_meta(
         "contents": contents,
         "generationConfig": gen_config
     });
+
+    // Map OpenAI tools to Gemini functionDeclarations
+    let mut function_declarations = Vec::new();
+    let tools_list = req
+        .tools
+        .as_ref()
+        .or_else(|| req.extra.get("tools").and_then(|t| t.as_array()));
+    if let Some(tools) = tools_list {
+        for t in tools {
+            let fn_obj = if t.get("type").and_then(|s| s.as_str()) == Some("function") {
+                t.get("function").unwrap_or(t)
+            } else {
+                t
+            };
+            if let Some(name) = fn_obj.get("name").and_then(|n| n.as_str()) {
+                let desc = fn_obj
+                    .get("description")
+                    .and_then(|d| d.as_str())
+                    .unwrap_or("");
+                let params = fn_obj
+                    .get("parameters")
+                    .cloned()
+                    .unwrap_or(serde_json::json!({
+                        "type": "object",
+                        "properties": {}
+                    }));
+                function_declarations.push(serde_json::json!({
+                    "name": name,
+                    "description": desc,
+                    "parameters": params
+                }));
+            }
+        }
+    }
+    if !function_declarations.is_empty() {
+        inner_request["tools"] = serde_json::json!([
+            {
+                "functionDeclarations": function_declarations
+            }
+        ]);
+    }
 
     if !system_parts.is_empty() {
         inner_request["systemInstruction"] = serde_json::json!({
@@ -967,7 +1230,14 @@ pub fn build_antigravity_payload_from_claude(
     project_id: Option<&str>,
     reasoning_effort: Option<ReasoningEffort>,
 ) -> Value {
-    build_antigravity_payload_from_claude_with_meta(req, target_model, project_id, reasoning_effort, None, None)
+    build_antigravity_payload_from_claude_with_meta(
+        req,
+        target_model,
+        project_id,
+        reasoning_effort,
+        None,
+        None,
+    )
 }
 
 pub fn build_antigravity_payload_from_claude_with_meta(
@@ -979,7 +1249,7 @@ pub fn build_antigravity_payload_from_claude_with_meta(
     _ide_version_override: Option<&str>,
 ) -> Value {
     let upstream_model = normalize_antigravity_upstream_model(target_model);
-    let mut contents = Vec::new();
+    let mut contents: Vec<Value> = Vec::new();
     let mut system_parts = Vec::new();
 
     // 1. Extract system instructions
@@ -1014,8 +1284,12 @@ pub fn build_antigravity_payload_from_claude_with_meta(
                         }
                     } else if b_type == "image" {
                         if let Some(source) = block.get("source") {
-                            let media_type = source.get("media_type").and_then(|m| m.as_str()).unwrap_or("image/png");
-                            let b64_data = source.get("data").and_then(|d| d.as_str()).unwrap_or("");
+                            let media_type = source
+                                .get("media_type")
+                                .and_then(|m| m.as_str())
+                                .unwrap_or("image/png");
+                            let b64_data =
+                                source.get("data").and_then(|d| d.as_str()).unwrap_or("");
                             if !b64_data.is_empty() {
                                 parts.push(serde_json::json!({
                                     "inlineData": {
@@ -1033,23 +1307,46 @@ pub fn build_antigravity_payload_from_claude_with_meta(
                         let name = block.get("name").and_then(|v| v.as_str()).unwrap_or("tool");
                         let input = block.get("input").cloned().unwrap_or(serde_json::json!({}));
                         let id = block.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                        parts.push(serde_json::json!({
-                            "functionCall": {
-                                "name": name,
-                                "args": input,
-                                "id": id
-                            }
-                        }));
+                        if let Some(sig) = get_thought_signature(id) {
+                            parts.push(serde_json::json!({
+                                "thoughtSignature": sig,
+                                "functionCall": {
+                                    "name": name,
+                                    "args": input,
+                                    "id": id
+                                }
+                            }));
+                        } else {
+                            parts.push(serde_json::json!({
+                                "text": format!("[Called tool {}({})]", name, input)
+                            }));
+                        }
                     } else if b_type == "tool_result" {
-                        let tool_use_id = block.get("tool_use_id").and_then(|v| v.as_str()).unwrap_or("");
-                        let result_content = block.get("content").cloned().unwrap_or(serde_json::json!("success"));
-                        parts.push(serde_json::json!({
-                            "functionResponse": {
-                                "name": "tool",
-                                "response": { "result": result_content },
-                                "id": tool_use_id
-                            }
-                        }));
+                        let tool_use_id = block
+                            .get("tool_use_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        let result_content = block
+                            .get("content")
+                            .cloned()
+                            .unwrap_or(serde_json::json!("success"));
+                        if get_thought_signature(tool_use_id).is_some() {
+                            let tool_name = get_tool_name_for_call_id(tool_use_id)
+                                .unwrap_or_else(|| "tool".to_string());
+                            parts.push(serde_json::json!({
+                                "functionResponse": {
+                                    "name": tool_name,
+                                    "response": { "result": result_content },
+                                    "id": tool_use_id
+                                }
+                            }));
+                        } else {
+                            let tool_name = get_tool_name_for_call_id(tool_use_id)
+                                .unwrap_or_else(|| "tool".to_string());
+                            parts.push(serde_json::json!({
+                                "text": format!("[Tool result for {}: {}]", tool_name, result_content)
+                            }));
+                        }
                     }
                 }
             }
@@ -1072,7 +1369,11 @@ pub fn build_antigravity_payload_from_claude_with_meta(
 
     // 3. Generation config
     let mut gen_config = serde_json::json!({});
-    if let Some(max_tok) = req.get("max_completion_tokens").or_else(|| req.get("max_tokens")).and_then(|v| v.as_u64()) {
+    if let Some(max_tok) = req
+        .get("max_completion_tokens")
+        .or_else(|| req.get("max_tokens"))
+        .and_then(|v| v.as_u64())
+    {
         gen_config["maxOutputTokens"] = serde_json::json!(max_tok);
     } else {
         gen_config["maxOutputTokens"] = serde_json::json!(65536);
@@ -1093,62 +1394,89 @@ pub fn build_antigravity_payload_from_claude_with_meta(
         }
         Some(ReasoningEffort::Low) => {
             if target_model.contains("argon") {
-                gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingLevel": "LOW" });
+                gen_config["thinkingConfig"] =
+                    serde_json::json!({ "includeThoughts": true, "thinkingLevel": "LOW" });
             } else if target_model.contains("flash") {
-                gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingBudget": 1000 });
+                gen_config["thinkingConfig"] =
+                    serde_json::json!({ "includeThoughts": true, "thinkingBudget": 1000 });
             } else {
-                gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingBudget": 1024 });
+                gen_config["thinkingConfig"] =
+                    serde_json::json!({ "includeThoughts": true, "thinkingBudget": 1024 });
             }
         }
         Some(ReasoningEffort::Medium) => {
             if target_model.contains("argon") {
-                gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingLevel": "MEDIUM" });
+                gen_config["thinkingConfig"] =
+                    serde_json::json!({ "includeThoughts": true, "thinkingLevel": "MEDIUM" });
             } else if target_model.contains("flash") {
-                gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingBudget": 4000 });
+                gen_config["thinkingConfig"] =
+                    serde_json::json!({ "includeThoughts": true, "thinkingBudget": 4000 });
             } else {
-                gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingBudget": 4096 });
+                gen_config["thinkingConfig"] =
+                    serde_json::json!({ "includeThoughts": true, "thinkingBudget": 4096 });
             }
         }
         Some(ReasoningEffort::High) => {
             if target_model.contains("argon") {
-                gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingLevel": "HIGH" });
+                gen_config["thinkingConfig"] =
+                    serde_json::json!({ "includeThoughts": true, "thinkingLevel": "HIGH" });
             } else if target_model.contains("flash") {
-                gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingBudget": -1 });
+                gen_config["thinkingConfig"] =
+                    serde_json::json!({ "includeThoughts": true, "thinkingBudget": -1 });
             } else {
-                gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingBudget": 16384 });
+                gen_config["thinkingConfig"] =
+                    serde_json::json!({ "includeThoughts": true, "thinkingBudget": 16384 });
             }
         }
         None => {
             if let Some(th) = req.get("thinking") {
                 if th.get("type").and_then(|t| t.as_str()) == Some("enabled") {
-                    let budget = th.get("budget_tokens").and_then(|b| b.as_u64()).unwrap_or(4096).max(1024);
+                    let budget = th
+                        .get("budget_tokens")
+                        .and_then(|b| b.as_u64())
+                        .unwrap_or(4096)
+                        .max(1024);
                     gen_config["thinkingConfig"] = serde_json::json!({
                         "includeThoughts": true,
                         "thinkingBudget": budget
                     });
                 }
             } else if target_model.contains("argon") {
-                gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingLevel": "MEDIUM" });
+                gen_config["thinkingConfig"] =
+                    serde_json::json!({ "includeThoughts": true, "thinkingLevel": "MEDIUM" });
             } else if target_model.ends_with("-high") {
-                gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingBudget": -1 });
+                gen_config["thinkingConfig"] =
+                    serde_json::json!({ "includeThoughts": true, "thinkingBudget": -1 });
             } else if target_model.ends_with("-medium") {
-                gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingBudget": 4000 });
+                gen_config["thinkingConfig"] =
+                    serde_json::json!({ "includeThoughts": true, "thinkingBudget": 4000 });
             } else if target_model.ends_with("-low") {
-                gen_config["thinkingConfig"] = serde_json::json!({ "includeThoughts": true, "thinkingBudget": 1000 });
+                gen_config["thinkingConfig"] =
+                    serde_json::json!({ "includeThoughts": true, "thinkingBudget": 1000 });
             }
         }
     }
 
-    if !gen_config.as_object().is_some_and(|obj| obj.contains_key("thinkingConfig")) {
+    if !gen_config
+        .as_object()
+        .is_some_and(|obj| obj.contains_key("thinkingConfig"))
+    {
         if let Some(temp) = req.get("temperature").and_then(|v| v.as_f64()) {
             gen_config["temperature"] = serde_json::json!(temp);
         }
     }
 
     // Enforce maxOutputTokens > thinkingBudget for Claude and reasoning models
-    if let Some(budget) = gen_config.get("thinkingConfig").and_then(|tc| tc.get("thinkingBudget")).and_then(|b| b.as_i64()) {
+    if let Some(budget) = gen_config
+        .get("thinkingConfig")
+        .and_then(|tc| tc.get("thinkingBudget"))
+        .and_then(|b| b.as_i64())
+    {
         if budget > 0 {
-            let current_max = gen_config.get("maxOutputTokens").and_then(|m| m.as_i64()).unwrap_or(0);
+            let current_max = gen_config
+                .get("maxOutputTokens")
+                .and_then(|m| m.as_i64())
+                .unwrap_or(0);
             if current_max <= budget {
                 gen_config["maxOutputTokens"] = serde_json::json!(budget + 1024);
             }
@@ -1159,6 +1487,36 @@ pub fn build_antigravity_payload_from_claude_with_meta(
         "contents": contents,
         "generationConfig": gen_config
     });
+
+    // Map Claude tools to Gemini functionDeclarations
+    let mut function_declarations = Vec::new();
+    if let Some(tools) = req.get("tools").and_then(|t| t.as_array()) {
+        for t in tools {
+            if let Some(name) = t.get("name").and_then(|n| n.as_str()) {
+                let desc = t.get("description").and_then(|d| d.as_str()).unwrap_or("");
+                let params = t
+                    .get("input_schema")
+                    .or_else(|| t.get("parameters"))
+                    .cloned()
+                    .unwrap_or(serde_json::json!({
+                        "type": "object",
+                        "properties": {}
+                    }));
+                function_declarations.push(serde_json::json!({
+                    "name": name,
+                    "description": desc,
+                    "parameters": params
+                }));
+            }
+        }
+    }
+    if !function_declarations.is_empty() {
+        inner_request["tools"] = serde_json::json!([
+            {
+                "functionDeclarations": function_declarations
+            }
+        ]);
+    }
 
     if !system_parts.is_empty() {
         inner_request["systemInstruction"] = serde_json::json!({
@@ -1183,19 +1541,23 @@ pub fn build_antigravity_payload_from_claude_with_meta(
     })
 }
 
-pub fn convert_antigravity_response_to_claude(
-    raw: &Value,
-    model: &str,
-) -> Value {
+pub fn convert_antigravity_response_to_claude(raw: &Value, model: &str) -> Value {
     let actual = raw.get("response").unwrap_or(raw);
     let mut text_parts = String::new();
     let mut thinking_parts = String::new();
 
     if let Some(candidates) = actual.get("candidates").and_then(|c| c.as_array()) {
         for candidate in candidates {
-            if let Some(parts) = candidate.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array()) {
+            if let Some(parts) = candidate
+                .get("content")
+                .and_then(|c| c.get("parts"))
+                .and_then(|p| p.as_array())
+            {
                 for part in parts {
-                    let is_thought = part.get("thought").and_then(|v| v.as_bool()).unwrap_or(false);
+                    let is_thought = part
+                        .get("thought")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
                     if let Some(txt) = part.get("text").and_then(|t| t.as_str()) {
                         if is_thought {
                             thinking_parts.push_str(txt);
@@ -1203,7 +1565,10 @@ pub fn convert_antigravity_response_to_claude(
                             text_parts.push_str(txt);
                         }
                     } else if let Some(inline) = part.get("inlineData") {
-                        let mime = inline.get("mimeType").and_then(|m| m.as_str()).unwrap_or("image/png");
+                        let mime = inline
+                            .get("mimeType")
+                            .and_then(|m| m.as_str())
+                            .unwrap_or("image/png");
                         if let Some(b64) = inline.get("data").and_then(|d| d.as_str()) {
                             text_parts.push_str(&format!("[Generated Image: {} bytes, {}]\n![Generated Image](data:{};base64,{})", b64.len(), mime, mime, b64));
                         }
@@ -1227,6 +1592,7 @@ pub fn convert_antigravity_response_to_claude(
 
     let mut prompt_tok = 50;
     let mut cand_tok = 150;
+    let mut cached_tok = 0;
     if let Some(usage) = actual.get("usageMetadata") {
         if let Some(pt) = usage.get("promptTokenCount").and_then(|v| v.as_u64()) {
             prompt_tok = pt;
@@ -1234,6 +1600,17 @@ pub fn convert_antigravity_response_to_claude(
         if let Some(ct) = usage.get("candidatesTokenCount").and_then(|v| v.as_u64()) {
             cand_tok = ct;
         }
+        if let Some(cct) = usage.get("cachedContentTokenCount").and_then(|v| v.as_u64()) {
+            cached_tok = cct;
+        }
+    }
+
+    let mut usage_obj = serde_json::json!({
+        "input_tokens": prompt_tok,
+        "output_tokens": cand_tok
+    });
+    if cached_tok > 0 {
+        usage_obj["cache_read_input_tokens"] = serde_json::json!(cached_tok);
     }
 
     serde_json::json!({
@@ -1244,27 +1621,56 @@ pub fn convert_antigravity_response_to_claude(
         "model": model,
         "stop_reason": "end_turn",
         "stop_sequence": null,
-        "usage": {
-            "input_tokens": prompt_tok,
-            "output_tokens": cand_tok
-        }
+        "usage": usage_obj
     })
 }
 
-pub fn convert_antigravity_response_to_openai(
-    raw: &Value,
-    model: &str,
-) -> OpenAIChatResponse {
+pub fn convert_antigravity_response_to_openai(raw: &Value, model: &str) -> OpenAIChatResponse {
     let actual = raw.get("response").unwrap_or(raw);
     let mut full_text = String::new();
     let mut thinking_text = None;
+    let mut tool_calls = Vec::new();
 
     if let Some(candidates) = actual.get("candidates").and_then(|c| c.as_array()) {
         for candidate in candidates {
-            if let Some(parts) = candidate.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array()) {
+            if let Some(parts) = candidate
+                .get("content")
+                .and_then(|c| c.get("parts"))
+                .and_then(|p| p.as_array())
+            {
                 for part in parts {
-                    let is_thought = part.get("thought").and_then(|v| v.as_bool()).unwrap_or(false);
-                    if let Some(txt) = part.get("text").and_then(|t| t.as_str()) {
+                    let is_thought = part
+                        .get("thought")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    if let Some(fc) = part.get("functionCall") {
+                        let name = fc.get("name").and_then(|n| n.as_str()).unwrap_or("tool");
+                        let args_val = fc.get("args").cloned().unwrap_or(serde_json::json!({}));
+                        let args_str =
+                            serde_json::to_string(&args_val).unwrap_or_else(|_| "{}".to_string());
+                        let call_id = fc
+                            .get("id")
+                            .and_then(|i| i.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| format!("call_{}", uuid::Uuid::new_v4().simple()));
+                        if let Some(sig) = part
+                            .get("thoughtSignature")
+                            .or_else(|| part.get("thought_signature"))
+                            .or_else(|| candidate.get("thoughtSignature"))
+                            .or_else(|| candidate.get("thought_signature"))
+                            .and_then(|s| s.as_str())
+                        {
+                            record_thought_signature(&call_id, name, sig);
+                        }
+                        tool_calls.push(serde_json::json!({
+                            "id": call_id,
+                            "type": "function",
+                            "function": {
+                                "name": name,
+                                "arguments": args_str
+                            }
+                        }));
+                    } else if let Some(txt) = part.get("text").and_then(|t| t.as_str()) {
                         if is_thought {
                             let entry = thinking_text.get_or_insert_with(String::new);
                             entry.push_str(txt);
@@ -1272,13 +1678,37 @@ pub fn convert_antigravity_response_to_openai(
                             full_text.push_str(txt);
                         }
                     } else if let Some(inline) = part.get("inlineData") {
-                        let mime = inline.get("mimeType").and_then(|m| m.as_str()).unwrap_or("image/png");
+                        let mime = inline
+                            .get("mimeType")
+                            .and_then(|m| m.as_str())
+                            .unwrap_or("image/png");
                         if let Some(b64) = inline.get("data").and_then(|d| d.as_str()) {
                             full_text.push_str(&format!("[Generated Image: {} bytes, {}]\n![Generated Image](data:{};base64,{})", b64.len(), mime, mime, b64));
                         }
                     }
                 }
             }
+        }
+    }
+
+    let finish_reason = if !tool_calls.is_empty() {
+        Some("tool_calls".to_string())
+    } else {
+        Some("stop".to_string())
+    };
+
+    let mut prompt_tok = 50;
+    let mut cand_tok = 150;
+    let mut cached_tok = 0;
+    if let Some(usage) = actual.get("usageMetadata") {
+        if let Some(pt) = usage.get("promptTokenCount").and_then(|v| v.as_u64()) {
+            prompt_tok = pt;
+        }
+        if let Some(ct) = usage.get("candidatesTokenCount").and_then(|v| v.as_u64()) {
+            cand_tok = ct;
+        }
+        if let Some(cct) = usage.get("cachedContentTokenCount").and_then(|v| v.as_u64()) {
+            cached_tok = cct;
         }
     }
 
@@ -1296,16 +1726,22 @@ pub fn convert_antigravity_response_to_openai(
                 reasoning_content: thinking_text,
                 refusal: None,
                 name: None,
+                tool_calls: if tool_calls.is_empty() {
+                    None
+                } else {
+                    Some(tool_calls)
+                },
+                tool_call_id: None,
             },
             logprobs: None,
-            finish_reason: Some("stop".to_string()),
+            finish_reason,
         }],
         usage: Some(OpenAIUsage {
-            prompt_tokens: 50,
-            completion_tokens: 150,
-            total_tokens: 200,
+            prompt_tokens: prompt_tok,
+            completion_tokens: cand_tok,
+            total_tokens: prompt_tok + cand_tok,
             prompt_tokens_details: Some(PromptTokensDetails {
-                cached_tokens: 0,
+                cached_tokens: cached_tok,
                 audio_tokens: 0,
             }),
             completion_tokens_details: Some(CompletionTokensDetails {
@@ -1314,6 +1750,8 @@ pub fn convert_antigravity_response_to_openai(
                 accepted_prediction_tokens: 0,
                 rejected_prediction_tokens: 0,
             }),
+            prompt_cache_hit_tokens: if cached_tok > 0 { Some(cached_tok) } else { None },
+            prompt_cache_miss_tokens: if cached_tok > 0 { Some(prompt_tok.saturating_sub(cached_tok)) } else { None },
         }),
     }
 }

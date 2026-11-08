@@ -81,7 +81,9 @@ pub fn parse_model_and_reasoning(
         let mut matched = None;
         for &(suffix, eff) in REASONING_SUFFIXES {
             if lower.ends_with(suffix) {
-                let base = raw_model[..raw_model.len() - suffix.len()].trim().to_string();
+                let base = raw_model[..raw_model.len() - suffix.len()]
+                    .trim()
+                    .to_string();
                 matched = Some((base, eff));
                 break;
             }
@@ -117,40 +119,95 @@ pub fn resolve_model_with_effort(
             if lower.contains("opus") {
                 if lower.contains("4-6") || lower.contains("4.6") {
                     match effective_effort {
-                        Some(ReasoningEffort::Off) => ("claude-opus-4-6".to_string(), Some(ReasoningEffort::Off)),
-                        Some(ReasoningEffort::Low) => ("claude-opus-4-6-thinking".to_string(), Some(ReasoningEffort::Low)),
-                        Some(ReasoningEffort::Medium) => ("claude-opus-4-6-thinking".to_string(), Some(ReasoningEffort::Medium)),
-                        Some(ReasoningEffort::High) => ("claude-opus-4-6-thinking".to_string(), Some(ReasoningEffort::High)),
+                        Some(ReasoningEffort::Off) => {
+                            ("claude-opus-4-6".to_string(), Some(ReasoningEffort::Off))
+                        }
+                        Some(ReasoningEffort::Low) => (
+                            "claude-opus-4-6-thinking".to_string(),
+                            Some(ReasoningEffort::Low),
+                        ),
+                        Some(ReasoningEffort::Medium) => (
+                            "claude-opus-4-6-thinking".to_string(),
+                            Some(ReasoningEffort::Medium),
+                        ),
+                        Some(ReasoningEffort::High) => (
+                            "claude-opus-4-6-thinking".to_string(),
+                            Some(ReasoningEffort::High),
+                        ),
                         None => ("claude-opus-4-6-thinking".to_string(), None),
                     }
                 } else {
                     match effective_effort {
-                        Some(ReasoningEffort::Low) => ("claude-opus-5-5-low".to_string(), Some(ReasoningEffort::Low)),
-                        Some(ReasoningEffort::Medium) => ("claude-opus-5-5-medium".to_string(), Some(ReasoningEffort::Medium)),
-                        Some(ReasoningEffort::High) => ("claude-opus-5-5-high".to_string(), Some(ReasoningEffort::High)),
-                        Some(ReasoningEffort::Off) => ("claude-opus-5-5".to_string(), Some(ReasoningEffort::Off)),
-                        None => ("claude-opus-5-5-high".to_string(), Some(ReasoningEffort::High)),
+                        Some(ReasoningEffort::Low) => (
+                            "claude-opus-5-5-low".to_string(),
+                            Some(ReasoningEffort::Low),
+                        ),
+                        Some(ReasoningEffort::Medium) => (
+                            "claude-opus-5-5-medium".to_string(),
+                            Some(ReasoningEffort::Medium),
+                        ),
+                        Some(ReasoningEffort::High) => (
+                            "claude-opus-5-5-high".to_string(),
+                            Some(ReasoningEffort::High),
+                        ),
+                        Some(ReasoningEffort::Off) => {
+                            ("claude-opus-5-5".to_string(), Some(ReasoningEffort::Off))
+                        }
+                        None => (
+                            "claude-opus-5-5-high".to_string(),
+                            Some(ReasoningEffort::High),
+                        ),
                     }
                 }
             } else if lower.contains("claude") || lower.contains("sonnet") {
                 if lower.contains("4-6") || lower.contains("4.6") {
-                    ("claude-sonnet-4-6".to_string(), effective_effort.or(Some(ReasoningEffort::High)))
+                    (
+                        "claude-sonnet-4-6".to_string(),
+                        effective_effort.or(Some(ReasoningEffort::High)),
+                    )
                 } else {
                     match effective_effort {
-                        Some(ReasoningEffort::Low) => ("claude-sonnet-5-5-low".to_string(), Some(ReasoningEffort::Low)),
-                        Some(ReasoningEffort::Medium) => ("claude-sonnet-5-5-medium".to_string(), Some(ReasoningEffort::Medium)),
-                        Some(ReasoningEffort::High) => ("claude-sonnet-5-5-high".to_string(), Some(ReasoningEffort::High)),
-                        Some(ReasoningEffort::Off) => ("claude-sonnet-5-5".to_string(), Some(ReasoningEffort::Off)),
-                        None => ("claude-sonnet-5-5-high".to_string(), Some(ReasoningEffort::High)),
+                        Some(ReasoningEffort::Low) => (
+                            "claude-sonnet-5-5-low".to_string(),
+                            Some(ReasoningEffort::Low),
+                        ),
+                        Some(ReasoningEffort::Medium) => (
+                            "claude-sonnet-5-5-medium".to_string(),
+                            Some(ReasoningEffort::Medium),
+                        ),
+                        Some(ReasoningEffort::High) => (
+                            "claude-sonnet-5-5-high".to_string(),
+                            Some(ReasoningEffort::High),
+                        ),
+                        Some(ReasoningEffort::Off) => {
+                            ("claude-sonnet-5-5".to_string(), Some(ReasoningEffort::Off))
+                        }
+                        None => (
+                            "claude-sonnet-5-5-high".to_string(),
+                            Some(ReasoningEffort::High),
+                        ),
                     }
                 }
             } else if lower.contains("argon") {
                 match effective_effort {
-                    Some(ReasoningEffort::Low) => ("gemini-4-argon-low".to_string(), Some(ReasoningEffort::Low)),
-                    Some(ReasoningEffort::Medium) => ("gemini-4-argon-medium".to_string(), Some(ReasoningEffort::Medium)),
-                    Some(ReasoningEffort::High) => ("gemini-4-argon-high".to_string(), Some(ReasoningEffort::High)),
-                    Some(ReasoningEffort::Off) => ("gemini-4-argon".to_string(), Some(ReasoningEffort::Off)),
-                    None => ("gemini-4-argon-medium".to_string(), Some(ReasoningEffort::Medium)),
+                    Some(ReasoningEffort::Low) => {
+                        ("gemini-4-argon-low".to_string(), Some(ReasoningEffort::Low))
+                    }
+                    Some(ReasoningEffort::Medium) => (
+                        "gemini-4-argon-medium".to_string(),
+                        Some(ReasoningEffort::Medium),
+                    ),
+                    Some(ReasoningEffort::High) => (
+                        "gemini-4-argon-high".to_string(),
+                        Some(ReasoningEffort::High),
+                    ),
+                    Some(ReasoningEffort::Off) => {
+                        ("gemini-4-argon".to_string(), Some(ReasoningEffort::Off))
+                    }
+                    None => (
+                        "gemini-4-argon-medium".to_string(),
+                        Some(ReasoningEffort::Medium),
+                    ),
                 }
             } else if lower.contains("image") || lower.contains("imagen") {
                 ("imagen-3.0-generate-002".to_string(), None)
@@ -158,11 +215,26 @@ pub fn resolve_model_with_effort(
                 ("gemini-3.8-flash-tiered".to_string(), effective_effort)
             } else {
                 match effective_effort {
-                    Some(ReasoningEffort::Low) => ("gemini-3.8-flash-low".to_string(), Some(ReasoningEffort::Low)),
-                    Some(ReasoningEffort::Medium) => ("gemini-3.8-flash-medium".to_string(), Some(ReasoningEffort::Medium)),
-                    Some(ReasoningEffort::High) => ("gemini-3.8-flash-high".to_string(), Some(ReasoningEffort::High)),
-                    Some(ReasoningEffort::Off) => ("gemini-3.8-flash-medium".to_string(), Some(ReasoningEffort::Off)),
-                    None => ("gemini-3.8-flash-medium".to_string(), Some(ReasoningEffort::Medium)),
+                    Some(ReasoningEffort::Low) => (
+                        "gemini-3.8-flash-low".to_string(),
+                        Some(ReasoningEffort::Low),
+                    ),
+                    Some(ReasoningEffort::Medium) => (
+                        "gemini-3.8-flash-medium".to_string(),
+                        Some(ReasoningEffort::Medium),
+                    ),
+                    Some(ReasoningEffort::High) => (
+                        "gemini-3.8-flash-high".to_string(),
+                        Some(ReasoningEffort::High),
+                    ),
+                    Some(ReasoningEffort::Off) => (
+                        "gemini-3.8-flash-medium".to_string(),
+                        Some(ReasoningEffort::Off),
+                    ),
+                    None => (
+                        "gemini-3.8-flash-medium".to_string(),
+                        Some(ReasoningEffort::Medium),
+                    ),
                 }
             }
         }
@@ -216,7 +288,11 @@ pub fn convert_openai_to_claude(
             system_prompt = Some(msg.content.clone());
         } else {
             claude_messages.push(ClaudeMessage {
-                role: if msg.role == "assistant" { "assistant".to_string() } else { "user".to_string() },
+                role: if msg.role == "assistant" {
+                    "assistant".to_string()
+                } else {
+                    "user".to_string()
+                },
                 content: msg.content.clone(),
             });
         }
@@ -239,8 +315,18 @@ pub fn convert_openai_to_claude(
         None
     };
 
-    let budget = thinking_config.as_ref().map(|t| t.budget_tokens).unwrap_or(0);
-    let requested_max = req.max_completion_tokens.or(req.max_tokens).unwrap_or(if thinking_config.is_some() { 16384 } else { 8192 });
+    let budget = thinking_config
+        .as_ref()
+        .map(|t| t.budget_tokens)
+        .unwrap_or(0);
+    let requested_max =
+        req.max_completion_tokens
+            .or(req.max_tokens)
+            .unwrap_or(if thinking_config.is_some() {
+                16384
+            } else {
+                8192
+            });
     let max_tok = requested_max.max(budget + 4096);
 
     ClaudeMessageRequest {
@@ -249,7 +335,11 @@ pub fn convert_openai_to_claude(
         system: system_prompt,
         max_tokens: max_tok,
         stream: req.stream,
-        temperature: if thinking_config.is_some() { None } else { req.temperature },
+        temperature: if thinking_config.is_some() {
+            None
+        } else {
+            req.temperature
+        },
         thinking: thinking_config,
     }
 }
@@ -267,6 +357,7 @@ pub fn convert_claude_response_to_openai(resp: &ClaudeMessageResponse) -> OpenAI
         }
     }
 
+    let cached = resp.usage.cache_read_input_tokens.unwrap_or(0);
     OpenAIChatResponse {
         id: resp.id.clone(),
         object: "chat.completion".to_string(),
@@ -281,6 +372,8 @@ pub fn convert_claude_response_to_openai(resp: &ClaudeMessageResponse) -> OpenAI
                 reasoning_content: thinking_text,
                 refusal: None,
                 name: None,
+                tool_calls: None,
+                tool_call_id: None,
             },
             logprobs: None,
             finish_reason: resp.stop_reason.clone().or(Some("stop".to_string())),
@@ -290,7 +383,7 @@ pub fn convert_claude_response_to_openai(resp: &ClaudeMessageResponse) -> OpenAI
             completion_tokens: resp.usage.output_tokens,
             total_tokens: resp.usage.input_tokens + resp.usage.output_tokens,
             prompt_tokens_details: Some(PromptTokensDetails {
-                cached_tokens: 0,
+                cached_tokens: cached,
                 audio_tokens: 0,
             }),
             completion_tokens_details: Some(CompletionTokensDetails {
@@ -299,6 +392,8 @@ pub fn convert_claude_response_to_openai(resp: &ClaudeMessageResponse) -> OpenAI
                 accepted_prediction_tokens: 0,
                 rejected_prediction_tokens: 0,
             }),
+            prompt_cache_hit_tokens: if cached > 0 { Some(cached) } else { None },
+            prompt_cache_miss_tokens: if cached > 0 { Some(resp.usage.input_tokens.saturating_sub(cached)) } else { None },
         }),
     }
 }

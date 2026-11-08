@@ -41,11 +41,47 @@ fn open_in_system(target: &str) {
             )
         };
         if res as usize <= 32 {
-            let _ = std::process::Command::new("cmd").args(["/C", "start", "", target]).spawn();
+            let _ = std::process::Command::new("cmd")
+                .args(["/C", "start", "", target])
+                .spawn();
         }
     }
     #[cfg(target_os = "macos")]
     let _ = std::process::Command::new("open").arg(target).spawn();
+}
+
+pub fn show_and_focus_window(w: &MainWindow) {
+    w.window().set_minimized(false);
+    let _ = w.show();
+    w.window().request_redraw();
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            BringWindowToTop, FindWindowW, SetForegroundWindow, ShowWindow, SW_RESTORE,
+        };
+        let title: Vec<u16> = "AMR — Antigravity Manager Rust\0".encode_utf16().collect();
+        let hwnd = FindWindowW(std::ptr::null(), title.as_ptr());
+        if !hwnd.is_null() {
+            ShowWindow(hwnd, SW_RESTORE);
+            SetForegroundWindow(hwnd);
+            BringWindowToTop(hwnd);
+        }
+    }
+}
+
+pub fn hide_window_to_tray(w: &MainWindow) {
+    w.window().dispatch_event(slint::platform::WindowEvent::PointerExited);
+    let _ = w.hide();
+    #[cfg(target_os = "linux")]
+    unsafe {
+        libc::malloc_trim(0);
+    }
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::System::ProcessStatus::EmptyWorkingSet;
+        use windows_sys::Win32::System::Threading::GetCurrentProcess;
+        EmptyWorkingSet(GetCurrentProcess());
+    }
 }
 
 fn format_elapsed_time(added_at: u64, lang: Language) -> String {
@@ -104,11 +140,26 @@ fn arc_svg_path(cx: f64, cy: f64, r: f64, start_deg: f64, end_deg: f64) -> Strin
     let x2 = cx + r * e_rad.cos();
     let y2 = cy + r * e_rad.sin();
     let large_arc = if sweep > 180.0 { 1 } else { 0 };
-    format!("M {:.1} {:.1} A {:.1} {:.1} 0 {} 1 {:.1} {:.1}", x1, y1, r, r, large_arc, x2, y2)
+    format!(
+        "M {:.1} {:.1} A {:.1} {:.1} 0 {} 1 {:.1} {:.1}",
+        x1, y1, r, r, large_arc, x2, y2
+    )
 }
 
 fn full_circle_path(cx: f64, cy: f64, r: f64) -> String {
-    format!("M {:.1} {:.1} A {:.1} {:.1} 0 1 1 {:.1} {:.1} A {:.1} {:.1} 0 1 1 {:.1} {:.1}", cx, cy - r, r, r, cx, cy + r, r, r, cx, cy - r)
+    format!(
+        "M {:.1} {:.1} A {:.1} {:.1} 0 1 1 {:.1} {:.1} A {:.1} {:.1} 0 1 1 {:.1} {:.1}",
+        cx,
+        cy - r,
+        r,
+        r,
+        cx,
+        cy + r,
+        r,
+        r,
+        cx,
+        cy - r
+    )
 }
 
 fn get_display_models(cfg: &AppConfig) -> Vec<ModelItemData> {
@@ -557,9 +608,18 @@ fn setup_linux_desktop_integration() {
             (32, include_bytes!("../assets/icons/logo_32.png").as_slice()),
             (48, include_bytes!("../assets/icons/logo_48.png").as_slice()),
             (64, include_bytes!("../assets/icons/logo_64.png").as_slice()),
-            (128, include_bytes!("../assets/icons/logo_128.png").as_slice()),
-            (256, include_bytes!("../assets/icons/logo_256.png").as_slice()),
-            (512, include_bytes!("../assets/icons/logo_512.png").as_slice()),
+            (
+                128,
+                include_bytes!("../assets/icons/logo_128.png").as_slice(),
+            ),
+            (
+                256,
+                include_bytes!("../assets/icons/logo_256.png").as_slice(),
+            ),
+            (
+                512,
+                include_bytes!("../assets/icons/logo_512.png").as_slice(),
+            ),
         ];
 
         for (sz, bytes) in icon_sizes {
@@ -568,9 +628,18 @@ fn setup_linux_desktop_integration() {
             let _ = std::fs::write(sz_dir.join("amr.png"), bytes);
         }
 
-        let _ = std::fs::write(pixmaps_dir.join("amr.png"), include_bytes!("../assets/icons/logo_256.png"));
-        let _ = std::fs::write(home.join(".local/share/icons").join("amr.png"), include_bytes!("../assets/icons/logo_256.png"));
-        let _ = std::fs::write(fonts_dir.join("Unbounded.ttf"), include_bytes!("../ui/fonts/Unbounded.ttf"));
+        let _ = std::fs::write(
+            pixmaps_dir.join("amr.png"),
+            include_bytes!("../assets/icons/logo_256.png"),
+        );
+        let _ = std::fs::write(
+            home.join(".local/share/icons").join("amr.png"),
+            include_bytes!("../assets/icons/logo_256.png"),
+        );
+        let _ = std::fs::write(
+            fonts_dir.join("Unbounded.ttf"),
+            include_bytes!("../ui/fonts/Unbounded.ttf"),
+        );
 
         let exec_path = if let Ok(appimage) = std::env::var("APPIMAGE") {
             appimage
@@ -851,54 +920,58 @@ fn capture_and_save_screenshots(target_dir: &str) -> Result<(), Box<dyn std::err
     let timer = Rc::new(slint::Timer::default());
     let timer_clone = Rc::clone(&timer);
 
-    timer.start(slint::TimerMode::Repeated, std::time::Duration::from_millis(250), move || {
-        let cur = step.get();
-        if cur >= tabs.len() * 2 {
-            timer_clone.stop();
-            println!("All screenshots captured successfully in English!");
-            slint::quit_event_loop().ok();
-            return;
-        }
+    timer.start(
+        slint::TimerMode::Repeated,
+        std::time::Duration::from_millis(250),
+        move || {
+            let cur = step.get();
+            if cur >= tabs.len() * 2 {
+                timer_clone.stop();
+                println!("All screenshots captured successfully in English!");
+                slint::quit_event_loop().ok();
+                return;
+            }
 
-        let tab_idx = cur / 2;
-        let is_capture_tick = (cur % 2) == 1;
+            let tab_idx = cur / 2;
+            let is_capture_tick = (cur % 2) == 1;
 
-        if let Some(ui) = ui_weak.upgrade() {
-            if !is_capture_tick {
-                let (tid, _) = tabs[tab_idx];
-                ui.set_active_tab(tid);
-                ui.window().request_redraw();
-            } else {
-                let (_, filename) = tabs[tab_idx];
-                let target_path = out_dir.join(filename);
-                match ui.window().take_snapshot() {
-                    Ok(snapshot) => {
-                        let w = snapshot.width();
-                        let h = snapshot.height();
-                        let slice = snapshot.as_slice();
-                        let mut raw = Vec::with_capacity((w * h * 4) as usize);
-                        for p in slice {
-                            raw.push(p.r);
-                            raw.push(p.g);
-                            raw.push(p.b);
-                            raw.push(p.a);
-                        }
-                        if let Some(img) = image::RgbaImage::from_raw(w, h, raw) {
-                            if let Err(e) = img.save(&target_path) {
-                                eprintln!("Failed to save screenshot {}: {}", filename, e);
-                            } else {
-                                println!("Saved screenshot: {}", target_path.display());
+            if let Some(ui) = ui_weak.upgrade() {
+                if !is_capture_tick {
+                    let (tid, _) = tabs[tab_idx];
+                    ui.set_active_tab(tid);
+                    ui.window().request_redraw();
+                } else {
+                    let (_, filename) = tabs[tab_idx];
+                    let target_path = out_dir.join(filename);
+                    match ui.window().take_snapshot() {
+                        Ok(snapshot) => {
+                            let w = snapshot.width();
+                            let h = snapshot.height();
+                            let slice = snapshot.as_slice();
+                            let mut raw = Vec::with_capacity((w * h * 4) as usize);
+                            for p in slice {
+                                raw.push(p.r);
+                                raw.push(p.g);
+                                raw.push(p.b);
+                                raw.push(p.a);
+                            }
+                            if let Some(img) = image::RgbaImage::from_raw(w, h, raw) {
+                                if let Err(e) = img.save(&target_path) {
+                                    eprintln!("Failed to save screenshot {}: {}", filename, e);
+                                } else {
+                                    println!("Saved screenshot: {}", target_path.display());
+                                }
                             }
                         }
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to take snapshot for {}: {:?}", filename, e);
+                        Err(e) => {
+                            eprintln!("Failed to take snapshot for {}: {:?}", filename, e);
+                        }
                     }
                 }
             }
-        }
-        step.set(cur + 1);
-    });
+            step.set(cur + 1);
+        },
+    );
 
     slint::run_event_loop()?;
     std::process::exit(0);
@@ -989,7 +1062,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         break;
                     }
                     Err(e) => {
-                        log::warn!("Bind attempt {} failed for {}: {}. Retrying in 300ms...", attempt, addr, e);
+                        log::warn!(
+                            "Bind attempt {} failed for {}: {}. Retrying in 300ms...",
+                            attempt,
+                            addr,
+                            e
+                        );
                         tokio::time::sleep(Duration::from_millis(300)).await;
                     }
                 }
@@ -997,7 +1075,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let listener = match listener_opt {
                 Some(l) => {
-                    log::info!("AMR core server successfully bound and listening on http://{}", addr);
+                    log::info!(
+                        "AMR core server successfully bound and listening on http://{}",
+                        addr
+                    );
                     p_running_srv.store(true, Ordering::SeqCst);
                     l
                 }
@@ -1048,9 +1129,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 cfg.cadence_jitter_percent.clamp(0, 50),
             )
         };
-        let mut next_active_check = tokio::time::Instant::now() + Duration::from_secs(AppConfig::calculate_jittered_secs(init_active_mins, init_jitter));
+        let mut next_active_check = tokio::time::Instant::now()
+            + Duration::from_secs(AppConfig::calculate_jittered_secs(
+                init_active_mins,
+                init_jitter,
+            ));
         // Offset pool check so active and pool refreshes never collide
-        let mut next_pool_check = tokio::time::Instant::now() + Duration::from_secs(AppConfig::calculate_jittered_secs(init_pool_mins, init_jitter) + 45);
+        let mut next_pool_check = tokio::time::Instant::now()
+            + Duration::from_secs(
+                AppConfig::calculate_jittered_secs(init_pool_mins, init_jitter) + 45,
+            );
 
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
@@ -1081,31 +1169,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // 1. Process active account check if due
             if check_active {
-                next_active_check = tokio::time::Instant::now() + Duration::from_secs(AppConfig::calculate_jittered_secs(active_mins, jitter_pct));
+                next_active_check = tokio::time::Instant::now()
+                    + Duration::from_secs(AppConfig::calculate_jittered_secs(
+                        active_mins,
+                        jitter_pct,
+                    ));
                 // Prevent overlap with upcoming pool check
-                if next_pool_check > next_active_check && (next_pool_check - next_active_check) < Duration::from_secs(30) {
+                if next_pool_check > next_active_check
+                    && (next_pool_check - next_active_check) < Duration::from_secs(30)
+                {
                     next_pool_check += Duration::from_secs(45);
                 }
 
                 let active_account_opt = {
                     let cfg = bg_cfg.read();
-                    cfg.accounts.iter().find(|a| active_id.as_deref() == Some(&a.id) && a.is_active).map(|a| (a.id.clone(), a.api_key.clone(), a.refresh_token.clone()))
+                    cfg.accounts
+                        .iter()
+                        .find(|a| active_id.as_deref() == Some(&a.id) && a.is_active)
+                        .map(|a| (a.id.clone(), a.api_key.clone(), a.refresh_token.clone()))
                 };
 
                 if let Some((id, mut token, refresh_tok)) = active_account_opt {
-                    let mut quota_res = antigravity::fetch_models_and_quota(&client, &token, None).await;
+                    let mut quota_res =
+                        antigravity::fetch_models_and_quota(&client, &token, None).await;
                     if quota_res.is_err() {
                         if let Some(ref rtok) = refresh_tok {
                             if let Ok(ref_res) = antigravity::refresh_token(&client, rtok).await {
                                 token = ref_res.access_token.clone();
                                 {
                                     let mut cfg = bg_cfg.write();
-                                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id) {
+                                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id)
+                                    {
                                         acc.api_key = token.clone();
                                     }
                                     let _ = cfg.save();
                                 }
-                                quota_res = antigravity::fetch_models_and_quota(&client, &token, None).await;
+                                quota_res =
+                                    antigravity::fetch_models_and_quota(&client, &token, None)
+                                        .await;
                             }
                         }
                     }
@@ -1120,11 +1221,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     acc.quota_reset = reset;
                                     acc.claude_gpt_percent = detailed_quota.claude_gpt_percent;
                                     acc.claude_gpt_reset = detailed_quota.claude_gpt_reset;
-                                    acc.claude_gpt_weekly_percent = detailed_quota.claude_gpt_weekly_percent;
-                                    acc.claude_gpt_weekly_reset = detailed_quota.claude_gpt_weekly_reset;
+                                    acc.claude_gpt_weekly_percent =
+                                        detailed_quota.claude_gpt_weekly_percent;
+                                    acc.claude_gpt_weekly_reset =
+                                        detailed_quota.claude_gpt_weekly_reset;
                                     acc.gemini_percent = detailed_quota.gemini_percent;
                                     acc.gemini_reset = detailed_quota.gemini_reset;
-                                    acc.gemini_weekly_percent = detailed_quota.gemini_weekly_percent;
+                                    acc.gemini_weekly_percent =
+                                        detailed_quota.gemini_weekly_percent;
                                     acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
                                     acc.error_message = None;
                                     acc.status = "ACTIVE".to_string();
@@ -1132,7 +1236,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         acc.tier = "PRO".to_string();
                                     }
                                 }
-                                let clean: Vec<_> = models.into_iter().filter(|x| !x.id.starts_with("chat_") && !x.id.contains("gemini-3.5")).collect();
+                                let clean: Vec<_> = models
+                                    .into_iter()
+                                    .filter(|x| {
+                                        !x.id.starts_with("chat_") && !x.id.contains("gemini-3.5")
+                                    })
+                                    .collect();
                                 if !clean.is_empty() {
                                     cfg.models = clean;
                                 }
@@ -1142,12 +1251,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         Err(e) => {
                             let err_str = e.to_string();
-                            if err_str.contains("401") || err_str.contains("403") || err_str.contains("invalid_grant") {
+                            if err_str.contains("401")
+                                || err_str.contains("403")
+                                || err_str.contains("invalid_grant")
+                            {
                                 {
                                     let mut cfg = bg_cfg.write();
-                                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id) {
+                                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id)
+                                    {
                                         acc.status = "ERROR".to_string();
-                                        acc.error_message = Some(format!("Authentication failed: {}", err_str));
+                                        acc.error_message =
+                                            Some(format!("Authentication failed: {}", err_str));
                                     }
                                     let _ = cfg.save();
                                 }
@@ -1160,9 +1274,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // 2. Process pool accounts check if due (staggered and non-simultaneous)
             if check_pool {
-                next_pool_check = tokio::time::Instant::now() + Duration::from_secs(AppConfig::calculate_jittered_secs(pool_mins, jitter_pct));
+                next_pool_check = tokio::time::Instant::now()
+                    + Duration::from_secs(AppConfig::calculate_jittered_secs(
+                        pool_mins, jitter_pct,
+                    ));
                 // Prevent collision with next active check
-                if next_active_check > next_pool_check && (next_active_check - next_pool_check) < Duration::from_secs(30) {
+                if next_active_check > next_pool_check
+                    && (next_active_check - next_pool_check) < Duration::from_secs(30)
+                {
                     next_active_check += Duration::from_secs(45);
                 }
 
@@ -1170,28 +1289,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let cfg = bg_cfg.read();
                     cfg.accounts
                         .iter()
-                        .filter(|a| a.is_active && active_id.as_deref() != Some(&a.id) && !(a.status == "ERROR" && a.refresh_token.is_none()))
+                        .filter(|a| {
+                            a.is_active
+                                && active_id.as_deref() != Some(&a.id)
+                                && !(a.status == "ERROR" && a.refresh_token.is_none())
+                        })
                         .map(|a| (a.id.clone(), a.api_key.clone(), a.refresh_token.clone()))
                         .collect()
                 };
 
                 for (id, mut token, refresh_tok) in pool_accounts {
                     // Stagger pool account checks with randomized 3 to 7 second pauses to avoid bot-like bursting
-                    tokio::time::sleep(Duration::from_millis(AppConfig::random_delay_ms(3000, 7000))).await;
+                    tokio::time::sleep(Duration::from_millis(AppConfig::random_delay_ms(
+                        3000, 7000,
+                    )))
+                    .await;
 
-                    let mut quota_res = antigravity::fetch_models_and_quota(&client, &token, None).await;
+                    let mut quota_res =
+                        antigravity::fetch_models_and_quota(&client, &token, None).await;
                     if quota_res.is_err() {
                         if let Some(ref rtok) = refresh_tok {
                             if let Ok(ref_res) = antigravity::refresh_token(&client, rtok).await {
                                 token = ref_res.access_token.clone();
                                 {
                                     let mut cfg = bg_cfg.write();
-                                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id) {
+                                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id)
+                                    {
                                         acc.api_key = token.clone();
                                     }
                                     let _ = cfg.save();
                                 }
-                                quota_res = antigravity::fetch_models_and_quota(&client, &token, None).await;
+                                quota_res =
+                                    antigravity::fetch_models_and_quota(&client, &token, None)
+                                        .await;
                             }
                         }
                     }
@@ -1206,11 +1336,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     acc.quota_reset = reset;
                                     acc.claude_gpt_percent = detailed_quota.claude_gpt_percent;
                                     acc.claude_gpt_reset = detailed_quota.claude_gpt_reset;
-                                    acc.claude_gpt_weekly_percent = detailed_quota.claude_gpt_weekly_percent;
-                                    acc.claude_gpt_weekly_reset = detailed_quota.claude_gpt_weekly_reset;
+                                    acc.claude_gpt_weekly_percent =
+                                        detailed_quota.claude_gpt_weekly_percent;
+                                    acc.claude_gpt_weekly_reset =
+                                        detailed_quota.claude_gpt_weekly_reset;
                                     acc.gemini_percent = detailed_quota.gemini_percent;
                                     acc.gemini_reset = detailed_quota.gemini_reset;
-                                    acc.gemini_weekly_percent = detailed_quota.gemini_weekly_percent;
+                                    acc.gemini_weekly_percent =
+                                        detailed_quota.gemini_weekly_percent;
                                     acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
                                     acc.error_message = None;
                                     acc.status = "ACTIVE".to_string();
@@ -1224,12 +1357,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         Err(e) => {
                             let err_str = e.to_string();
-                            if err_str.contains("401") || err_str.contains("403") || err_str.contains("invalid_grant") {
+                            if err_str.contains("401")
+                                || err_str.contains("403")
+                                || err_str.contains("invalid_grant")
+                            {
                                 {
                                     let mut cfg = bg_cfg.write();
-                                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id) {
+                                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id)
+                                    {
                                         acc.status = "ERROR".to_string();
-                                        acc.error_message = Some(format!("Authentication failed: {}", err_str));
+                                        acc.error_message =
+                                            Some(format!("Authentication failed: {}", err_str));
                                     }
                                     let _ = cfg.save();
                                 }
@@ -1253,8 +1391,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let (acc_id, token, refresh_tok, project_id) = {
             let cfg = startup_cfg.read();
-            if let Some(acc) = cfg.accounts.iter().find(|a| a.is_active && !a.api_key.is_empty()) {
-                (acc.id.clone(), acc.api_key.clone(), acc.refresh_token.clone(), acc.project_id.clone())
+            if let Some(acc) = cfg
+                .accounts
+                .iter()
+                .find(|a| a.is_active && !a.api_key.is_empty())
+            {
+                (
+                    acc.id.clone(),
+                    acc.api_key.clone(),
+                    acc.refresh_token.clone(),
+                    acc.project_id.clone(),
+                )
             } else {
                 return;
             }
@@ -1275,7 +1422,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         log::info!("Synchronizing active upstream models on proxy launch...");
-        let mut res = antigravity::fetch_models_and_quota(&client, &token, active_pid.as_deref()).await;
+        let mut res =
+            antigravity::fetch_models_and_quota(&client, &token, active_pid.as_deref()).await;
 
         if res.is_err() {
             if let Some(ref rtok) = refresh_tok {
@@ -1291,13 +1439,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         let _ = cfg.save();
                     }
-                    res = antigravity::fetch_models_and_quota(&client, &new_tok, active_pid.as_deref()).await;
+                    res = antigravity::fetch_models_and_quota(
+                        &client,
+                        &new_tok,
+                        active_pid.as_deref(),
+                    )
+                    .await;
                 }
             }
         }
 
         if let Ok((models, used, limit, reset, detailed_quota)) = res {
-            log::info!("Successfully synchronized {} models from Google Antigravity on startup", models.len());
+            log::info!(
+                "Successfully synchronized {} models from Google Antigravity on startup",
+                models.len()
+            );
             {
                 let mut cfg = startup_cfg.write();
                 if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == acc_id) {
@@ -1343,7 +1499,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let attrs = WindowAttributesExtWayland::with_name(attrs, "amr", "amr");
                 let attrs = WindowAttributesExtX11::with_name(attrs, "amr", "amr");
                 let icon_bytes = include_bytes!("../assets/icons/tray_32x32.rgba");
-                if let Ok(icon) = i_slint_backend_winit::winit::window::Icon::from_rgba(icon_bytes.to_vec(), 32, 32) {
+                if let Ok(icon) = i_slint_backend_winit::winit::window::Icon::from_rgba(
+                    icon_bytes.to_vec(),
+                    32,
+                    32,
+                ) {
                     attrs.with_window_icon(Some(icon))
                 } else {
                     attrs
@@ -1360,29 +1520,78 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = slint::set_xdg_app_id("amr");
     }
 
+    #[cfg(target_os = "linux")]
+    {
+        if let Err(e) = gtk::init() {
+            log::warn!("Failed to initialize GTK for system tray: {:?}", e);
+        }
+    }
+
     // Launch Slint GUI
     let main_window = MainWindow::new()?;
     let window_handle = main_window.as_weak();
 
+    let initial_visible = !args.start_minimized;
+    let is_window_visible = Arc::new(AtomicBool::new(initial_visible));
+
     // System Tray Instance Holder
-    let tray_holder: Rc<std::cell::RefCell<Option<SystemTray>>> = Rc::new(std::cell::RefCell::new(None));
+    let tray_holder: Rc<std::cell::RefCell<Option<SystemTray>>> =
+        Rc::new(std::cell::RefCell::new(None));
     {
         let initial_lang = Language::from_str_code(&config_arc.read().language);
         let t_init = get_translations(initial_lang);
         let w_tray = window_handle.clone();
-        if let Ok(tray) = SystemTray::new(&t_init.lbl_tray_show, &t_init.lbl_tray_exit, &t_init.lbl_tray_tooltip, move |action| match action {
-            TrayAction::Show | TrayAction::Toggle => {
-                if let Some(w) = w_tray.upgrade() {
-                    let _ = w.show();
-                }
-            }
-            TrayAction::Exit => {
-                std::process::exit(0);
-            }
-        }) {
+        let vis_tray = Arc::clone(&is_window_visible);
+        if let Ok(tray) = SystemTray::new(
+            &t_init.lbl_tray_show,
+            &t_init.lbl_tray_exit,
+            &t_init.lbl_tray_tooltip,
+            move |action| {
+                let win_weak = w_tray.clone();
+                let vis = Arc::clone(&vis_tray);
+                let _ = slint::invoke_from_event_loop(move || match action {
+                    TrayAction::Show => {
+                        if let Some(w) = win_weak.upgrade() {
+                            show_and_focus_window(&w);
+                            vis.store(true, Ordering::SeqCst);
+                        }
+                    }
+                    TrayAction::Toggle => {
+                        if let Some(w) = win_weak.upgrade() {
+                            let is_showing = vis.load(Ordering::SeqCst);
+                            if is_showing {
+                                hide_window_to_tray(&w);
+                                vis.store(false, Ordering::SeqCst);
+                            } else {
+                                show_and_focus_window(&w);
+                                vis.store(true, Ordering::SeqCst);
+                            }
+                        }
+                    }
+                    TrayAction::Exit => {
+                        let _ = slint::quit_event_loop();
+                    }
+                });
+            },
+        ) {
             *tray_holder.borrow_mut() = Some(tray);
         }
     }
+
+    #[cfg(target_os = "linux")]
+    let _gtk_timer = {
+        let timer = slint::Timer::default();
+        timer.start(
+            slint::TimerMode::Repeated,
+            Duration::from_millis(50),
+            move || {
+                while gtk::events_pending() {
+                    gtk::main_iteration_do(false);
+                }
+            },
+        );
+        timer
+    };
 
     // Accounts model
     let accounts_model = Rc::new(VecModel::<AccountData>::default());
@@ -1472,27 +1681,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 name: acc.name.clone().into(),
                 provider: acc.provider.clone().into(),
                 base_url: acc.base_url.clone().into(),
-                api_key_masked: if acc.api_key.is_empty() { "No key".into() } else { "••••••••".into() },
+                api_key_masked: if acc.api_key.is_empty() {
+                    "No key".into()
+                } else {
+                    "••••••••".into()
+                },
                 fingerprint: acc.fingerprint.clone().into(),
                 tier: acc.tier.clone().into(),
                 quota_used: acc.quota_used as i32,
                 quota_limit: acc.quota_limit as i32,
                 quota_percent: acc.claude_gpt_percent,
-                quota_reset: AppConfig::localize_reset_str(&acc.claude_gpt_reset, is_ru, is_zh).into(),
+                quota_reset: AppConfig::localize_reset_str(&acc.claude_gpt_reset, is_ru, is_zh)
+                    .into(),
                 claude_gpt_percent: acc.claude_gpt_percent,
-                claude_gpt_reset: AppConfig::localize_reset_str(&acc.claude_gpt_reset, is_ru, is_zh).into(),
+                claude_gpt_reset: AppConfig::localize_reset_str(
+                    &acc.claude_gpt_reset,
+                    is_ru,
+                    is_zh,
+                )
+                .into(),
                 claude_gpt_weekly_percent: acc.claude_gpt_weekly_percent,
-                claude_gpt_weekly_reset: AppConfig::localize_reset_str(&acc.claude_gpt_weekly_reset, is_ru, is_zh).into(),
+                claude_gpt_weekly_reset: AppConfig::localize_reset_str(
+                    &acc.claude_gpt_weekly_reset,
+                    is_ru,
+                    is_zh,
+                )
+                .into(),
                 gemini_percent: acc.gemini_percent,
                 gemini_reset: AppConfig::localize_reset_str(&acc.gemini_reset, is_ru, is_zh).into(),
                 gemini_weekly_percent: acc.gemini_weekly_percent,
-                gemini_weekly_reset: AppConfig::localize_reset_str(&acc.gemini_weekly_reset, is_ru, is_zh).into(),
+                gemini_weekly_reset: AppConfig::localize_reset_str(
+                    &acc.gemini_weekly_reset,
+                    is_ru,
+                    is_zh,
+                )
+                .into(),
                 status: acc.status.clone().into(),
                 is_active: acc.is_active,
                 error_message: acc.error_message.clone().unwrap_or_default().into(),
                 is_updating: false,
                 update_status_text: "".into(),
-                added_at_text: format_elapsed_time(acc.added_at.unwrap_or(0), Language::from_str_code(&cfg.language)).into(),
+                added_at_text: format_elapsed_time(
+                    acc.added_at.unwrap_or(0),
+                    Language::from_str_code(&cfg.language),
+                )
+                .into(),
                 proxy_url: acc.proxy_url.clone().unwrap_or_default().into(),
             });
         }
@@ -1513,7 +1746,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_global_gemini_weekly_percent(cfg.aggregate_gemini_weekly_percent());
         main_window.set_global_gemini_weekly_label(cfg.format_gemini_weekly_quota().into());
         main_window.set_global_gemini_weekly_reset(cfg.nearest_gemini_weekly_reset().into());
-        main_window.set_healthy_accounts_count(cfg.accounts.iter().filter(|a| a.is_active).count() as i32);
+        main_window
+            .set_healthy_accounts_count(cfg.accounts.iter().filter(|a| a.is_active).count() as i32);
         main_window.set_app_memory(get_process_memory_string().into());
     }
 
@@ -1612,9 +1846,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     main_window.on_add_account(move || {
         if let Some(h) = h_add.upgrade() {
             let token = h.get_new_acc_token().to_string().trim().to_string();
-            if token.is_empty() { return; }
+            if token.is_empty() {
+                return;
+            }
             let proxy_input = h.get_new_acc_proxy().to_string().trim().to_string();
-            let proxy_opt = if proxy_input.is_empty() { None } else { Some(proxy_input) };
+            let proxy_opt = if proxy_input.is_empty() {
+                None
+            } else {
+                Some(proxy_input)
+            };
 
             h.set_new_acc_token("".into());
             h.set_new_acc_proxy("".into());
@@ -1645,18 +1885,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else if access_token.starts_with("sk-") {
                             "openai.direct@api".to_string()
                         } else {
-                            format!("account-{}@antigravity", &uuid::Uuid::new_v4().simple().to_string()[..6])
+                            format!(
+                                "account-{}@antigravity",
+                                &uuid::Uuid::new_v4().simple().to_string()[..6]
+                            )
                         }
                     }
                 };
 
-                let (project_id, tier) = antigravity::fetch_project_and_tier(&http_client, &access_token).await;
+                let (project_id, tier) =
+                    antigravity::fetch_project_and_tier(&http_client, &access_token).await;
 
                 let (fetched_models, quota_used, quota_limit, quota_reset, detailed_quota) =
-                    match antigravity::fetch_models_and_quota(&http_client, &access_token, project_id.as_deref()).await {
+                    match antigravity::fetch_models_and_quota(
+                        &http_client,
+                        &access_token,
+                        project_id.as_deref(),
+                    )
+                    .await
+                    {
                         Ok(res) => (Some(res.0), res.1, res.2, res.3, res.4),
                         Err(_) => {
-                            let det = antigravity::fetch_user_quota_summary(&http_client, &access_token).await;
+                            let det =
+                                antigravity::fetch_user_quota_summary(&http_client, &access_token)
+                                    .await;
                             (None, 0, 100_000, "in 4h 00m".to_string(), det)
                         }
                     };
@@ -1686,7 +1938,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     refresh_token: refresh_token_opt,
                     project_id,
                     is_active: true,
-                    added_at: Some(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)),
+                    added_at: Some(
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0),
+                    ),
                     device_profile: Some(amr::config::DeviceProfile::generate()),
                     proxy_url: proxy_opt,
                 };
@@ -1696,7 +1953,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     cfg.accounts.push(new_acc);
                     if let Some(m) = fetched_models {
                         // Filter out any uncurated internal junk models
-                        let clean_models: Vec<_> = m.into_iter().filter(|x| !x.id.starts_with("chat_") && !x.id.contains("gemini-3.5")).collect();
+                        let clean_models: Vec<_> = m
+                            .into_iter()
+                            .filter(|x| !x.id.starts_with("chat_") && !x.id.contains("gemini-3.5"))
+                            .collect();
                         if !clean_models.is_empty() {
                             cfg.models = clean_models;
                         }
@@ -1718,7 +1978,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // Shared update states for account interactive feedback: id -> (is_updating, status_text)
-    let account_update_states = Arc::new(parking_lot::RwLock::new(std::collections::HashMap::<String, (bool, String)>::new()));
+    let account_update_states = Arc::new(parking_lot::RwLock::new(std::collections::HashMap::<
+        String,
+        (bool, String),
+    >::new()));
 
     // Toggle account active state callback
     let c_tog = Arc::clone(&config_arc);
@@ -1730,7 +1993,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut cfg = c_tog.write();
             if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id_str) {
                 acc.is_active = !acc.is_active;
-                acc.status = if acc.is_active { "ACTIVE".to_string() } else { "DISABLED".to_string() };
+                acc.status = if acc.is_active {
+                    "ACTIVE".to_string()
+                } else {
+                    "DISABLED".to_string()
+                };
             }
             let _ = cfg.save();
         }
@@ -1738,7 +2005,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(mut row) = acc_model_tog.row_data(i) {
                 if row.id == id_slint {
                     row.is_active = !row.is_active;
-                    row.status = if row.is_active { "ACTIVE".into() } else { "DISABLED".into() };
+                    row.status = if row.is_active {
+                        "ACTIVE".into()
+                    } else {
+                        "DISABLED".into()
+                    };
                     acc_model_tog.set_row_data(i, row);
                     break;
                 }
@@ -1915,19 +2186,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 h.set_info_account_fingerprint(acc.fingerprint.clone().into());
                 let lang = Language::from_str_code(&cfg.language);
                 let t = get_translations(lang);
-                h.set_info_account_models(format!("{} {}", cfg.models.len(), t.lbl_upstream_models_suffix).into());
-                h.set_info_account_added_at(format_elapsed_time(acc.added_at.unwrap_or(0), lang).into());
+                h.set_info_account_models(
+                    format!("{} {}", cfg.models.len(), t.lbl_upstream_models_suffix).into(),
+                );
+                h.set_info_account_added_at(
+                    format_elapsed_time(acc.added_at.unwrap_or(0), lang).into(),
+                );
                 h.set_info_account_error(acc.error_message.clone().unwrap_or_default().into());
 
                 // Health & Quarantine diagnosis
                 let health = b_info.get_detailed_health(&acc.id);
                 let (stage_text, is_cooling) = match health.stage {
-                    amr::proxy::balancer::HealthStage::Healthy => (t.lbl_stage_healthy.clone(), false),
-                    amr::proxy::balancer::HealthStage::SoftPause => (t.lbl_stage_soft_pause.clone(), true),
-                    amr::proxy::balancer::HealthStage::Backoff => (t.lbl_stage_backoff.clone(), true),
-                    amr::proxy::balancer::HealthStage::Cooldown => (t.lbl_stage_cooldown.clone(), true),
-                    amr::proxy::balancer::HealthStage::Quarantine => (t.lbl_stage_quarantine.clone(), true),
-                    amr::proxy::balancer::HealthStage::Probing => (t.lbl_stage_probing.clone(), false),
+                    amr::proxy::balancer::HealthStage::Healthy => {
+                        (t.lbl_stage_healthy.clone(), false)
+                    }
+                    amr::proxy::balancer::HealthStage::SoftPause => {
+                        (t.lbl_stage_soft_pause.clone(), true)
+                    }
+                    amr::proxy::balancer::HealthStage::Backoff => {
+                        (t.lbl_stage_backoff.clone(), true)
+                    }
+                    amr::proxy::balancer::HealthStage::Cooldown => {
+                        (t.lbl_stage_cooldown.clone(), true)
+                    }
+                    amr::proxy::balancer::HealthStage::Quarantine => {
+                        (t.lbl_stage_quarantine.clone(), true)
+                    }
+                    amr::proxy::balancer::HealthStage::Probing => {
+                        (t.lbl_stage_probing.clone(), false)
+                    }
                 };
                 h.set_info_account_health_stage(stage_text.into());
                 h.set_info_account_health_level(health.stage_level as i32);
@@ -1935,12 +2222,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(rem) = health.remaining_secs {
                     h.set_info_account_health_remaining(format!("{}s", rem).into());
                 } else {
-                    h.set_info_account_health_remaining(t.lbl_modal_quarantine_active.clone().into());
+                    h.set_info_account_health_remaining(
+                        t.lbl_modal_quarantine_active.clone().into(),
+                    );
                 }
                 if let Some(ref reason) = health.last_failure_reason {
                     h.set_info_account_health_reason(reason.clone().into());
                 } else {
-                    h.set_info_account_health_reason(t.lbl_modal_quarantine_no_error.clone().into());
+                    h.set_info_account_health_reason(
+                        t.lbl_modal_quarantine_no_error.clone().into(),
+                    );
                 }
 
                 h.set_show_account_info(true);
@@ -2032,7 +2323,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let c_regen = Arc::clone(&config_arc);
     let h_regen = window_handle.clone();
     main_window.on_regenerate_master_key(move || {
-        let new_key = format!("sk-amr-{}", &uuid::Uuid::new_v4().simple().to_string()[..16]);
+        let new_key = format!(
+            "sk-amr-{}",
+            &uuid::Uuid::new_v4().simple().to_string()[..16]
+        );
         let lang = {
             let mut cfg = c_regen.write();
             cfg.master_api_key = new_key.clone();
@@ -2079,13 +2373,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .send()
                 .await;
 
-            let t = amr::i18n::get_translations(amr::i18n::Language::from_str_code(&lang_for_async));
+            let t =
+                amr::i18n::get_translations(amr::i18n::Language::from_str_code(&lang_for_async));
             let current_ver = concat!("v", env!("CARGO_PKG_VERSION"));
             let status_str = match res {
                 Ok(resp) if resp.status().is_success() => {
                     if let Ok(json) = resp.json::<serde_json::Value>().await {
                         if let Some(tag) = json.get("tag_name").and_then(|v| v.as_str()) {
-                            if tag == current_ver || tag.trim_start_matches('v') == env!("CARGO_PKG_VERSION") {
+                            if tag == current_ver
+                                || tag.trim_start_matches('v') == env!("CARGO_PKG_VERSION")
+                            {
                                 format!("{} ({})", current_ver, t.lbl_latest_version)
                             } else {
                                 format!("{} ({})", t.lbl_update_available, tag)
@@ -2111,7 +2408,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
             let _ = slint::invoke_from_event_loop(move || {
                 if let Some(h) = h_gh_reset.upgrade() {
-                    let t_rev = amr::i18n::get_translations(amr::i18n::Language::from_str_code(&lang_for_async));
+                    let t_rev = amr::i18n::get_translations(amr::i18n::Language::from_str_code(
+                        &lang_for_async,
+                    ));
                     h.set_github_update_status(t_rev.btn_check_updates.into());
                 }
             });
@@ -2136,7 +2435,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let c_test_dlg = Arc::clone(&config_arc);
     main_window.on_open_test_dialog(move |model_id_slint| {
         if let Some(h) = h_test_dlg.upgrade() {
-            let is_image = model_id_slint == "Image generator" || model_id_slint == "image-generator";
+            let is_image =
+                model_id_slint == "Image generator" || model_id_slint == "image-generator";
             let lang = Language::from_str_code(&c_test_dlg.read().language);
             let t = get_translations(lang);
             h.set_test_model_id(model_id_slint);
@@ -2148,7 +2448,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if is_image {
                 h.set_test_stream(false);
                 h.set_test_prompt(t.lbl_test_image_prompt.into());
-            } else if h.get_test_prompt().is_empty() || h.get_test_prompt() == t.lbl_test_image_prompt {
+            } else if h.get_test_prompt().is_empty()
+                || h.get_test_prompt() == t.lbl_test_image_prompt
+            {
                 h.set_test_prompt(t.lbl_test_default_prompt.into());
             }
             h.set_show_test_dialog(true);
@@ -2241,11 +2543,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if !status_code.is_success() {
                             let body_text = resp.text().await.unwrap_or_default();
                             let clean_err = antigravity::extract_clean_error_message(&body_text);
-                            let err_msg = format!("Error ({}): {}", status_code.as_u16(), clean_err);
+                            let err_msg =
+                                format!("Error ({}): {}", status_code.as_u16(), clean_err);
                             let _ = slint::invoke_from_event_loop(move || {
                                 if let Some(ui) = h_async.upgrade() {
                                     let reason = status_code.canonical_reason().unwrap_or("Error");
-                                    ui.set_test_status(format!("{} {}", status_code.as_u16(), reason).into());
+                                    ui.set_test_status(
+                                        format!("{} {}", status_code.as_u16(), reason).into(),
+                                    );
                                     ui.set_test_latency(format!("{} ms", lat).into());
                                     ui.set_test_tokens("0".into());
                                     ui.set_test_response(err_msg.into());
@@ -2278,18 +2583,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     if trimmed == "[DONE]" {
                                                         break;
                                                     }
-                                                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
-                                                        if let Some(delta) = val.pointer("/choices/0/delta/content").and_then(|c| c.as_str()) {
+                                                    if let Ok(val) =
+                                                        serde_json::from_str::<serde_json::Value>(
+                                                            trimmed,
+                                                        )
+                                                    {
+                                                        if let Some(delta) = val
+                                                            .pointer("/choices/0/delta/content")
+                                                            .and_then(|c| c.as_str())
+                                                        {
                                                             full_text.push_str(delta);
                                                             let current_text = full_text.clone();
                                                             let h_delta = h_async.clone();
-                                                            let _ = slint::invoke_from_event_loop(move || {
-                                                                if let Some(ui) = h_delta.upgrade() {
-                                                                    ui.set_test_response(current_text.into());
-                                                                }
-                                                            });
+                                                            let _ = slint::invoke_from_event_loop(
+                                                                move || {
+                                                                    if let Some(ui) =
+                                                                        h_delta.upgrade()
+                                                                    {
+                                                                        ui.set_test_response(
+                                                                            current_text.into(),
+                                                                        );
+                                                                    }
+                                                                },
+                                                            );
                                                         }
-                                                        if let Some(usage_tok) = val.pointer("/usage/total_tokens").and_then(|t| t.as_u64()) {
+                                                        if let Some(usage_tok) = val
+                                                            .pointer("/usage/total_tokens")
+                                                            .and_then(|t| t.as_u64())
+                                                        {
                                                             total_tok = usage_tok;
                                                         }
                                                     }
@@ -2312,7 +2633,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                             let _ = slint::invoke_from_event_loop(move || {
                                 if let Some(ui) = h_async.upgrade() {
-                                    ui.set_test_status(format!("{} OK", status_code.as_u16()).into());
+                                    ui.set_test_status(
+                                        format!("{} OK", status_code.as_u16()).into(),
+                                    );
                                     ui.set_test_latency(format!("{} ms", final_lat).into());
                                     ui.set_test_tokens(total_tok.to_string().into());
                                     ui.set_test_response(final_text.into());
@@ -2322,8 +2645,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         } else {
                             let body_text = resp.text().await.unwrap_or_default();
                             let final_lat = start.elapsed().as_millis();
-                            let (content_text, tokens) = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&body_text) {
-                                let text = parsed["choices"][0]["message"]["content"].as_str().unwrap_or(&body_text).to_string();
+                            let (content_text, tokens) = if let Ok(parsed) =
+                                serde_json::from_str::<serde_json::Value>(&body_text)
+                            {
+                                let text = parsed["choices"][0]["message"]["content"]
+                                    .as_str()
+                                    .unwrap_or(&body_text)
+                                    .to_string();
                                 let tok = parsed["usage"]["total_tokens"].as_u64().unwrap_or(45);
                                 (text, tok)
                             } else {
@@ -2332,7 +2660,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                             let _ = slint::invoke_from_event_loop(move || {
                                 if let Some(ui) = h_async.upgrade() {
-                                    ui.set_test_status(format!("{} OK", status_code.as_u16()).into());
+                                    ui.set_test_status(
+                                        format!("{} OK", status_code.as_u16()).into(),
+                                    );
                                     ui.set_test_latency(format!("{} ms", final_lat).into());
                                     ui.set_test_tokens(tokens.to_string().into());
                                     ui.set_test_response(content_text.into());
@@ -2347,7 +2677,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let lang = Language::from_str_code(&c_async_err.read().language);
                                 let t = get_translations(lang);
                                 ui.set_test_status(t.test_status_error.into());
-                                ui.set_test_response(format!("{}{}", t.test_err_request_prefix, e).into());
+                                ui.set_test_response(
+                                    format!("{}{}", t.test_err_request_prefix, e).into(),
+                                );
                                 ui.set_test_running(false);
                             }
                         });
@@ -2363,38 +2695,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     main_window.on_open_log_details(move |id_slint| {
         let id_str = id_slint.to_string();
         if let Some(h) = h_log_modal.upgrade() {
+            h.set_modal_log_copied(false);
             let logs = s_log_modal.recent_logs.read();
             if let Some(item) = logs.iter().find(|l| l.id == id_str) {
-                    h.set_modal_log_time(item.time.clone().into());
-                    h.set_modal_log_method(item.method.clone().into());
-                    h.set_modal_log_path(item.path.clone().into());
-                    h.set_modal_log_model(item.model.clone().into());
-                    h.set_modal_log_effort(item.reasoning_effort.clone().into());
-                    h.set_modal_log_status(if item.status == 200 { "200 OK".into() } else { format!("{} Error", item.status).into() });
-                    let tok_str = if item.prompt_tokens > 0 || item.completion_tokens > 0 {
-                        format!("{} (in: {}, out: {})", item.tokens, item.prompt_tokens, item.completion_tokens)
+                h.set_modal_log_time(item.time.clone().into());
+                h.set_modal_log_method(item.method.clone().into());
+                h.set_modal_log_path(item.path.clone().into());
+                h.set_modal_log_model(item.model.clone().into());
+                h.set_modal_log_effort(item.reasoning_effort.clone().into());
+                h.set_modal_log_status(if item.status == 200 {
+                    "200 OK".into()
+                } else {
+                    format!("{} Error", item.status).into()
+                });
+                let tok_str = if item.prompt_tokens > 0 || item.completion_tokens > 0 {
+                    format!(
+                        "{} (in: {}, out: {})",
+                        item.tokens, item.prompt_tokens, item.completion_tokens
+                    )
+                } else {
+                    item.tokens.to_string()
+                };
+                h.set_modal_log_tokens(tok_str.into());
+                h.set_modal_log_latency(format!("{} ms", item.latency_ms).into());
+                h.set_modal_log_account(item.account.clone().into());
+                h.set_modal_log_headers(item.request_headers.clone().into());
+                h.set_modal_log_req_body(if item.request_body.is_empty() {
+                    "{}".into()
+                } else {
+                    item.request_body.clone().into()
+                });
+                h.set_modal_log_resp_body(if item.response_body.is_empty() {
+                    if let Some(ref err) = item.error_msg {
+                        err.clone().into()
                     } else {
-                        item.tokens.to_string()
-                    };
-                    h.set_modal_log_tokens(tok_str.into());
-                    h.set_modal_log_latency(format!("{} ms", item.latency_ms).into());
-                    h.set_modal_log_account(item.account.clone().into());
-                    h.set_modal_log_headers(item.request_headers.clone().into());
-                    h.set_modal_log_req_body(if item.request_body.is_empty() { "{}".into() } else { item.request_body.clone().into() });
-                    h.set_modal_log_resp_body(if item.response_body.is_empty() {
-                        if let Some(ref err) = item.error_msg {
-                            err.clone().into()
-                        } else {
-                            "(empty or streaming response)".into()
-                        }
-                    } else {
-                        item.response_body.clone().into()
-                    });
-                    h.set_modal_log_error(item.error_msg.clone().unwrap_or_default().into());
-                    h.set_modal_inspector_tab(0);
-                    h.set_show_log_modal(true);
-                }
+                        "(empty or streaming response)".into()
+                    }
+                } else {
+                    item.response_body.clone().into()
+                });
+                h.set_modal_log_error(item.error_msg.clone().unwrap_or_default().into());
+                h.set_modal_inspector_tab(0);
+                h.set_show_log_modal(true);
             }
+        }
     });
 
     // Language switcher callback
@@ -2800,7 +3144,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-
     let c_qpt = Arc::clone(&config_arc);
     let h_qpt = window_handle.clone();
     main_window.on_set_quota_protection_threshold(move |val| {
@@ -3065,267 +3408,343 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut last_seen_version: u64 = 0;
     let w_timer = window_handle.clone();
 
-    timer.start(slint::TimerMode::Repeated, Duration::from_millis(500), move || {
-        if let Some(w) = w_timer.upgrade() {
-            w.set_proxy_running(p_running_timer.load(Ordering::SeqCst));
-            let (reqs, tokens, avg_lat) = s_timer.get_metrics();
-            w.set_total_requests(reqs.to_string().into());
-            w.set_total_tokens(tokens.to_string().into());
-            w.set_avg_latency(format!("{} ms", avg_lat).into());
-            w.set_app_memory(get_process_memory_string().into());
+    timer.start(
+        slint::TimerMode::Repeated,
+        Duration::from_millis(500),
+        move || {
+            if let Some(w) = w_timer.upgrade() {
+                w.set_proxy_running(p_running_timer.load(Ordering::SeqCst));
+                let (reqs, tokens, avg_lat) = s_timer.get_metrics();
+                w.set_total_requests(reqs.to_string().into());
+                w.set_total_tokens(tokens.to_string().into());
+                w.set_avg_latency(format!("{} ms", avg_lat).into());
+                w.set_app_memory(get_process_memory_string().into());
 
-            // Detailed stats
-            let (_, succ, errs, prompt_tok, comp_tok, think_tok, _, max_lat) = s_timer.get_detailed_stats();
-            w.set_stat_prompt_tokens(prompt_tok.to_string().into());
-            w.set_stat_completion_tokens(comp_tok.to_string().into());
-            w.set_stat_thinking_tokens(think_tok.to_string().into());
+                // Detailed stats
+                let (_, succ, errs, prompt_tok, comp_tok, think_tok, _, max_lat) =
+                    s_timer.get_detailed_stats();
+                w.set_stat_prompt_tokens(prompt_tok.to_string().into());
+                w.set_stat_completion_tokens(comp_tok.to_string().into());
+                w.set_stat_thinking_tokens(think_tok.to_string().into());
 
-            let total_tok = prompt_tok + comp_tok + think_tok;
-            let (p_pct, c_pct, t_pct) = if total_tok > 0 {
-                let p = ((prompt_tok as f64 / total_tok as f64) * 100.0).round() as i32;
-                let c = ((comp_tok as f64 / total_tok as f64) * 100.0).round() as i32;
-                let t = 100 - p - c;
-                (p.max(1), c.max(1), t.max(1))
-            } else {
-                (50, 40, 10)
-            };
-            w.set_stat_prompt_pct(p_pct);
-            w.set_stat_comp_pct(c_pct);
-            w.set_stat_think_pct(t_pct);
-
-            let (succ_pct, err_pct, succ_rate) = if reqs > 0 {
-                let s = (succ as f64 / reqs as f64) * 100.0;
-                let e = (errs as f64 / reqs as f64) * 100.0;
-                (s.round() as i32, e.round() as i32, format!("{:.1}%", s))
-            } else {
-                (100, 0, "100%".to_string())
-            };
-            w.set_stat_success_rate(succ_rate.into());
-            w.set_stat_success_pct(succ_pct);
-            w.set_stat_error_count(errs.to_string().into());
-            w.set_stat_error_pct(err_pct);
-            w.set_stat_max_latency(format!("{} ms", max_lat).into());
-
-            // Circular Vector Charts
-            let cx = 48.0;
-            let cy = 48.0;
-            let r = 38.0;
-
-            // Chart 1: Token Composition
-            w.set_stat_chart1_path_bg(full_circle_path(cx, cy, r).into());
-            let p_deg = (p_pct as f64) * 3.6;
-            let c_deg = (c_pct as f64) * 3.6;
-            let t_deg = (t_pct as f64) * 3.6;
-            w.set_stat_chart1_path1(arc_svg_path(cx, cy, r, 0.0, p_deg).into());
-            w.set_stat_chart1_path2(arc_svg_path(cx, cy, r, p_deg, p_deg + c_deg).into());
-            w.set_stat_chart1_path3(arc_svg_path(cx, cy, r, p_deg + c_deg, (p_deg + c_deg + t_deg).min(359.8)).into());
-
-            // Chart 2: Protocol Reliability (QoS)
-            w.set_stat_chart2_path_bg(full_circle_path(cx, cy, r).into());
-            let succ_ratio = if reqs > 0 {
-                (succ as f64 / reqs as f64).clamp(0.0, 1.0)
-            } else {
-                1.0
-            };
-            let succ_deg = succ_ratio * 359.8;
-            w.set_stat_chart2_path_succ(arc_svg_path(cx, cy, r, 0.0, succ_deg).into());
-            if succ_ratio < 0.999 {
-                w.set_stat_chart2_path_err(arc_svg_path(cx, cy, r, succ_deg, 359.8).into());
-            } else {
-                w.set_stat_chart2_path_err("".into());
-            }
-
-            // Chart 3: Model Traffic Share
-            let (claude_pct, gemini_pct) = {
-                let logs = s_timer.recent_logs.read();
-                let mut cl = 0;
-                let mut gm = 0;
-                for l in logs.iter() {
-                    let m = l.model.to_lowercase();
-                    if m.contains("claude") {
-                        cl += 1;
-                    } else if m.contains("gemini") {
-                        gm += 1;
-                    }
-                }
-                if cl + gm > 0 {
-                    let cp = ((cl as f64 / (cl + gm) as f64) * 100.0).round() as i32;
-                    (cp, 100 - cp)
+                let total_tok = prompt_tok + comp_tok + think_tok;
+                let (p_pct, c_pct, t_pct) = if total_tok > 0 {
+                    let p = ((prompt_tok as f64 / total_tok as f64) * 100.0).round() as i32;
+                    let c = ((comp_tok as f64 / total_tok as f64) * 100.0).round() as i32;
+                    let t = 100 - p - c;
+                    (p.max(1), c.max(1), t.max(1))
                 } else {
-                    (50, 50)
+                    (50, 40, 10)
+                };
+                w.set_stat_prompt_pct(p_pct);
+                w.set_stat_comp_pct(c_pct);
+                w.set_stat_think_pct(t_pct);
+
+                let (succ_pct, err_pct, succ_rate) = if reqs > 0 {
+                    let s = (succ as f64 / reqs as f64) * 100.0;
+                    let e = (errs as f64 / reqs as f64) * 100.0;
+                    (s.round() as i32, e.round() as i32, format!("{:.1}%", s))
+                } else {
+                    (100, 0, "100%".to_string())
+                };
+                w.set_stat_success_rate(succ_rate.into());
+                w.set_stat_success_pct(succ_pct);
+                w.set_stat_error_count(errs.to_string().into());
+                w.set_stat_error_pct(err_pct);
+                w.set_stat_max_latency(format!("{} ms", max_lat).into());
+
+                // Circular Vector Charts
+                let cx = 48.0;
+                let cy = 48.0;
+                let r = 38.0;
+
+                // Chart 1: Token Composition
+                w.set_stat_chart1_path_bg(full_circle_path(cx, cy, r).into());
+                let p_deg = (p_pct as f64) * 3.6;
+                let c_deg = (c_pct as f64) * 3.6;
+                let t_deg = (t_pct as f64) * 3.6;
+                w.set_stat_chart1_path1(arc_svg_path(cx, cy, r, 0.0, p_deg).into());
+                w.set_stat_chart1_path2(arc_svg_path(cx, cy, r, p_deg, p_deg + c_deg).into());
+                w.set_stat_chart1_path3(
+                    arc_svg_path(cx, cy, r, p_deg + c_deg, (p_deg + c_deg + t_deg).min(359.8))
+                        .into(),
+                );
+
+                // Chart 2: Protocol Reliability (QoS)
+                w.set_stat_chart2_path_bg(full_circle_path(cx, cy, r).into());
+                let succ_ratio = if reqs > 0 {
+                    (succ as f64 / reqs as f64).clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+                let succ_deg = succ_ratio * 359.8;
+                w.set_stat_chart2_path_succ(arc_svg_path(cx, cy, r, 0.0, succ_deg).into());
+                if succ_ratio < 0.999 {
+                    w.set_stat_chart2_path_err(arc_svg_path(cx, cy, r, succ_deg, 359.8).into());
+                } else {
+                    w.set_stat_chart2_path_err("".into());
                 }
-            };
-            w.set_stat_claude_pct(claude_pct);
-            w.set_stat_gemini_pct(gemini_pct);
 
-            // Sync accounts & models if changed
-            let current_version = v_timer.load(Ordering::Relaxed);
-            let accounts_len = c_timer.read().accounts.len();
-            if current_version != last_seen_version || accounts_len != accounts_model.row_count() {
-                last_seen_version = current_version;
-                let cfg = c_timer.read();
+                // Chart 3: Model Traffic Share
+                let (claude_pct, gemini_pct) = {
+                    let logs = s_timer.recent_logs.read();
+                    let mut cl = 0;
+                    let mut gm = 0;
+                    for l in logs.iter() {
+                        let m = l.model.to_lowercase();
+                        if m.contains("claude") {
+                            cl += 1;
+                        } else if m.contains("gemini") {
+                            gm += 1;
+                        }
+                    }
+                    if cl + gm > 0 {
+                        let cp = ((cl as f64 / (cl + gm) as f64) * 100.0).round() as i32;
+                        (cp, 100 - cp)
+                    } else {
+                        (50, 50)
+                    }
+                };
+                w.set_stat_claude_pct(claude_pct);
+                w.set_stat_gemini_pct(gemini_pct);
 
-                let is_ru = cfg.language.eq_ignore_ascii_case("ru");
-                let is_zh = cfg.language.eq_ignore_ascii_case("zh");
+                // Latency Percentiles & Real Cache Hit Rate
+                let (p50, p95, p99) = s_timer.get_latency_percentiles();
+                let (_, _, _, balancer_hit_rate, _) = b_timer.get_metrics();
+                let real_cache_rate = s_timer.get_token_cache_hit_rate(balancer_hit_rate);
 
-                let new_acc_data: Vec<AccountData> = cfg.accounts
-                    .iter()
-                    .map(|acc| {
-                        AccountData {
+                w.set_stat_cache_hit_rate(format!("{:.1}%", real_cache_rate).into());
+                w.set_stat_p50_latency(format!("{} ms", p50).into());
+                w.set_stat_p95_latency(format!("{} ms", p95).into());
+                w.set_stat_p99_latency(format!("{} ms", p99).into());
+
+                // Sync accounts & models if changed
+                let current_version = v_timer.load(Ordering::Relaxed);
+                let accounts_len = c_timer.read().accounts.len();
+                if current_version != last_seen_version
+                    || accounts_len != accounts_model.row_count()
+                {
+                    last_seen_version = current_version;
+                    let cfg = c_timer.read();
+
+                    let is_ru = cfg.language.eq_ignore_ascii_case("ru");
+                    let is_zh = cfg.language.eq_ignore_ascii_case("zh");
+
+                    let new_acc_data: Vec<AccountData> = cfg
+                        .accounts
+                        .iter()
+                        .map(|acc| AccountData {
                             id: acc.id.clone().into(),
                             name: acc.name.clone().into(),
                             provider: acc.provider.clone().into(),
                             base_url: acc.base_url.clone().into(),
-                            api_key_masked: if acc.api_key.is_empty() { "No key".into() } else { "••••••••".into() },
+                            api_key_masked: if acc.api_key.is_empty() {
+                                "No key".into()
+                            } else {
+                                "••••••••".into()
+                            },
                             fingerprint: acc.fingerprint.clone().into(),
                             tier: acc.tier.clone().into(),
                             quota_used: acc.quota_used as i32,
                             quota_limit: acc.quota_limit as i32,
                             quota_percent: acc.claude_gpt_percent,
-                            quota_reset: AppConfig::localize_reset_str(&acc.claude_gpt_reset, is_ru, is_zh).into(),
+                            quota_reset: AppConfig::localize_reset_str(
+                                &acc.claude_gpt_reset,
+                                is_ru,
+                                is_zh,
+                            )
+                            .into(),
                             claude_gpt_percent: acc.claude_gpt_percent,
-                            claude_gpt_reset: AppConfig::localize_reset_str(&acc.claude_gpt_reset, is_ru, is_zh).into(),
+                            claude_gpt_reset: AppConfig::localize_reset_str(
+                                &acc.claude_gpt_reset,
+                                is_ru,
+                                is_zh,
+                            )
+                            .into(),
                             claude_gpt_weekly_percent: acc.claude_gpt_weekly_percent,
-                            claude_gpt_weekly_reset: AppConfig::localize_reset_str(&acc.claude_gpt_weekly_reset, is_ru, is_zh).into(),
+                            claude_gpt_weekly_reset: AppConfig::localize_reset_str(
+                                &acc.claude_gpt_weekly_reset,
+                                is_ru,
+                                is_zh,
+                            )
+                            .into(),
                             gemini_percent: acc.gemini_percent,
-                            gemini_reset: AppConfig::localize_reset_str(&acc.gemini_reset, is_ru, is_zh).into(),
+                            gemini_reset: AppConfig::localize_reset_str(
+                                &acc.gemini_reset,
+                                is_ru,
+                                is_zh,
+                            )
+                            .into(),
                             gemini_weekly_percent: acc.gemini_weekly_percent,
-                            gemini_weekly_reset: AppConfig::localize_reset_str(&acc.gemini_weekly_reset, is_ru, is_zh).into(),
+                            gemini_weekly_reset: AppConfig::localize_reset_str(
+                                &acc.gemini_weekly_reset,
+                                is_ru,
+                                is_zh,
+                            )
+                            .into(),
                             status: acc.status.clone().into(),
                             is_active: acc.is_active,
                             error_message: acc.error_message.clone().unwrap_or_default().into(),
                             is_updating: false,
                             update_status_text: "".into(),
-                            added_at_text: format_elapsed_time(acc.added_at.unwrap_or(0), Language::from_str_code(&cfg.language)).into(),
+                            added_at_text: format_elapsed_time(
+                                acc.added_at.unwrap_or(0),
+                                Language::from_str_code(&cfg.language),
+                            )
+                            .into(),
                             proxy_url: acc.proxy_url.clone().unwrap_or_default().into(),
-                        }
-                    })
-                    .collect();
+                        })
+                        .collect();
 
-                if accounts_len != accounts_model.row_count() {
-                    let cur_states = states_timer.read();
-                    let mut final_accs = new_acc_data;
-                    for row in &mut final_accs {
-                        if let Some((is_updating, status_text)) = cur_states.get(row.id.as_str()) {
-                            row.is_updating = *is_updating;
-                            row.update_status_text = status_text.clone().into();
-                        }
-                    }
-                    accounts_model.set_vec(final_accs);
-                } else {
-                    let cur_states = states_timer.read();
-                    for (idx, item) in new_acc_data.into_iter().enumerate() {
-                        let mut row = item;
-                        if let Some((is_updating, status_text)) = cur_states.get(row.id.as_str()) {
-                            row.is_updating = *is_updating;
-                            row.update_status_text = status_text.clone().into();
-                        }
-                        accounts_model.set_row_data(idx, row);
-                    }
-                }
-
-                models_model.set_vec(get_display_models(&cfg));
-
-                w.set_global_claude_percent(cfg.aggregate_claude_gpt_percent());
-                w.set_global_claude_label(cfg.format_claude_quota().into());
-                w.set_global_claude_reset(cfg.nearest_claude_reset().into());
-                w.set_global_claude_weekly_percent(cfg.aggregate_claude_gpt_weekly_percent());
-                w.set_global_claude_weekly_label(cfg.format_claude_weekly_quota().into());
-                w.set_global_claude_weekly_reset(cfg.nearest_claude_weekly_reset().into());
-                w.set_global_gemini_percent(cfg.aggregate_gemini_percent());
-                w.set_global_gemini_label(cfg.format_gemini_quota().into());
-                w.set_global_gemini_reset(cfg.nearest_gemini_reset().into());
-                w.set_global_gemini_weekly_percent(cfg.aggregate_gemini_weekly_percent());
-                w.set_global_gemini_weekly_label(cfg.format_gemini_weekly_quota().into());
-                w.set_global_gemini_weekly_reset(cfg.nearest_gemini_weekly_reset().into());
-                w.set_healthy_accounts_count(cfg.accounts.iter().filter(|a| a.is_active).count() as i32);
-            }
-
-            // Real-time Adaptive Backoff Ladder & Auto-Heal status sync
-            for idx in 0..accounts_model.row_count() {
-                if let Some(mut row) = accounts_model.row_data(idx) {
-                    let (h_stage, _f_count, rem_opt) = b_timer.get_health_status(row.id.as_str());
-                    let expected_status: slint::SharedString = match h_stage {
-                        amr::proxy::balancer::HealthStage::Healthy => {
-                            let cfg = c_timer.read();
-                            if let Some(acc) = cfg.accounts.iter().find(|a| a.id == row.id.as_str()) {
-                                acc.status.clone().into()
-                            } else {
-                                continue;
+                    if accounts_len != accounts_model.row_count() {
+                        let cur_states = states_timer.read();
+                        let mut final_accs = new_acc_data;
+                        for row in &mut final_accs {
+                            if let Some((is_updating, status_text)) =
+                                cur_states.get(row.id.as_str())
+                            {
+                                row.is_updating = *is_updating;
+                                row.update_status_text = status_text.clone().into();
                             }
                         }
-                        amr::proxy::balancer::HealthStage::SoftPause => format!("PAUSE ({}s)", rem_opt.unwrap_or(3)).into(),
-                        amr::proxy::balancer::HealthStage::Backoff => format!("BACKOFF ({}s)", rem_opt.unwrap_or(15)).into(),
-                        amr::proxy::balancer::HealthStage::Cooldown => format!("COOLDOWN ({}s)", rem_opt.unwrap_or(60)).into(),
-                        amr::proxy::balancer::HealthStage::Quarantine => format!("QUARANTINE ({}s)", rem_opt.unwrap_or(300)).into(),
-                        amr::proxy::balancer::HealthStage::Probing => "PROBING (1 TRY)".into(),
-                    };
-                    if row.status != expected_status {
-                        row.status = expected_status;
-                        accounts_model.set_row_data(idx, row);
+                        accounts_model.set_vec(final_accs);
+                    } else {
+                        let cur_states = states_timer.read();
+                        for (idx, item) in new_acc_data.into_iter().enumerate() {
+                            let mut row = item;
+                            if let Some((is_updating, status_text)) =
+                                cur_states.get(row.id.as_str())
+                            {
+                                row.is_updating = *is_updating;
+                                row.update_status_text = status_text.clone().into();
+                            }
+                            accounts_model.set_row_data(idx, row);
+                        }
+                    }
+
+                    models_model.set_vec(get_display_models(&cfg));
+
+                    w.set_global_claude_percent(cfg.aggregate_claude_gpt_percent());
+                    w.set_global_claude_label(cfg.format_claude_quota().into());
+                    w.set_global_claude_reset(cfg.nearest_claude_reset().into());
+                    w.set_global_claude_weekly_percent(cfg.aggregate_claude_gpt_weekly_percent());
+                    w.set_global_claude_weekly_label(cfg.format_claude_weekly_quota().into());
+                    w.set_global_claude_weekly_reset(cfg.nearest_claude_weekly_reset().into());
+                    w.set_global_gemini_percent(cfg.aggregate_gemini_percent());
+                    w.set_global_gemini_label(cfg.format_gemini_quota().into());
+                    w.set_global_gemini_reset(cfg.nearest_gemini_reset().into());
+                    w.set_global_gemini_weekly_percent(cfg.aggregate_gemini_weekly_percent());
+                    w.set_global_gemini_weekly_label(cfg.format_gemini_weekly_quota().into());
+                    w.set_global_gemini_weekly_reset(cfg.nearest_gemini_weekly_reset().into());
+                    w.set_healthy_accounts_count(
+                        cfg.accounts.iter().filter(|a| a.is_active).count() as i32,
+                    );
+                }
+
+                // Real-time Adaptive Backoff Ladder & Auto-Heal status sync
+                for idx in 0..accounts_model.row_count() {
+                    if let Some(mut row) = accounts_model.row_data(idx) {
+                        let (h_stage, _f_count, rem_opt) =
+                            b_timer.get_health_status(row.id.as_str());
+                        let expected_status: slint::SharedString = match h_stage {
+                            amr::proxy::balancer::HealthStage::Healthy => {
+                                let cfg = c_timer.read();
+                                if let Some(acc) =
+                                    cfg.accounts.iter().find(|a| a.id == row.id.as_str())
+                                {
+                                    acc.status.clone().into()
+                                } else {
+                                    continue;
+                                }
+                            }
+                            amr::proxy::balancer::HealthStage::SoftPause => {
+                                format!("PAUSE ({}s)", rem_opt.unwrap_or(3)).into()
+                            }
+                            amr::proxy::balancer::HealthStage::Backoff => {
+                                format!("BACKOFF ({}s)", rem_opt.unwrap_or(15)).into()
+                            }
+                            amr::proxy::balancer::HealthStage::Cooldown => {
+                                format!("COOLDOWN ({}s)", rem_opt.unwrap_or(60)).into()
+                            }
+                            amr::proxy::balancer::HealthStage::Quarantine => {
+                                format!("QUARANTINE ({}s)", rem_opt.unwrap_or(300)).into()
+                            }
+                            amr::proxy::balancer::HealthStage::Probing => "PROBING (1 TRY)".into(),
+                        };
+                        if row.status != expected_status {
+                            row.status = expected_status;
+                            accounts_model.set_row_data(idx, row);
+                        }
                     }
                 }
-            }
 
-            // Real-time quarantine countdown in account info modal
-            if w.get_show_account_info() {
-                let acc_id = w.get_info_account_id();
-                let health = b_timer.get_detailed_health(acc_id.as_str());
-                if let Some(rem) = health.remaining_secs {
-                    w.set_info_account_health_remaining(format!("{}s", rem).into());
-                    w.set_info_account_is_cooling(true);
-                } else if w.get_info_account_is_cooling() {
-                    let cfg = c_timer.read();
-                    let lang = Language::from_str_code(&cfg.language);
-                    let t = get_translations(lang);
-                    w.set_info_account_is_cooling(false);
-                    w.set_info_account_health_remaining(t.lbl_modal_quarantine_active.into());
-                    if health.stage == amr::proxy::balancer::HealthStage::Healthy {
-                        w.set_info_account_health_stage(t.lbl_stage_healthy.into());
-                        w.set_info_account_health_level(0);
+                // Real-time quarantine countdown in account info modal
+                if w.get_show_account_info() {
+                    let acc_id = w.get_info_account_id();
+                    let health = b_timer.get_detailed_health(acc_id.as_str());
+                    if let Some(rem) = health.remaining_secs {
+                        w.set_info_account_health_remaining(format!("{}s", rem).into());
+                        w.set_info_account_is_cooling(true);
+                    } else if w.get_info_account_is_cooling() {
+                        let cfg = c_timer.read();
+                        let lang = Language::from_str_code(&cfg.language);
+                        let t = get_translations(lang);
+                        w.set_info_account_is_cooling(false);
+                        w.set_info_account_health_remaining(t.lbl_modal_quarantine_active.into());
+                        if health.stage == amr::proxy::balancer::HealthStage::Healthy {
+                            w.set_info_account_health_stage(t.lbl_stage_healthy.into());
+                            w.set_info_account_health_level(0);
+                        }
                     }
                 }
-            }
 
-            let logs = s_timer.get_recent_logs();
-            if logs.len() != logs_model.row_count() {
-                logs_model.set_vec(
-                    logs.into_iter()
-                        .map(|l| LogEntryData {
-                            id: l.id.into(),
-                            time: l.time.into(),
-                            method: l.method.into(),
-                            path: l.path.into(),
-                            model: l.model.into(),
-                            status: l.status as i32,
-                            tokens: l.tokens as i32,
-                            latency_ms: l.latency_ms as i32,
-                        })
-                        .collect::<Vec<_>>(),
-                );
+                let logs = s_timer.get_recent_logs();
+                if logs.len() != logs_model.row_count() {
+                    logs_model.set_vec(
+                        logs.into_iter()
+                            .map(|l| LogEntryData {
+                                id: l.id.into(),
+                                time: l.time.into(),
+                                method: l.method.into(),
+                                path: l.path.into(),
+                                model: l.model.into(),
+                                status: l.status as i32,
+                                tokens: l.tokens as i32,
+                                latency_ms: l.latency_ms as i32,
+                            })
+                            .collect::<Vec<_>>(),
+                    );
+                }
             }
-        }
-    });
+        },
+    );
 
     // Window close intercept for Minimize to System Tray
     let c_close = Arc::clone(&config_arc);
     let w_close = window_handle.clone();
+    let vis_close = Arc::clone(&is_window_visible);
+    let tray_close = Rc::clone(&tray_holder);
     main_window.window().on_close_requested(move || {
-        if c_close.read().minimize_to_tray {
+        let has_tray = tray_close.borrow().is_some();
+        if c_close.read().minimize_to_tray && has_tray {
             if let Some(w) = w_close.upgrade() {
-                let _ = w.hide();
+                hide_window_to_tray(&w);
+                vis_close.store(false, Ordering::SeqCst);
             }
-            slint::CloseRequestResponse::KeepWindowShown
+            slint::CloseRequestResponse::HideWindow
         } else {
+            let _ = slint::quit_event_loop();
             slint::CloseRequestResponse::HideWindow
         }
     });
 
     if !args.start_minimized {
         main_window.show()?;
+    } else {
+        hide_window_to_tray(&main_window);
     }
 
-    slint::run_event_loop()?;
+    slint::run_event_loop_until_quit()?;
 
     let _ = stop_sender.send(true);
     if config_arc.read().clear_logs_on_exit {

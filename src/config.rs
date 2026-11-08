@@ -1,7 +1,7 @@
+use crate::i18n::{get_translations, Language};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-use crate::i18n::{get_translations, Language};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum RoutingStrategy {
@@ -39,9 +39,9 @@ impl RoutingStrategy {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum CacheAffinityMode {
-    CacheFirst,       // Maximum KV cache reuse: pins session strictly to account until rate-limited or depleted
+    CacheFirst, // Maximum KV cache reuse: pins session strictly to account until rate-limited or depleted
     #[default]
-    Balanced,         // Hybrid: sticky session, but rotates smoothly if other accounts have > threshold more quota
+    Balanced, // Hybrid: sticky session, but rotates smoothly if other accounts have > threshold more quota
     AggressiveSpread, // Quota leveling: rotates across healthy accounts on every request
 }
 
@@ -95,7 +95,7 @@ pub struct UpstreamAccount {
     pub api_key: String,
     pub fingerprint: String, // "Claude Code 2.x", "Cursor Pro", "Antigravity CLI", "Default"
     #[serde(default = "default_account_tier")]
-    pub tier: String,        // "Free", "Pro", "Team"
+    pub tier: String, // "Free", "Pro", "Team"
     #[serde(default)]
     pub quota_used: u64,
     #[serde(default = "default_quota_limit")]
@@ -119,7 +119,7 @@ pub struct UpstreamAccount {
     #[serde(default = "default_weekly_reset")]
     pub gemini_weekly_reset: String,
     #[serde(default = "default_status")]
-    pub status: String,      // "ACTIVE", "DISABLED", "ERROR"
+    pub status: String, // "ACTIVE", "DISABLED", "ERROR"
     pub is_active: bool,
     #[serde(default)]
     pub error_message: Option<String>,
@@ -254,13 +254,13 @@ pub struct AppConfig {
     pub portable_mode: bool,
     pub expose_reasoning_variants: bool, // Exposes (low), (medium), (high) model clones
     #[serde(default = "default_quota_display_mode")]
-    pub quota_display_mode: String,     // "percent" or "fraction"
+    pub quota_display_mode: String, // "percent" or "fraction"
     #[serde(default = "default_quota_view_mode")]
-    pub quota_view_mode: String,        // "both", "5hour", "weekly"
+    pub quota_view_mode: String, // "both", "5hour", "weekly"
     #[serde(default)]
-    pub hide_sidebar_brand: bool,       // Collapses top brand in sidebar
+    pub hide_sidebar_brand: bool, // Collapses top brand in sidebar
     #[serde(default = "default_language")]
-    pub language: String,               // "en", "ru", "zh"
+    pub language: String, // "en", "ru", "zh"
     #[serde(default = "default_true")]
     pub log_enabled: bool,
     #[serde(default = "default_max_log_entries")]
@@ -341,7 +341,10 @@ pub struct AppConfig {
 }
 
 fn default_master_api_key() -> String {
-    format!("sk-amr-{}", &uuid::Uuid::new_v4().simple().to_string()[..16])
+    format!(
+        "sk-amr-{}",
+        &uuid::Uuid::new_v4().simple().to_string()[..16]
+    )
 }
 
 fn default_session_ttl() -> u64 {
@@ -590,7 +593,10 @@ impl AppConfig {
             let (base_id, _) = crate::proxy::router::parse_model_and_reasoning(&m.id, None);
             m.id = base_id;
 
-            if m.id == "claude-sonnet-5-5-high" || m.id == "claude-sonnet-5-5" || m.id == "claude-3-7-sonnet" {
+            if m.id == "claude-sonnet-5-5-high"
+                || m.id == "claude-sonnet-5-5"
+                || m.id == "claude-3-7-sonnet"
+            {
                 m.id = "claude-sonnet-5-5".to_string();
                 m.display_name = "Claude Sonnet 5.5".to_string();
                 m.provider = "anthropic".to_string();
@@ -609,7 +615,14 @@ impl AppConfig {
                 m.display_name = "Claude Opus 4.6".to_string();
                 m.provider = "anthropic".to_string();
                 m.supports_thinking = true;
-            } else if m.id == "gemini-3.8-flash-high" || m.id == "gemini-3.8-flash-medium" || m.id == "gemini-3.8-flash-low" || m.id == "gemini-3.8-flash-tiered" || m.id == "gemini-2.5-flash-thinking" || m.id == "gemini-2.5-flash" || m.id == "gemini-3.8-flash" {
+            } else if m.id == "gemini-3.8-flash-high"
+                || m.id == "gemini-3.8-flash-medium"
+                || m.id == "gemini-3.8-flash-low"
+                || m.id == "gemini-3.8-flash-tiered"
+                || m.id == "gemini-2.5-flash-thinking"
+                || m.id == "gemini-2.5-flash"
+                || m.id == "gemini-3.8-flash"
+            {
                 m.id = "gemini-3.8-flash".to_string();
                 m.display_name = "Gemini 3.8 Flash".to_string();
                 m.provider = "gemini".to_string();
@@ -619,7 +632,10 @@ impl AppConfig {
                 m.display_name = "Gemini 4 Argon".to_string();
                 m.provider = "gemini".to_string();
                 m.supports_thinking = true;
-            } else if m.id == "Image generator" || m.id.to_lowercase().contains("imagen") || m.id == "image-generator" {
+            } else if m.id == "Image generator"
+                || m.id.to_lowercase().contains("imagen")
+                || m.id == "image-generator"
+            {
                 m.id = "Image generator".to_string();
                 m.display_name = "Image generator".to_string();
                 m.provider = "Google".to_string();
@@ -654,7 +670,10 @@ impl AppConfig {
                         .unwrap_or(0);
 
                     for acc in &mut cfg.accounts {
-                        if acc.added_at.is_none() || acc.added_at.unwrap_or(0) < now_ts.saturating_sub(30 * 86400) || acc.added_at.unwrap_or(0) < 1740000000 {
+                        if acc.added_at.is_none()
+                            || acc.added_at.unwrap_or(0) < now_ts.saturating_sub(30 * 86400)
+                            || acc.added_at.unwrap_or(0) < 1740000000
+                        {
                             acc.added_at = Some(now_ts);
                         }
                         if acc.claude_gpt_percent > 0 || acc.tier.to_lowercase() == "pro" {
@@ -681,7 +700,11 @@ impl AppConfig {
                     // Normalize accounts status to uppercase, preserving ERROR state
                     for acc in &mut cfg.accounts {
                         if acc.status != "ERROR" {
-                            acc.status = if acc.is_active { "ACTIVE".to_string() } else { "DISABLED".to_string() };
+                            acc.status = if acc.is_active {
+                                "ACTIVE".to_string()
+                            } else {
+                                "DISABLED".to_string()
+                            };
                         }
                     }
 
@@ -696,7 +719,10 @@ impl AppConfig {
 
     pub fn config_folder_info() -> (PathBuf, u64) {
         let path = Self::config_path();
-        let folder = path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from("."));
+        let folder = path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("."));
         let mut total_size = 0u64;
         if let Ok(entries) = fs::read_dir(&folder) {
             for entry in entries.flatten() {
@@ -720,7 +746,9 @@ impl AppConfig {
             .unwrap_or_default()
             .subsec_nanos();
         let mut x = nanos ^ (nanos << 13) ^ (nanos >> 17) ^ (nanos << 5);
-        if x == 0 { x = 1234567; }
+        if x == 0 {
+            x = 1234567;
+        }
         let range = (jitter_percent as u32 * 2) + 1;
         let pct_offset = ((x % range) as i32) - (jitter_percent as i32);
         let factor = 1.0 + (pct_offset as f64 / 100.0);
@@ -737,12 +765,15 @@ impl AppConfig {
             .unwrap_or_default()
             .subsec_nanos();
         let mut x = nanos ^ (nanos << 7) ^ (nanos >> 11) ^ (nanos << 3);
-        if x == 0 { x = 7654321; }
+        if x == 0 {
+            x = 7654321;
+        }
         min_ms + ((x as u64) % (max_ms - min_ms + 1))
     }
 
     pub fn localize_reset_str(raw: &str, is_ru: bool, is_zh: bool) -> String {
-        let clean = raw.trim()
+        let clean = raw
+            .trim()
             .trim_start_matches("Reset: in ")
             .trim_start_matches("Reset: ")
             .trim_start_matches("in ")
@@ -750,9 +781,15 @@ impl AppConfig {
             .trim_start_matches("约 ")
             .trim();
         if is_ru {
-            format!("через {}", clean.replace('d', "д").replace('h', "ч").replace('m', "м"))
+            format!(
+                "через {}",
+                clean.replace('d', "д").replace('h', "ч").replace('m', "м")
+            )
         } else if is_zh {
-            clean.replace('d', "天").replace('h', "小时").replace('m', "分")
+            clean
+                .replace('d', "天")
+                .replace('h', "小时")
+                .replace('m', "分")
         } else {
             format!("in {}", clean)
         }
@@ -866,7 +903,11 @@ impl AppConfig {
     }
 
     pub fn save(&self) -> std::io::Result<()> {
-        let path = Self::config_path();
+        let path = if self.portable_mode {
+            PathBuf::from("amr.json")
+        } else {
+            Self::config_path()
+        };
         let json = serde_json::to_string_pretty(self)?;
         fs::write(path, json)
     }
@@ -883,7 +924,9 @@ impl AppConfig {
             }
             RoutingStrategy::Failover | RoutingStrategy::RoundRobin => {
                 if let Some(id) = &self.active_account_id {
-                    self.accounts.iter().find(|a| &a.id == id && a.is_active)
+                    self.accounts
+                        .iter()
+                        .find(|a| &a.id == id && a.is_active)
                         .or_else(|| self.accounts.iter().find(|a| a.is_active))
                 } else {
                     self.accounts.iter().find(|a| a.is_active)
@@ -893,11 +936,19 @@ impl AppConfig {
     }
 
     pub fn total_quota_used(&self) -> u64 {
-        self.accounts.iter().filter(|a| a.is_active).map(|a| a.quota_used).sum()
+        self.accounts
+            .iter()
+            .filter(|a| a.is_active)
+            .map(|a| a.quota_used)
+            .sum()
     }
 
     pub fn total_quota_limit(&self) -> u64 {
-        self.accounts.iter().filter(|a| a.is_active).map(|a| a.quota_limit).sum()
+        self.accounts
+            .iter()
+            .filter(|a| a.is_active)
+            .map(|a| a.quota_limit)
+            .sum()
     }
 
     pub fn get_broadcast_models(&self) -> Vec<serde_json::Value> {
@@ -952,7 +1003,8 @@ impl AppConfig {
             list.push(model_json);
 
             // If reasoning clones are NOT grouped into base models, expose clones
-            if !self.group_reasoning_clones && self.expose_reasoning_variants && m.supports_thinking {
+            if !self.group_reasoning_clones && self.expose_reasoning_variants && m.supports_thinking
+            {
                 for (suffix, label) in [
                     (" (none)", "none"),
                     (" (low)", "low"),
