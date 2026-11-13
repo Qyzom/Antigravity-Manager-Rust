@@ -90,15 +90,15 @@
 
 ### Downloads
 
-Pre-built binaries and distribution packages for AMR `v0.1.3` (x86_64 and native ARM64) are available on the [**Releases**](https://github.com/Qyzom/Antigravity-Manager-Rust/releases/latest) page:
+Pre-built binaries and distribution packages for the latest AMR release (x86_64 and native ARM64) are available on the [**Releases**](https://github.com/Qyzom/Antigravity-Manager-Rust/releases/latest) page (replace `<VERSION>` with the downloaded release tag, e.g. `0.1.5`):
 
 | OS / Format | Architecture | Package File | Description |
 | :--- | :---: | :--- | :--- |
-| **Linux (AppImage)** | `x86_64` | `AMR-0.1.3-x86_64.AppImage` | Portable executable (runs on any modern Linux) |
-| **Linux (Debian / Ubuntu)** | `x86_64` / `arm64` | `AMR_0.1.3_amd64.deb`<br/>`AMR_0.1.3_arm64.deb` | Standard `.deb` package with system desktop & menu integration |
-| **Linux (Fedora / RHEL)** | `x86_64` / `aarch64` | `AMR-0.1.3-1.x86_64.rpm`<br/>`AMR-0.1.3-1.aarch64.rpm` | Standard `.rpm` package with system desktop & menu integration |
-| **Windows 10 / 11** | `x86_64` | `AMR-0.1.3-x86_64.exe` | Native GUI executable (no console window) with system tray |
-| **Windows on ARM** | `arm64` | `AMR-0.1.3-arm64.exe` | Native ARM64 executable for Snapdragon X Elite / Surface Pro |
+| **Linux (AppImage)** | `x86_64` / `aarch64` | `AMR-<VERSION>-x86_64.AppImage`<br/>`AMR-<VERSION>-aarch64.AppImage` | Portable executable (runs on any modern Linux) |
+| **Linux (Debian / Ubuntu)** | `x86_64` / `arm64` | `AMR_<VERSION>_amd64.deb`<br/>`AMR_<VERSION>_arm64.deb` | Standard `.deb` package with system desktop & menu integration |
+| **Linux (Fedora / RHEL)** | `x86_64` / `aarch64` | `AMR-<VERSION>-1.x86_64.rpm`<br/>`AMR-<VERSION>-1.aarch64.rpm` | Standard `.rpm` package with system desktop & menu integration |
+| **Windows 10 / 11** | `x86_64` | `AMR-<VERSION>-x86_64.exe` | Native GUI executable (no console window) with system tray |
+| **Windows on ARM** | `arm64` | `AMR-<VERSION>-arm64.exe` | Native ARM64 executable for Snapdragon X Elite / Surface Pro |
 
 ---
 
@@ -107,33 +107,33 @@ Pre-built binaries and distribution packages for AMR `v0.1.3` (x86_64 and native
 #### Linux (AppImage)
 
 ```bash
-chmod +x AMR-0.1.3-x86_64.AppImage
+chmod +x AMR-<VERSION>-x86_64.AppImage
 
 # Launch GUI:
-./AMR-0.1.3-x86_64.AppImage
+./AMR-<VERSION>-x86_64.AppImage
 
 # Launch in headless daemon mode:
-./AMR-0.1.3-x86_64.AppImage --headless --port 8045
+./AMR-<VERSION>-x86_64.AppImage --headless --port 8045
 
 # Start minimized to system tray:
-./AMR-0.1.3-x86_64.AppImage --start-minimized
+./AMR-<VERSION>-x86_64.AppImage --start-minimized
 ```
 
 #### Linux (Debian / Ubuntu)
 
 ```bash
-sudo dpkg -i AMR_0.1.3_amd64.deb
+sudo dpkg -i AMR_<VERSION>_amd64.deb
 ```
 
 #### Linux (Fedora / RHEL)
 
 ```bash
-sudo rpm -i AMR-0.1.3-1.x86_64.rpm
+sudo rpm -i AMR-<VERSION>-1.x86_64.rpm
 ```
 
 #### Windows
 
-Download `AMR-0.1.3-x86_64.exe` and execute it. AMR runs as a native Windows desktop GUI application (without command prompt), integrates with the system tray, and supports one-click Google OAuth via native ShellExecute.
+Download `AMR-<VERSION>-x86_64.exe` and execute it. AMR runs as a native Windows desktop GUI application (without command prompt), integrates with the system tray, and supports one-click Google OAuth via native ShellExecute.
 
 ---
 
@@ -246,6 +246,26 @@ for chunk in response:
 
 ---
 
+### Upstream API Protocol & Parameter Compatibility
+
+AMR dynamically parses available models, roles (`agentModelSorts`, `imageGenerationModelIds`, `webSearchModelIds`), per-model quotas, and availability notices directly from `v1internal:fetchAvailableModels` without hardcoding model IDs.
+
+| Protocol / Feature | Endpoint | Status | Notes |
+| :--- | :--- | :--- | :--- |
+| **OpenAI Protocol** | `POST /v1/chat/completions`<br/>`GET /v1/models` | Fully Supported | Full OpenAI chat & tools translation, detailed usage metadata |
+| **Anthropic (Claude)** | `POST /v1/messages` | Fully Supported | Streaming Thinking Auto-Heal, signature delta frames, `anthropic-version: 2023-06-01` |
+| **Google Gemini Native** | `POST /v1beta/models/*:generateContent`<br/>`GET /v1beta/models` | Fully Supported | Native Google GenAI SDK & client library compatibility with streaming pass-through |
+| **Model Context Protocol (MCP)** | `POST /mcp` & `/v1/mcp` | Fully Supported | JSON-RPC 2.0 tools: `google_web_search(query)` & `fetch_web_page(url)` |
+| **`reasoning_effort`** | `none`/`low`/`medium`/`high` | Supported | Maps `none`/`off` to `thinkingBudget: 0` and `low`/`medium`/`high` to `thinkingLevel` (`LOW`/`MEDIUM`/`HIGH`) |
+| **Google `thinkingLevel: "MINIMAL"`** | Upstream Protocol | Unsupported (`400`) | Rejected by upstream; AMR uses `thinkingBudget: 0` for `none`/`off` |
+| **Image Generation** | `POST /v1/images/generations` | Supported | Aspect ratio mapping (`1:1`, `16:9`, `9:16`, `4:3`, `3:4`) & size |
+| **Web Search Grounding** | `POST /v1/search` | Supported | Upstream `googleSearch` tool with source citations |
+| **Audio STT** | `POST /v1/audio/transcriptions` | Supported | Multimodal audio transcription via active Gemini Flash |
+| **Audio TTS** | `POST /v1/audio/speech` | Upstream `501` | `responseModalities: ["AUDIO"]` is not provisioned on upstream cloudcode-pa |
+| **Embeddings** | `POST /v1/embeddings` | Unsupported (`404`) | No `v1internal:embedContent` RPC exists on Cloud Code Pa API |
+
+---
+
 ### Building from Source
 
 #### Prerequisites
@@ -262,10 +282,10 @@ cargo test
 # Build release binary
 cargo build --release --bin amr
 
-# Package Linux artifacts (AppImage, deb, rpm)
-./packaging/linux/build_appimage.sh 0.1.0
-./packaging/linux/build_deb.sh 0.1.0
-./packaging/linux/build_rpm.sh 0.1.0
+# Package Linux artifacts (version is read automatically from Cargo.toml)
+./packaging/linux/build_appimage.sh
+./packaging/linux/build_deb.sh
+./packaging/linux/build_rpm.sh
 ```
 
 ---

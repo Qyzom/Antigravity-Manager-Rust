@@ -3,6 +3,7 @@ pub mod audio;
 pub mod balancer;
 pub mod fingerprint;
 pub mod mappers;
+pub mod mcp;
 pub mod router;
 pub mod server;
 pub mod stats;

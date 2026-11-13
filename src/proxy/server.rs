@@ -64,7 +64,7 @@ impl AppState {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn build_upstream_headers(
+pub fn build_upstream_headers_with_accept(
     token: &str,
     _client_id: &str,
     _machine_id: &str,
@@ -75,12 +75,13 @@ pub fn build_upstream_headers(
     _spoof_go: bool,
     _inject_app_meta: bool,
     target_model: &str,
+    accept_header: &str,
 ) -> reqwest::header::HeaderMap {
     let mut req_headers = reqwest::header::HeaderMap::new();
     if let Ok(v) = format!("Bearer {}", token.trim()).parse() {
         req_headers.insert(reqwest::header::AUTHORIZATION, v);
     }
-    if let Ok(v) = "text/event-stream".parse() {
+    if let Ok(v) = accept_header.parse() {
         req_headers.insert(reqwest::header::ACCEPT, v);
     }
     if let Ok(v) = "application/json".parse() {
@@ -103,6 +104,62 @@ pub fn build_upstream_headers(
     }
 
     req_headers
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn build_upstream_headers(
+    token: &str,
+    client_id: &str,
+    machine_id: &str,
+    platform_str: &str,
+    ide_ver: &str,
+    spoof_arch: &str,
+    spoof_channel: &str,
+    spoof_go: bool,
+    inject_app_meta: bool,
+    target_model: &str,
+) -> reqwest::header::HeaderMap {
+    build_upstream_headers_with_accept(
+        token,
+        client_id,
+        machine_id,
+        platform_str,
+        ide_ver,
+        spoof_arch,
+        spoof_channel,
+        spoof_go,
+        inject_app_meta,
+        target_model,
+        "text/event-stream",
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn build_upstream_headers_json(
+    token: &str,
+    client_id: &str,
+    machine_id: &str,
+    platform_str: &str,
+    ide_ver: &str,
+    spoof_arch: &str,
+    spoof_channel: &str,
+    spoof_go: bool,
+    inject_app_meta: bool,
+    target_model: &str,
+) -> reqwest::header::HeaderMap {
+    build_upstream_headers_with_accept(
+        token,
+        client_id,
+        machine_id,
+        platform_str,
+        ide_ver,
+        spoof_arch,
+        spoof_channel,
+        spoof_go,
+        inject_app_meta,
+        target_model,
+        "application/json",
+    )
 }
 
 pub fn create_proxy_router(state: AppState) -> Router {
@@ -131,6 +188,19 @@ pub fn create_proxy_router(state: AppState) -> Router {
         .route("/v1/images/generations/", post(crate::proxy::audio::handle_image_generations))
         .route("/images/generations", post(crate::proxy::audio::handle_image_generations))
         .route("/images/generations/", post(crate::proxy::audio::handle_image_generations))
+        .route("/v1/search", post(crate::proxy::audio::handle_web_search))
+        .route("/v1/search/", post(crate::proxy::audio::handle_web_search))
+        .route("/search", post(crate::proxy::audio::handle_web_search))
+        .route("/search/", post(crate::proxy::audio::handle_web_search))
+        // Model Context Protocol (MCP) Endpoints
+        .route("/mcp", post(crate::proxy::mcp::mcp_handler))
+        .route("/mcp/", post(crate::proxy::mcp::mcp_handler))
+        .route("/v1/mcp", post(crate::proxy::mcp::mcp_handler))
+        .route("/v1/mcp/", post(crate::proxy::mcp::mcp_handler))
+        // Google Gemini Native Protocol Endpoints
+        .route("/v1beta/models", get(list_gemini_models))
+        .route("/v1beta/models/", get(list_gemini_models))
+        .route("/v1beta/models/{*model_action}", post(gemini_content))
         .route(
             "/v1/dashboard/billing/subscription",
             get(billing_subscription),
@@ -173,6 +243,7 @@ async fn oauth_callback(
         quota_used,
         quota_limit,
         quota_reset,
+        acc_models,
         models,
         detailed_quota,
         project_id_opt,
@@ -203,26 +274,26 @@ async fn oauth_callback(
                     &acc_token,
                 )
                 .await;
-                let (models, used, limit, reset, det) =
-                    match crate::proxy::antigravity::fetch_models_and_quota(
+                let (acc_models, models, used, limit, reset, det) =
+                    match crate::proxy::antigravity::fetch_account_models_and_quota(
                         &state.http_client,
                         &acc_token,
                         project_id.as_deref(),
                     )
                     .await
                     {
-                        Ok(res) => (Some(res.0), res.1, res.2, res.3, res.4),
+                        Ok(res) => (res.0, Some(res.1), res.2, res.3, res.4, res.5),
                         Err(_) => {
                             let det = crate::proxy::antigravity::fetch_user_quota_summary(
                                 &state.http_client,
                                 &acc_token,
                             )
                             .await;
-                            (None, 0, 100_000, "in 4h 00m".to_string(), det)
+                            (Vec::new(), None, 0, 100_000, "in 4h 00m".to_string(), det)
                         }
                     };
                 (
-                    acc_token, ref_token, email, tier, used, limit, reset, models, det, project_id,
+                    acc_token, ref_token, email, tier, used, limit, reset, acc_models, models, det, project_id,
                 )
             }
             Err(e) => {
@@ -249,6 +320,7 @@ async fn oauth_callback(
                     0,
                     100_000,
                     "in 4h 00m".to_string(),
+                    Vec::new(),
                     None,
                     det,
                     None,
@@ -276,6 +348,7 @@ async fn oauth_callback(
             0,
             100_000,
             "in 4h 00m".to_string(),
+            Vec::new(),
             None,
             det,
             None,
@@ -294,6 +367,7 @@ async fn oauth_callback(
                 existing.project_id = project_id_opt;
             }
             existing.tier = tier.clone();
+            existing.available_models = acc_models;
             existing.quota_used = quota_used;
             existing.quota_limit = quota_limit;
             existing.quota_reset = quota_reset;
@@ -343,10 +417,13 @@ async fn oauth_callback(
                 ),
                 device_profile: Some(crate::config::DeviceProfile::generate()),
                 proxy_url: None,
+                available_models: acc_models,
             });
             cfg.active_account_id = Some(new_id);
         }
-        if let Some(m) = models {
+        if !cfg.accounts.iter().all(|a| a.available_models.is_empty()) {
+            cfg.rebuild_models_from_accounts();
+        } else if let Some(m) = models {
             cfg.models = m;
         }
         let _ = cfg.save();
@@ -449,6 +526,287 @@ async fn list_models(State(state): State<AppState>) -> impl IntoResponse {
         "object": "list",
         "data": models
     }))
+}
+
+async fn list_gemini_models(State(state): State<AppState>) -> impl IntoResponse {
+    let cfg = state.config.read();
+    let gemini_list = crate::proxy::mappers::gemini::build_gemini_models_list(&cfg.models);
+    Json(gemini_list)
+}
+
+async fn gemini_content(
+    State(state): State<AppState>,
+    axum::extract::Path(model_action): axum::extract::Path<String>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> Response {
+    let start_time = Instant::now();
+
+    // Parse model_action: e.g. "gemini-3.8-flash:generateContent" or "gemini-3.8-flash:streamGenerateContent"
+    let clean_path = model_action.trim_start_matches('/');
+    let (raw_model, is_stream) = if let Some(idx) = clean_path.find(':') {
+        let (m, action) = clean_path.split_at(idx);
+        let action_clean = action.trim_start_matches(':');
+        (m.to_string(), action_clean.contains("stream"))
+    } else {
+        (clean_path.to_string(), false)
+    };
+
+    let requested_model = raw_model.trim_start_matches("models/").to_string();
+
+    let header_session = headers
+        .get("x-session-id")
+        .or_else(|| headers.get("session-id"))
+        .or_else(|| headers.get("conversation-id"))
+        .and_then(|h| h.to_str().ok());
+
+    let session_id = format!("gemini-{}", header_session.unwrap_or("default"));
+
+    let selected_account = {
+        let cfg = state.config.read();
+        state
+            .balancer
+            .select_account(&cfg, &requested_model, Some(&session_id))
+    };
+
+    let account = match selected_account {
+        Ok(acc) if !acc.api_key.is_empty() => acc,
+        Ok(_) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(json!({
+                    "error": {
+                        "code": 502,
+                        "message": "Active upstream account has empty API token in AMR.",
+                        "status": "UNAVAILABLE"
+                    }
+                })),
+            ).into_response();
+        }
+        Err(e) => {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(json!({
+                    "error": {
+                        "code": 429,
+                        "message": format!("{}", e),
+                        "status": "RESOURCE_EXHAUSTED"
+                    }
+                })),
+            ).into_response();
+        }
+    };
+
+    let (target_model, _) = crate::proxy::router::resolve_model_with_effort(&requested_model, &account, None);
+
+    let (platform_str, ide_ver) = {
+        let cfg = state.config.read();
+        (cfg.resolved_platform(), cfg.spoof_ide_version.clone())
+    };
+
+    let payload_json = crate::proxy::mappers::gemini::build_antigravity_from_gemini(
+        &payload,
+        &target_model,
+        account.project_id.as_deref(),
+    );
+
+    let client = state.get_client_for_account(&account);
+
+    let (client_id, machine_id) = if let Some(ref dp) = account.device_profile {
+        (dp.dev_device_id.clone(), dp.machine_id.clone())
+    } else {
+        (uuid::Uuid::new_v4().to_string(), uuid::Uuid::new_v4().simple().to_string())
+    };
+
+    let endpoints = if is_stream {
+        &crate::proxy::antigravity::STREAM_ENDPOINTS[..]
+    } else {
+        &crate::proxy::antigravity::GENERATE_ENDPOINTS[..]
+    };
+
+    let mut last_err = "No response from upstream".to_string();
+    let mut req_token = account.api_key.clone();
+    let client_id_str = client_id.clone();
+    let machine_id_str = machine_id.clone();
+    let mut res_opt = None;
+    for &endpoint_url in endpoints {
+        let headers_to_use = if is_stream {
+            build_upstream_headers(
+                &req_token,
+                &client_id_str,
+                &machine_id_str,
+                platform_str,
+                &ide_ver,
+                "AUTO",
+                "stable",
+                true,
+                true,
+                &target_model,
+            )
+        } else {
+            build_upstream_headers_json(
+                &req_token,
+                &client_id_str,
+                &machine_id_str,
+                platform_str,
+                &ide_ver,
+                "AUTO",
+                "stable",
+                true,
+                true,
+                &target_model,
+            )
+        };
+
+        match client
+            .post(endpoint_url)
+            .headers(headers_to_use)
+            .json(&payload_json)
+            .send()
+            .await
+        {
+            Ok(res) => {
+                let s = res.status();
+                if s.is_success() {
+                    res_opt = Some(res);
+                    break;
+                } else if (s == StatusCode::UNAUTHORIZED || s == StatusCode::FORBIDDEN) && account.refresh_token.is_some() {
+                    if let Some(ref rt) = account.refresh_token {
+                        if let Ok(tok_res) = crate::proxy::antigravity::refresh_token(&state.http_client, rt).await {
+                            let fresh = tok_res.access_token;
+                            req_token = fresh.clone();
+                            {
+                                let mut cfg = state.config.write();
+                                if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
+                                    acc.api_key = fresh.clone();
+                                    if tok_res.refresh_token.is_some() {
+                                        acc.refresh_token = tok_res.refresh_token;
+                                    }
+                                    acc.status = "ACTIVE".to_string();
+                                    acc.error_message = None;
+                                }
+                                let _ = cfg.save();
+                            }
+                            state.cfg_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+                            let retry_headers = if is_stream {
+                                build_upstream_headers(
+                                    &req_token,
+                                    &client_id,
+                                    &machine_id,
+                                    platform_str,
+                                    &ide_ver,
+                                    "AUTO",
+                                    "stable",
+                                    true,
+                                    true,
+                                    &target_model,
+                                )
+                            } else {
+                                build_upstream_headers_json(
+                                    &req_token,
+                                    &client_id,
+                                    &machine_id,
+                                    platform_str,
+                                    &ide_ver,
+                                    "AUTO",
+                                    "stable",
+                                    true,
+                                    true,
+                                    &target_model,
+                                )
+                            };
+
+                            if let Ok(retry_res) = client
+                                .post(endpoint_url)
+                                .headers(retry_headers)
+                                .json(&payload_json)
+                                .send()
+                                .await
+                            {
+                                if retry_res.status().is_success() {
+                                    res_opt = Some(retry_res);
+                                    break;
+                                } else {
+                                    let code = retry_res.status().as_u16();
+                                    let err_b = retry_res.text().await.unwrap_or_default();
+                                    last_err = format!("HTTP {}: {}", code, err_b);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    let err_body = res.text().await.unwrap_or_default();
+                    last_err = format!("HTTP {}: {}", s.as_u16(), err_body);
+                }
+            }
+            Err(e) => {
+                last_err = format!("Network error: {}", e);
+            }
+        }
+    }
+
+    if let Some(res) = res_opt {
+        state.balancer.record_success(&account.id);
+
+        if is_stream {
+            let _stream_id = format!("gemini_{}", uuid::Uuid::new_v4().simple());
+            let log_ctx = StreamLoggingContext {
+                stats: state.stats.clone(),
+                method: "POST",
+                path: "/v1beta/models (stream)",
+                model: requested_model.clone(),
+                account_name: account.name.clone(),
+                reasoning_effort: "default".to_string(),
+                request_headers: "Content-Type: application/json; Accept: text/event-stream".to_string(),
+                request_body: serde_json::to_string_pretty(&payload).unwrap_or_default(),
+                start_time,
+            };
+
+            let mapped_stream = crate::proxy::stream::pass_through_stream(
+                Box::pin(res.bytes_stream()),
+                Some(log_ctx),
+            );
+
+            let resp = Response::builder()
+                .header(header::CONTENT_TYPE, "text/event-stream; charset=utf-8")
+                .header(header::CACHE_CONTROL, "no-cache, no-transform")
+                .header(header::CONNECTION, "keep-alive")
+                .body(Body::from_stream(mapped_stream))
+                .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+            return resp;
+        } else {
+            let body_text = res.text().await.unwrap_or_default();
+            let lat = start_time.elapsed().as_millis() as u64;
+
+            state.stats.record_request(
+                "POST",
+                "/v1beta/models:generateContent",
+                &requested_model,
+                200,
+                50,
+                lat,
+            );
+
+            if let Ok(val) = serde_json::from_str::<Value>(&body_text) {
+                let actual = val.get("response").unwrap_or(&val);
+                return Json(actual.clone()).into_response();
+            } else {
+                return (StatusCode::OK, body_text).into_response();
+            }
+        }
+    }
+
+    (
+        StatusCode::BAD_GATEWAY,
+        Json(json!({
+            "error": {
+                "code": 502,
+                "message": format!("Antigravity upstream connection failure for Google Gemini API: {}", last_err),
+                "status": "UNAVAILABLE"
+            }
+        })),
+    ).into_response()
 }
 
 async fn chat_completions(
@@ -687,25 +1045,48 @@ async fn execute_chat_request(
             tokio::time::sleep(std::time::Duration::from_millis(jitter_ms)).await;
         }
 
-        let endpoints: &[&str] = if lock_prod {
+        let use_non_stream_generate = !is_streaming
+            && (target_model == "web-search" || target_model.contains("image"));
+        let endpoints: &[&str] = if use_non_stream_generate {
+            if lock_prod {
+                &crate::proxy::antigravity::GENERATE_ENDPOINTS[..1]
+            } else {
+                &crate::proxy::antigravity::GENERATE_ENDPOINTS[..]
+            }
+        } else if lock_prod {
             &crate::proxy::antigravity::STREAM_ENDPOINTS[..1]
         } else {
             &crate::proxy::antigravity::STREAM_ENDPOINTS[..]
         };
 
         for endpoint_url in endpoints {
-            let req_headers = build_upstream_headers(
-                &req_token,
-                &client_id,
-                &machine_id,
-                platform_str,
-                &ide_ver,
-                &spoof_arch,
-                &spoof_channel,
-                spoof_go,
-                inject_app_meta,
-                &target_model,
-            );
+            let req_headers = if use_non_stream_generate {
+                build_upstream_headers_json(
+                    &req_token,
+                    &client_id,
+                    &machine_id,
+                    platform_str,
+                    &ide_ver,
+                    &spoof_arch,
+                    &spoof_channel,
+                    spoof_go,
+                    inject_app_meta,
+                    &target_model,
+                )
+            } else {
+                build_upstream_headers(
+                    &req_token,
+                    &client_id,
+                    &machine_id,
+                    platform_str,
+                    &ide_ver,
+                    &spoof_arch,
+                    &spoof_channel,
+                    spoof_go,
+                    inject_app_meta,
+                    &target_model,
+                )
+            };
 
             if let Ok(r) = client
                 .post(*endpoint_url)
@@ -794,19 +1175,39 @@ async fn execute_chat_request(
                         .cfg_version
                         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-                    for endpoint_url in crate::proxy::antigravity::STREAM_ENDPOINTS {
-                        let retry_headers = build_upstream_headers(
-                            &fresh_token,
-                            &client_id,
-                            &machine_id,
-                            platform_str,
-                            &ide_ver,
-                            &spoof_arch,
-                            &spoof_channel,
-                            spoof_go,
-                            inject_app_meta,
-                            &target_model,
-                        );
+                    let retry_endpoints = if use_non_stream_generate {
+                        crate::proxy::antigravity::GENERATE_ENDPOINTS
+                    } else {
+                        crate::proxy::antigravity::STREAM_ENDPOINTS
+                    };
+                    for endpoint_url in retry_endpoints {
+                        let retry_headers = if use_non_stream_generate {
+                            build_upstream_headers_json(
+                                &fresh_token,
+                                &client_id,
+                                &machine_id,
+                                platform_str,
+                                &ide_ver,
+                                &spoof_arch,
+                                &spoof_channel,
+                                spoof_go,
+                                inject_app_meta,
+                                &target_model,
+                            )
+                        } else {
+                            build_upstream_headers(
+                                &fresh_token,
+                                &client_id,
+                                &machine_id,
+                                platform_str,
+                                &ide_ver,
+                                &spoof_arch,
+                                &spoof_channel,
+                                spoof_go,
+                                inject_app_meta,
+                                &target_model,
+                            )
+                        };
 
                         if let Ok(retry_res) = state
                             .http_client
@@ -978,74 +1379,109 @@ async fn execute_chat_request(
             let body_text = res.text().await.unwrap_or_default();
             let mut full_text = String::new();
             let mut thinking_text = None;
+            let mut sources_md_final = String::new();
             let mut in_tok = 50;
             let mut out_tok = 150;
             let mut cached_tok = 0;
 
-            for line in body_text.lines() {
-                if let Some(data) = line.strip_prefix("data: ") {
-                    let trimmed = data.trim();
-                    if trimmed == "[DONE]" {
-                        break;
+            let parse_json_chunk = |val: &Value,
+                                    full_text: &mut String,
+                                    thinking_text: &mut Option<String>,
+                                    sources_md_final: &mut String,
+                                    in_tok: &mut u64,
+                                    out_tok: &mut u64,
+                                    cached_tok: &mut u64| {
+                let actual = val.get("response").unwrap_or(val);
+                if let Some(usage) = actual.get("usageMetadata") {
+                    if let Some(pt) = usage.get("promptTokenCount").and_then(|v| v.as_u64()) {
+                        *in_tok = pt;
                     }
-                    if let Ok(val) = serde_json::from_str::<Value>(trimmed) {
-                        let actual = val.get("response").unwrap_or(&val);
-                        if let Some(usage) = actual.get("usageMetadata") {
-                            if let Some(pt) = usage.get("promptTokenCount").and_then(|v| v.as_u64())
-                            {
-                                in_tok = pt;
-                            }
-                            if let Some(ct) =
-                                usage.get("candidatesTokenCount").and_then(|v| v.as_u64())
-                            {
-                                out_tok = ct;
-                            }
-                            if let Some(cct) =
-                                usage.get("cachedContentTokenCount").and_then(|v| v.as_u64())
-                            {
-                                cached_tok = cct;
-                            }
-                        }
-                        if let Some(candidates) =
-                            actual.get("candidates").and_then(|c| c.as_array())
+                    if let Some(ct) = usage.get("candidatesTokenCount").and_then(|v| v.as_u64()) {
+                        *out_tok = ct;
+                    }
+                    if let Some(cct) = usage.get("cachedContentTokenCount").and_then(|v| v.as_u64())
+                    {
+                        *cached_tok = cct;
+                    }
+                }
+                if let Some(candidates) = actual.get("candidates").and_then(|c| c.as_array()) {
+                    for cand in candidates {
+                        if let Some(parts) = cand
+                            .get("content")
+                            .and_then(|c| c.get("parts"))
+                            .and_then(|p| p.as_array())
                         {
-                            for cand in candidates {
-                                if let Some(parts) = cand
-                                    .get("content")
-                                    .and_then(|c| c.get("parts"))
-                                    .and_then(|p| p.as_array())
-                                {
-                                    for part in parts {
-                                        let is_thought = part
-                                            .get("thought")
-                                            .and_then(|v| v.as_bool())
-                                            .unwrap_or(false);
-                                        if let Some(txt) = part.get("text").and_then(|t| t.as_str())
-                                        {
-                                            if is_thought {
-                                                let entry =
-                                                    thinking_text.get_or_insert_with(String::new);
-                                                entry.push_str(txt);
-                                            } else {
-                                                full_text.push_str(txt);
-                                            }
-                                        } else if let Some(inline) = part.get("inlineData") {
-                                            let mime = inline
-                                                .get("mimeType")
-                                                .and_then(|m| m.as_str())
-                                                .unwrap_or("image/png");
-                                            if let Some(b64) =
-                                                inline.get("data").and_then(|d| d.as_str())
-                                            {
-                                                full_text.push_str(&format!("[Generated Image: {} bytes, {}]\n![Generated Image](data:{};base64,{})", b64.len(), mime, mime, b64));
-                                            }
-                                        }
+                            for part in parts {
+                                let is_thought = part
+                                    .get("thought")
+                                    .and_then(|v| v.as_bool())
+                                    .unwrap_or(false);
+                                if let Some(txt) = part.get("text").and_then(|t| t.as_str()) {
+                                    if is_thought {
+                                        let entry = thinking_text.get_or_insert_with(String::new);
+                                        entry.push_str(txt);
+                                    } else {
+                                        full_text.push_str(txt);
+                                    }
+                                } else if let Some(inline) = part.get("inlineData") {
+                                    let mime = inline
+                                        .get("mimeType")
+                                        .and_then(|m| m.as_str())
+                                        .unwrap_or("image/png");
+                                    if let Some(b64) = inline.get("data").and_then(|d| d.as_str()) {
+                                        full_text.push_str(&format!(
+                                            "[Generated Image: {} bytes, {}]\n![Generated Image](data:{};base64,{})",
+                                            b64.len(),
+                                            mime,
+                                            mime,
+                                            b64
+                                        ));
                                     }
                                 }
                             }
                         }
                     }
                 }
+                let (_q, _r, smd) = crate::proxy::antigravity::extract_grounding_info(actual);
+                if !smd.is_empty() {
+                    *sources_md_final = smd;
+                }
+            };
+
+            if let Ok(direct_val) = serde_json::from_str::<Value>(body_text.trim()) {
+                parse_json_chunk(
+                    &direct_val,
+                    &mut full_text,
+                    &mut thinking_text,
+                    &mut sources_md_final,
+                    &mut in_tok,
+                    &mut out_tok,
+                    &mut cached_tok,
+                );
+            } else {
+                for line in body_text.lines() {
+                    if let Some(data) = line.strip_prefix("data: ") {
+                        let trimmed = data.trim();
+                        if trimmed == "[DONE]" {
+                            break;
+                        }
+                        if let Ok(val) = serde_json::from_str::<Value>(trimmed) {
+                            parse_json_chunk(
+                                &val,
+                                &mut full_text,
+                                &mut thinking_text,
+                                &mut sources_md_final,
+                                &mut in_tok,
+                                &mut out_tok,
+                                &mut cached_tok,
+                            );
+                        }
+                    }
+                }
+            }
+
+            if !sources_md_final.is_empty() {
+                full_text.push_str(&sources_md_final);
             }
 
             let oai_resp = OpenAIChatResponse {
@@ -1668,25 +2104,48 @@ async fn execute_claude_request(
             tokio::time::sleep(std::time::Duration::from_millis(jitter_ms)).await;
         }
 
-        let endpoints: &[&str] = if lock_prod {
+        let use_non_stream_generate = !is_streaming
+            && (target_model == "web-search" || target_model.contains("image"));
+        let endpoints: &[&str] = if use_non_stream_generate {
+            if lock_prod {
+                &crate::proxy::antigravity::GENERATE_ENDPOINTS[..1]
+            } else {
+                &crate::proxy::antigravity::GENERATE_ENDPOINTS[..]
+            }
+        } else if lock_prod {
             &crate::proxy::antigravity::STREAM_ENDPOINTS[..1]
         } else {
             &crate::proxy::antigravity::STREAM_ENDPOINTS[..]
         };
 
         for endpoint_url in endpoints {
-            let req_headers = build_upstream_headers(
-                &req_token,
-                &client_id,
-                &machine_id,
-                platform_str,
-                &ide_ver,
-                &spoof_arch,
-                &spoof_channel,
-                spoof_go,
-                inject_app_meta,
-                &target_model,
-            );
+            let req_headers = if use_non_stream_generate {
+                build_upstream_headers_json(
+                    &req_token,
+                    &client_id,
+                    &machine_id,
+                    platform_str,
+                    &ide_ver,
+                    &spoof_arch,
+                    &spoof_channel,
+                    spoof_go,
+                    inject_app_meta,
+                    &target_model,
+                )
+            } else {
+                build_upstream_headers(
+                    &req_token,
+                    &client_id,
+                    &machine_id,
+                    platform_str,
+                    &ide_ver,
+                    &spoof_arch,
+                    &spoof_channel,
+                    spoof_go,
+                    inject_app_meta,
+                    &target_model,
+                )
+            };
 
             if let Ok(r) = client
                 .post(*endpoint_url)
@@ -1769,19 +2228,39 @@ async fn execute_claude_request(
                         .cfg_version
                         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-                    for endpoint_url in crate::proxy::antigravity::STREAM_ENDPOINTS {
-                        let retry_headers = build_upstream_headers(
-                            &fresh_token,
-                            &client_id,
-                            &machine_id,
-                            platform_str,
-                            &ide_ver,
-                            &spoof_arch,
-                            &spoof_channel,
-                            spoof_go,
-                            inject_app_meta,
-                            &target_model,
-                        );
+                    let retry_endpoints = if use_non_stream_generate {
+                        crate::proxy::antigravity::GENERATE_ENDPOINTS
+                    } else {
+                        crate::proxy::antigravity::STREAM_ENDPOINTS
+                    };
+                    for endpoint_url in retry_endpoints {
+                        let retry_headers = if use_non_stream_generate {
+                            build_upstream_headers_json(
+                                &fresh_token,
+                                &client_id,
+                                &machine_id,
+                                platform_str,
+                                &ide_ver,
+                                &spoof_arch,
+                                &spoof_channel,
+                                spoof_go,
+                                inject_app_meta,
+                                &target_model,
+                            )
+                        } else {
+                            build_upstream_headers(
+                                &fresh_token,
+                                &client_id,
+                                &machine_id,
+                                platform_str,
+                                &ide_ver,
+                                &spoof_arch,
+                                &spoof_channel,
+                                spoof_go,
+                                inject_app_meta,
+                                &target_model,
+                            )
+                        };
 
                         if let Ok(retry_res) = state
                             .http_client
@@ -1933,81 +2412,117 @@ async fn execute_claude_request(
             let body_text = res.text().await.unwrap_or_default();
             let mut full_text = String::new();
             let mut thinking_text = None;
+            let mut sources_md_final = String::new();
             let mut in_tok = 50;
             let mut out_tok = 150;
             let mut cached_tok = 0;
 
-            for line in body_text.lines() {
-                if let Some(data) = line.strip_prefix("data: ") {
-                    let trimmed = data.trim();
-                    if trimmed == "[DONE]" {
-                        break;
+            let parse_json_chunk = |val: &Value,
+                                    full_text: &mut String,
+                                    thinking_text: &mut Option<String>,
+                                    sources_md_final: &mut String,
+                                    in_tok: &mut u64,
+                                    out_tok: &mut u64,
+                                    cached_tok: &mut u64| {
+                let actual = val.get("response").unwrap_or(val);
+                if let Some(usage) = actual.get("usageMetadata") {
+                    if let Some(pt) = usage.get("promptTokenCount").and_then(|v| v.as_u64()) {
+                        *in_tok = pt;
                     }
-                    if let Ok(val) = serde_json::from_str::<Value>(trimmed) {
-                        let actual = val.get("response").unwrap_or(&val);
-                        if let Some(usage) = actual.get("usageMetadata") {
-                            if let Some(pt) = usage.get("promptTokenCount").and_then(|v| v.as_u64())
-                            {
-                                in_tok = pt;
-                            }
-                            if let Some(ct) =
-                                usage.get("candidatesTokenCount").and_then(|v| v.as_u64())
-                            {
-                                out_tok = ct;
-                            }
-                            if let Some(cct) =
-                                usage.get("cachedContentTokenCount").and_then(|v| v.as_u64())
-                            {
-                                cached_tok = cct;
-                            }
-                        }
-                        if let Some(candidates) =
-                            actual.get("candidates").and_then(|c| c.as_array())
+                    if let Some(ct) = usage.get("candidatesTokenCount").and_then(|v| v.as_u64()) {
+                        *out_tok = ct;
+                    }
+                    if let Some(cct) = usage.get("cachedContentTokenCount").and_then(|v| v.as_u64())
+                    {
+                        *cached_tok = cct;
+                    }
+                }
+                if let Some(candidates) = actual.get("candidates").and_then(|c| c.as_array()) {
+                    for cand in candidates {
+                        if let Some(parts) = cand
+                            .get("content")
+                            .and_then(|c| c.get("parts"))
+                            .and_then(|p| p.as_array())
                         {
-                            for cand in candidates {
-                                if let Some(parts) = cand
-                                    .get("content")
-                                    .and_then(|c| c.get("parts"))
-                                    .and_then(|p| p.as_array())
-                                {
-                                    for part in parts {
-                                        let is_thought = part
-                                            .get("thought")
-                                            .and_then(|v| v.as_bool())
-                                            .unwrap_or(false);
-                                        if let Some(txt) = part.get("text").and_then(|t| t.as_str())
-                                        {
-                                            if is_thought {
-                                                let entry =
-                                                    thinking_text.get_or_insert_with(String::new);
-                                                entry.push_str(txt);
-                                            } else {
-                                                full_text.push_str(txt);
-                                            }
-                                        } else if let Some(inline) = part.get("inlineData") {
-                                            let mime = inline
-                                                .get("mimeType")
-                                                .and_then(|m| m.as_str())
-                                                .unwrap_or("image/png");
-                                            if let Some(b64) =
-                                                inline.get("data").and_then(|d| d.as_str())
-                                            {
-                                                full_text.push_str(&format!("[Generated Image: {} bytes, {}]\n![Generated Image](data:{};base64,{})", b64.len(), mime, mime, b64));
-                                            }
-                                        }
+                            for part in parts {
+                                let is_thought = part
+                                    .get("thought")
+                                    .and_then(|v| v.as_bool())
+                                    .unwrap_or(false);
+                                if let Some(txt) = part.get("text").and_then(|t| t.as_str()) {
+                                    if is_thought {
+                                        let entry = thinking_text.get_or_insert_with(String::new);
+                                        entry.push_str(txt);
+                                    } else {
+                                        full_text.push_str(txt);
+                                    }
+                                } else if let Some(inline) = part.get("inlineData") {
+                                    let mime = inline
+                                        .get("mimeType")
+                                        .and_then(|m| m.as_str())
+                                        .unwrap_or("image/png");
+                                    if let Some(b64) = inline.get("data").and_then(|d| d.as_str()) {
+                                        full_text.push_str(&format!(
+                                            "[Generated Image: {} bytes, {}]\n![Generated Image](data:{};base64,{})",
+                                            b64.len(),
+                                            mime,
+                                            mime,
+                                            b64
+                                        ));
                                     }
                                 }
                             }
                         }
                     }
                 }
+                let (_q, _r, smd) = crate::proxy::antigravity::extract_grounding_info(actual);
+                if !smd.is_empty() {
+                    *sources_md_final = smd;
+                }
+            };
+
+            if let Ok(direct_val) = serde_json::from_str::<Value>(body_text.trim()) {
+                parse_json_chunk(
+                    &direct_val,
+                    &mut full_text,
+                    &mut thinking_text,
+                    &mut sources_md_final,
+                    &mut in_tok,
+                    &mut out_tok,
+                    &mut cached_tok,
+                );
+            } else {
+                for line in body_text.lines() {
+                    if let Some(data) = line.strip_prefix("data: ") {
+                        let trimmed = data.trim();
+                        if trimmed == "[DONE]" {
+                            break;
+                        }
+                        if let Ok(val) = serde_json::from_str::<Value>(trimmed) {
+                            parse_json_chunk(
+                                &val,
+                                &mut full_text,
+                                &mut thinking_text,
+                                &mut sources_md_final,
+                                &mut in_tok,
+                                &mut out_tok,
+                                &mut cached_tok,
+                            );
+                        }
+                    }
+                }
+            }
+
+            if !sources_md_final.is_empty() {
+                full_text.push_str(&sources_md_final);
             }
 
             let mut content_blocks = Vec::new();
             if let Some(th) = thinking_text {
                 content_blocks.push(serde_json::json!({
                     "type": "thinking",
-                    "thinking": th
+                    "thinking": th,
+                    "signature": format!("sig_{:016x}", fastrand::u64(..))
                 }));
             }
             content_blocks.push(serde_json::json!({

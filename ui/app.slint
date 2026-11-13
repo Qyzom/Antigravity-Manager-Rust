@@ -48,6 +48,11 @@ export struct ModelItemData {
     tier: string,
     is_enabled: bool,
     supports_thinking: bool,
+    modality: string,
+    availability_status: string,
+    quota_percent: int,
+    notice: string,
+    available_accounts_count: int,
 }
 
 export struct I18nData {
@@ -416,6 +421,29 @@ export struct I18nData {
     lbl_stage_cooldown: string,
     lbl_stage_quarantine: string,
     lbl_stage_probing: string,
+    lbl_badge_image: string,
+    lbl_badge_stt: string,
+    lbl_badge_tts: string,
+    lbl_badge_search: string,
+    lbl_model_disabled: string,
+    lbl_model_exhausted: string,
+    lbl_model_notice: string,
+    lbl_test_aspect_ratio: string,
+    lbl_test_audio_file: string,
+    lbl_test_audio_file_placeholder: string,
+    btn_browse_file: string,
+    lbl_test_language: string,
+    lbl_test_voice: string,
+    lbl_test_speed: string,
+    lbl_test_search_domain: string,
+    lbl_test_stt_prompt_placeholder: string,
+    lbl_test_tts_prompt_placeholder: string,
+    lbl_test_search_prompt_placeholder: string,
+    lbl_test_stt_default_prompt: string,
+    lbl_test_tts_default_prompt: string,
+    lbl_test_search_default_prompt: string,
+    btn_save_output: string,
+    btn_play_audio: string,
 }
 
 component NavItem inherits Rectangle {
@@ -609,7 +637,7 @@ export component MainWindow inherits Window {
     // Translations
     in-out property <I18nData> i18n;
     in-out property <int> current_language: 0; // 0: EN, 1: RU, 2: ZH
-    in-out property <string> app_version: "v0.1.3";
+    in-out property <string> app_version: "v0.0.0";
 
     // Navigation & Status
     in-out property <int> active_tab: 0;
@@ -697,13 +725,24 @@ export component MainWindow inherits Window {
     // Modal 2: Test Model Dialog
     in-out property <bool> show_test_dialog: false;
     in-out property <string> test_model_id: "claude-3-7-sonnet";
-    property <bool> is_image_test_model: root.test_model_id == "gemini-3.1-flash-image";
+    in-out property <string> test_modality: "chat"; // "chat", "image", "stt", "tts", "search"
+    property <bool> is_image_test_model: root.test_modality == "image";
     in-out property <string> test_prompt: "";
     in-out property <string> test_timeout_secs: "60";
     in-out property <string> test_max_tokens: "2048";
     in-out property <string> test_temperature: "0.7";
     in-out property <int> test_reasoning_effort_index: 0; // 0: Default, 1: Off, 2: Low, 3: Medium, 4: High
     in-out property <bool> test_stream: true;
+    in-out property <string> test_image_aspect_ratio: "1:1";
+    in-out property <image> test_preview_image;
+    in-out property <bool> test_has_preview_image: false;
+    in-out property <string> test_audio_file_path: "";
+    in-out property <string> test_stt_language: "";
+    in-out property <string> test_tts_voice: "alloy";
+    in-out property <string> test_tts_speed: "1.0";
+    in-out property <string> test_audio_output_path: "";
+    in-out property <bool> test_has_audio_output: false;
+    in-out property <string> test_search_domain: "";
     in-out property <bool> test_running: false;
     in-out property <string> test_status: "";
     in-out property <string> test_latency: "0 ms";
@@ -744,7 +783,7 @@ export component MainWindow inherits Window {
     in-out property <int> stealth_cooldown_duration: 300;
     in-out property <bool> stealth_request_jitter: true;
     in-out property <string> stealth_spoof_platform: "AUTO";
-    in-out property <string> stealth_spoof_ide_version: "2.23.1";
+    in-out property <string> stealth_spoof_ide_version: "2.29.1";
     in-out property <string> stealth_spoof_arch: "AUTO";
     in-out property <string> stealth_spoof_channel: "stable";
     in-out property <bool> stealth_strip_telemetry: true;
@@ -819,6 +858,9 @@ export component MainWindow inherits Window {
     callback open_test_dialog(string);
     callback execute_test_request();
     callback cancel_test_request();
+    callback browse_test_audio_file();
+    callback play_test_audio();
+    callback save_test_output();
     callback open_log_details(string);
     callback toggle_model(string);
     callback copy_model_id(string);
@@ -1647,7 +1689,7 @@ export component MainWindow inherits Window {
                                                 }
                                             }
 
-                                            // Thinking badge (sleek uniform grey)
+                                            // Thinking / Modality badge (sleek uniform grey)
                                             Rectangle {
                                                 height: 18px;
                                                 border-radius: 4px;
@@ -1658,10 +1700,39 @@ export component MainWindow inherits Window {
                                                     padding-left: 6px;
                                                     padding-right: 6px;
                                                     Text {
-                                                        text: model.supports_thinking ? root.i18n.lbl_badge_thinking : root.i18n.lbl_badge_no_thinking;
+                                                        text: model.modality == "image" ? root.i18n.lbl_badge_image :
+                                                              model.modality == "stt" ? root.i18n.lbl_badge_stt :
+                                                              model.modality == "tts" ? root.i18n.lbl_badge_tts :
+                                                              model.modality == "search" ? root.i18n.lbl_badge_search :
+                                                              (model.supports_thinking ? root.i18n.lbl_badge_thinking : root.i18n.lbl_badge_no_thinking);
                                                         font-size: 9px;
                                                         font-weight: 700;
                                                         color: #a1a1aa;
+                                                        vertical-alignment: center;
+                                                    }
+                                                }
+                                            }
+
+                                            // Availability / Quota / Notice badge
+                                            if model.availability_status != "available" : Rectangle {
+                                                height: 18px;
+                                                border-radius: 4px;
+                                                background: model.availability_status == "disabled" ? #ef444420 :
+                                                            model.availability_status == "exhausted" ? #f59e0b20 : #3b82f620;
+                                                border-width: 1px;
+                                                border-color: model.availability_status == "disabled" ? #ef444460 :
+                                                              model.availability_status == "exhausted" ? #f59e0b60 : #3b82f660;
+                                                HorizontalLayout {
+                                                    padding-left: 6px;
+                                                    padding-right: 6px;
+                                                    Text {
+                                                        text: model.availability_status == "disabled" ? root.i18n.lbl_model_disabled :
+                                                              model.availability_status == "exhausted" ? root.i18n.lbl_model_exhausted :
+                                                              root.i18n.lbl_model_notice;
+                                                        font-size: 9px;
+                                                        font-weight: 700;
+                                                        color: model.availability_status == "disabled" ? #f87171 :
+                                                               model.availability_status == "exhausted" ? #fbbf24 : #60a5fa;
                                                         vertical-alignment: center;
                                                     }
                                                 }
@@ -1988,6 +2059,44 @@ export component MainWindow inherits Window {
                                             padding-left: 8px;
                                             padding-right: 8px;
                                             spacing: 8px;
+                                            Text { text: "Google Gemini"; width: 140px; font-size: 10px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
+                                            Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1beta"; horizontal-stretch: 1; font-size: 10px; color: #38bdf8; vertical-alignment: center; overflow: elide; }
+                                            ActionButton {
+                                                text: root.i18n.btn_copy;
+                                                custom_height: 20px;
+                                                is_primary: false;
+                                                clicked => { root.copy_text_to_clipboard("http://" + root.proxy_host + ":" + root.proxy_port + "/v1beta"); }
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        height: 28px;
+                                        border-radius: 5px;
+                                        background: #121214;
+                                        HorizontalLayout {
+                                            padding-left: 8px;
+                                            padding-right: 8px;
+                                            spacing: 8px;
+                                            Text { text: "MCP Protocol"; width: 140px; font-size: 10px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
+                                            Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/mcp"; horizontal-stretch: 1; font-size: 10px; color: #38bdf8; vertical-alignment: center; overflow: elide; }
+                                            ActionButton {
+                                                text: root.i18n.btn_copy;
+                                                custom_height: 20px;
+                                                is_primary: false;
+                                                clicked => { root.copy_text_to_clipboard("http://" + root.proxy_host + ":" + root.proxy_port + "/mcp"); }
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        height: 28px;
+                                        border-radius: 5px;
+                                        background: #121214;
+                                        HorizontalLayout {
+                                            padding-left: 8px;
+                                            padding-right: 8px;
+                                            spacing: 8px;
                                             Text { text: root.i18n.lbl_endpoints_models; width: 140px; font-size: 10px; font-weight: 700; color: #ffffff; vertical-alignment: center; }
                                             Text { text: "http://" + root.proxy_host + ":" + root.proxy_port + "/v1/models"; horizontal-stretch: 1; font-size: 10px; color: #38bdf8; vertical-alignment: center; overflow: elide; }
                                             ActionButton {
@@ -2186,21 +2295,21 @@ export component MainWindow inherits Window {
                                     }
                                 }
 
-                                // App Version Selector (2 Options: AMR Release [Default] vs Latest Upstream)
+                                // App Version Selector (2 Options: AMR Release vs Latest Antigravity [Default])
                                 HorizontalLayout {
                                     spacing: 8px;
                                     Text { text: root.i18n.lbl_spoof_ide_version + ":"; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
                                     ActionButton {
-                                        text: root.i18n.lbl_version_amr_release + " " + root.i18n.lbl_tag_default;
+                                        text: root.i18n.lbl_version_amr_release;
                                         is_primary: root.stealth_spoof_ide_version == "2.23.1";
                                         is_accent: root.stealth_spoof_ide_version == "2.23.1";
                                         clicked => { root.set_stealth_ide_version("2.23.1"); }
                                     }
                                     ActionButton {
-                                        text: root.i18n.lbl_version_antigravity_latest;
-                                        is_primary: root.stealth_spoof_ide_version == "2.28.1";
-                                        is_accent: root.stealth_spoof_ide_version == "2.28.1";
-                                        clicked => { root.set_stealth_ide_version("2.28.1"); }
+                                        text: root.i18n.lbl_version_antigravity_latest + " " + root.i18n.lbl_tag_default;
+                                        is_primary: root.stealth_spoof_ide_version == "2.29.1";
+                                        is_accent: root.stealth_spoof_ide_version == "2.29.1";
+                                        clicked => { root.set_stealth_ide_version("2.29.1"); }
                                     }
                                 }
                             }
@@ -3757,13 +3866,40 @@ export component MainWindow inherits Window {
 
                 Rectangle { height: 1px; background: #27272a; }
 
-                // Row 1: Test Prompt
+                // Row 1: Personalized Primary Input (Prompt / Text / Search Query / STT Hint)
                 LineEdit {
                     text <=> root.test_prompt;
-                    placeholder-text: root.is_image_test_model ? root.i18n.lbl_test_image_prompt_placeholder : root.i18n.test_prompt_placeholder;
+                    placeholder-text: root.test_modality == "image" ? root.i18n.lbl_test_image_prompt_placeholder :
+                                      root.test_modality == "stt" ? root.i18n.lbl_test_stt_prompt_placeholder :
+                                      root.test_modality == "tts" ? root.i18n.lbl_test_tts_prompt_placeholder :
+                                      root.test_modality == "search" ? root.i18n.lbl_test_search_prompt_placeholder :
+                                      root.i18n.test_prompt_placeholder;
                 }
 
-                // Row 2: Compact Parameters & Action Controls Bar
+                // STT Audio File Selector Row
+                if root.test_modality == "stt": HorizontalLayout {
+                    spacing: 8px;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 2px;
+                        Text { text: root.i18n.lbl_test_audio_file; font-size: 10px; font-weight: 600; color: #71717a; }
+                        LineEdit {
+                            text <=> root.test_audio_file_path;
+                            placeholder-text: root.i18n.lbl_test_audio_file_placeholder;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: end;
+                        ActionButton {
+                            custom_height: 32px;
+                            text: root.i18n.btn_browse_file;
+                            is_primary: true;
+                            clicked => { root.browse_test_audio_file(); }
+                        }
+                    }
+                }
+
+                // Row 2: Modality-Specific Parameters & Action Controls Bar
                 HorizontalLayout {
                     spacing: 8px;
                     alignment: space-between;
@@ -3775,21 +3911,23 @@ export component MainWindow inherits Window {
                         Text { text: root.i18n.test_timeout_label; font-size: 10px; font-weight: 600; color: #71717a; }
                         LineEdit { text <=> root.test_timeout_secs; }
                     }
-                    if !root.is_image_test_model: VerticalLayout {
+
+                    // CHAT controls
+                    if root.test_modality == "chat": VerticalLayout {
                         horizontal-stretch: 1;
                         min-width: 80px;
                         spacing: 2px;
                         Text { text: root.i18n.test_max_tokens_label; font-size: 10px; font-weight: 600; color: #71717a; }
                         LineEdit { text <=> root.test_max_tokens; }
                     }
-                    if !root.is_image_test_model: VerticalLayout {
+                    if root.test_modality == "chat": VerticalLayout {
                         horizontal-stretch: 1;
                         min-width: 65px;
                         spacing: 2px;
                         Text { text: root.i18n.test_temp_label; font-size: 10px; font-weight: 600; color: #71717a; }
                         LineEdit { text <=> root.test_temperature; }
                     }
-                    if !root.is_image_test_model: VerticalLayout {
+                    if root.test_modality == "chat": VerticalLayout {
                         min-width: 100px;
                         spacing: 2px;
                         Text { text: root.i18n.lbl_reasoning_effort; font-size: 10px; font-weight: 600; color: #71717a; }
@@ -3804,7 +3942,7 @@ export component MainWindow inherits Window {
                             clicked => { root.test_reasoning_effort_index = root.test_reasoning_effort_index >= 4 ? 0 : root.test_reasoning_effort_index + 1; }
                         }
                     }
-                    if !root.is_image_test_model: VerticalLayout {
+                    if root.test_modality == "chat": VerticalLayout {
                         min-width: 60px;
                         spacing: 2px;
                         alignment: center;
@@ -3814,6 +3952,77 @@ export component MainWindow inherits Window {
                             toggled => { root.test_stream = !root.test_stream; }
                         }
                     }
+
+                    // IMAGE GEN controls
+                    if root.test_modality == "image": VerticalLayout {
+                        min-width: 110px;
+                        spacing: 2px;
+                        Text { text: root.i18n.lbl_test_aspect_ratio; font-size: 10px; font-weight: 600; color: #71717a; }
+                        ActionButton {
+                            custom_height: 32px;
+                            text: root.test_image_aspect_ratio;
+                            is_primary: true;
+                            clicked => {
+                                root.test_image_aspect_ratio =
+                                    root.test_image_aspect_ratio == "1:1" ? "16:9" :
+                                    root.test_image_aspect_ratio == "16:9" ? "9:16" :
+                                    root.test_image_aspect_ratio == "9:16" ? "4:3" :
+                                    root.test_image_aspect_ratio == "4:3" ? "3:4" : "1:1";
+                            }
+                        }
+                    }
+
+                    // STT controls
+                    if root.test_modality == "stt": VerticalLayout {
+                        horizontal-stretch: 1;
+                        min-width: 110px;
+                        spacing: 2px;
+                        Text { text: root.i18n.lbl_test_language; font-size: 10px; font-weight: 600; color: #71717a; }
+                        LineEdit {
+                            text <=> root.test_stt_language;
+                            placeholder-text: "auto / en / ru";
+                        }
+                    }
+
+                    // TTS controls
+                    if root.test_modality == "tts": VerticalLayout {
+                        min-width: 100px;
+                        spacing: 2px;
+                        Text { text: root.i18n.lbl_test_voice; font-size: 10px; font-weight: 600; color: #71717a; }
+                        ActionButton {
+                            custom_height: 32px;
+                            text: root.test_tts_voice;
+                            is_primary: true;
+                            clicked => {
+                                root.test_tts_voice =
+                                    root.test_tts_voice == "alloy" ? "echo" :
+                                    root.test_tts_voice == "echo" ? "fable" :
+                                    root.test_tts_voice == "fable" ? "onyx" :
+                                    root.test_tts_voice == "onyx" ? "nova" :
+                                    root.test_tts_voice == "nova" ? "shimmer" : "alloy";
+                            }
+                        }
+                    }
+                    if root.test_modality == "tts": VerticalLayout {
+                        horizontal-stretch: 1;
+                        min-width: 70px;
+                        spacing: 2px;
+                        Text { text: root.i18n.lbl_test_speed; font-size: 10px; font-weight: 600; color: #71717a; }
+                        LineEdit { text <=> root.test_tts_speed; }
+                    }
+
+                    // WEB SEARCH controls
+                    if root.test_modality == "search": VerticalLayout {
+                        horizontal-stretch: 2;
+                        min-width: 180px;
+                        spacing: 2px;
+                        Text { text: root.i18n.lbl_test_search_domain; font-size: 10px; font-weight: 600; color: #71717a; }
+                        LineEdit {
+                            text <=> root.test_search_domain;
+                            placeholder-text: "docs.rs, github.com";
+                        }
+                    }
+
                     VerticalLayout {
                         alignment: end;
                         if root.test_running: ActionButton {
@@ -3831,18 +4040,33 @@ export component MainWindow inherits Window {
                     }
                 }
 
-                // Status & Metrics Row
+                // Status & Metrics + Modality Output Action Row
                 HorizontalLayout {
-                    alignment: start;
+                    alignment: space-between;
                     Text {
-                        text: root.i18n.lbl_status_prefix + root.test_status + " | " + root.test_latency + " | " + root.test_tokens + " tok";
+                        text: root.i18n.lbl_status_prefix + root.test_status + " | " + root.test_latency + " | " + root.test_tokens;
                         font-size: 11px;
                         color: #a1a1aa;
                         vertical-alignment: center;
                     }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        if root.test_modality == "tts" && root.test_has_audio_output: ActionButton {
+                            custom_height: 24px;
+                            text: root.i18n.btn_play_audio;
+                            is_primary: true;
+                            clicked => { root.play_test_audio(); }
+                        }
+                        if (root.test_modality == "image" && root.test_has_preview_image) || (root.test_modality == "tts" && root.test_has_audio_output): ActionButton {
+                            custom_height: 24px;
+                            text: root.i18n.btn_save_output;
+                            is_primary: false;
+                            clicked => { root.save_test_output(); }
+                        }
+                    }
                 }
 
-                // Output Viewer
+                // Output Viewer (Image Preview for Image Gen, Text Console for all others)
                 Rectangle {
                     height: 290px;
                     border-radius: 8px;
@@ -3850,16 +4074,37 @@ export component MainWindow inherits Window {
                     border-width: 1px;
                     border-color: #27272a;
 
-                    ScrollView {
-                        VerticalLayout {
-                            padding: 16px;
-                            alignment: start;
-                            Text {
-                                text: root.test_response == "" ? root.i18n.lbl_test_response_placeholder : root.test_response;
-                                font-family: "monospace";
-                                font-size: 11px;
-                                color: root.test_response == "" ? #52525b : #f4f4f5;
-                                wrap: word-wrap;
+                    HorizontalLayout {
+                        padding: 12px;
+                        spacing: 12px;
+
+                        if root.test_modality == "image" && root.test_has_preview_image: Rectangle {
+                            width: 266px;
+                            height: 266px;
+                            border-radius: 6px;
+                            background: #141416;
+                            border-width: 1px;
+                            border-color: #27272a;
+                            Image {
+                                width: 100%;
+                                height: 100%;
+                                source: root.test_preview_image;
+                                image-fit: contain;
+                            }
+                        }
+
+                        ScrollView {
+                            horizontal-stretch: 1;
+                            VerticalLayout {
+                                padding: 4px;
+                                alignment: start;
+                                Text {
+                                    text: root.test_response == "" ? root.i18n.lbl_test_response_placeholder : root.test_response;
+                                    font-family: "monospace";
+                                    font-size: 11px;
+                                    color: root.test_response == "" ? #52525b : #f4f4f5;
+                                    wrap: word-wrap;
+                                }
                             }
                         }
                     }

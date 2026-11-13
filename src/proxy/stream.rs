@@ -433,6 +433,16 @@ pub fn process_antigravity_to_openai_stream(
                                                                 }
                                                             }
                                                         }
+                                                        if candidate.get("groundingMetadata").is_some() {
+                                                            let (_q, _r, sources_md) = crate::proxy::antigravity::extract_grounding_info(actual);
+                                                            if !sources_md.is_empty() {
+                                                                if accumulated_response.len() < 65536 {
+                                                                    accumulated_response.push_str(&sources_md);
+                                                                }
+                                                                let chunk = create_stream_chunk(&stream_id, &model_name, Some(&sources_md), None, None);
+                                                                yield Ok(Bytes::from(chunk));
+                                                            }
+                                                        }
                                                         if let Some(finish) = candidate.get("finishReason").and_then(|f| f.as_str()) {
                                                             let stop_reason = if has_emitted_tools {
                                                                 "tool_calls"
@@ -728,6 +738,16 @@ pub fn process_antigravity_to_claude_stream(
                                                                         yield Ok(Bytes::from(format!("event: content_block_delta\ndata: {}\n\n", delta)));
                                                                     } else {
                                                                         if active_block == Some("thinking") {
+                                                                            // Emit signature_delta before stopping thinking block for Claude Code CLI protocol compliance
+                                                                            let sig_delta = serde_json::json!({
+                                                                                "type": "content_block_delta",
+                                                                                "index": block_index,
+                                                                                "delta": {
+                                                                                    "type": "signature_delta",
+                                                                                    "signature": format!("sig_{:016x}", fastrand::u64(..))
+                                                                                }
+                                                                            });
+                                                                            yield Ok(Bytes::from(format!("event: content_block_delta\ndata: {}\n\n", sig_delta)));
                                                                             yield Ok(Bytes::from(format!("event: content_block_stop\ndata: {{\"type\":\"content_block_stop\",\"index\":{}}}\n\n", block_index)));
                                                                             block_index += 1;
                                                                             active_block = None;
@@ -790,6 +810,17 @@ pub fn process_antigravity_to_claude_stream(
                                                         if let Some(finish) = candidate.get("finishReason").and_then(|f| f.as_str()) {
                                                             if finish == "STOP" {
                                                                 if active_block.is_some() {
+                                                                    if active_block == Some("thinking") {
+                                                                        let sig_delta = serde_json::json!({
+                                                                            "type": "content_block_delta",
+                                                                            "index": block_index,
+                                                                            "delta": {
+                                                                                "type": "signature_delta",
+                                                                                "signature": format!("sig_{:016x}", fastrand::u64(..))
+                                                                            }
+                                                                        });
+                                                                        yield Ok(Bytes::from(format!("event: content_block_delta\ndata: {}\n\n", sig_delta)));
+                                                                    }
                                                                     yield Ok(Bytes::from(format!("event: content_block_stop\ndata: {{\"type\":\"content_block_stop\",\"index\":{}}}\n\n", block_index)));
                                                                 }
                                                                 yield Ok(Bytes::from(format!("event: message_delta\ndata: {{\"type\":\"message_delta\",\"delta\":{{\"stop_reason\":\"end_turn\",\"stop_sequence\":null}},\"usage\":{{\"output_tokens\":{}}}}}\n\n", total_output_tokens)));
@@ -840,6 +871,17 @@ pub fn process_antigravity_to_claude_stream(
         }
 
         if active_block.is_some() {
+            if active_block == Some("thinking") {
+                let sig_delta = serde_json::json!({
+                    "type": "content_block_delta",
+                    "index": block_index,
+                    "delta": {
+                        "type": "signature_delta",
+                        "signature": format!("sig_{:016x}", fastrand::u64(..))
+                    }
+                });
+                yield Ok(Bytes::from(format!("event: content_block_delta\ndata: {}\n\n", sig_delta)));
+            }
             yield Ok(Bytes::from(format!("event: content_block_stop\ndata: {{\"type\":\"content_block_stop\",\"index\":{}}}\n\n", block_index)));
         }
         if message_start_sent {

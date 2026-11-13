@@ -1,4 +1,4 @@
-use crate::config::ModelCatalogItem;
+use crate::config::{AccountModelStatus, AppConfig, ModelCatalogItem};
 use crate::proxy::mappers::openai::*;
 use crate::proxy::router::ReasoningEffort;
 use chrono::{DateTime, Utc};
@@ -73,8 +73,8 @@ pub fn get_tool_name_for_call_id(call_id: &str) -> Option<String> {
     cache.call_id_to_name.get(call_id).cloned()
 }
 
-pub const OFFICIAL_HUB_VERSION: &str = "2.28.1";
-pub const OFFICIAL_HUB_CL: &str = "1000353293";
+pub const OFFICIAL_HUB_VERSION: &str = "2.29.1";
+pub const OFFICIAL_HUB_CL: &str = "1015941558";
 
 pub fn get_official_hub_user_agent_with_meta(
     platform: Option<&str>,
@@ -108,12 +108,18 @@ pub fn get_official_hub_user_agent_with_meta(
             _ => "x86_64",
         },
     };
-    let ver = ide_version.unwrap_or(OFFICIAL_HUB_VERSION);
-    let cl = match ver {
+    let env_ver = std::env::var("AMR_HUB_VERSION").ok().filter(|s| !s.trim().is_empty());
+    let ver = ide_version
+        .or(env_ver.as_deref())
+        .unwrap_or(OFFICIAL_HUB_VERSION);
+    let env_cl = std::env::var("AMR_HUB_CL").ok().filter(|s| !s.trim().is_empty());
+    let cl_default = match ver {
         "2.23.1" => "998881661",
+        "2.28.1" => "1000353293",
         "1.107.0" => "987654321",
         _ => OFFICIAL_HUB_CL,
     };
+    let cl = env_cl.as_deref().unwrap_or(cl_default);
     format!(
         "antigravity/hub/{} (aidev_client; os_type={}; arch={}; cl={})",
         ver, os_type, arch, cl
@@ -123,9 +129,6 @@ pub fn get_official_hub_user_agent_with_meta(
 pub fn get_official_hub_user_agent() -> String {
     get_official_hub_user_agent_with_meta(None, None, None)
 }
-
-pub const OFFICIAL_USER_AGENT: &str =
-    "antigravity/hub/2.28.1 (aidev_client; os_type=linux; arch=x86_64; cl=1000353293)";
 
 pub fn get_google_client_id() -> String {
     let p1 = "1071006060591-tmhss";
@@ -158,6 +161,11 @@ pub const FETCH_MODELS_ENDPOINTS: [&str; 2] = [
 pub const STREAM_ENDPOINTS: [&str; 2] = [
     "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
     "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+];
+
+pub const GENERATE_ENDPOINTS: [&str; 2] = [
+    "https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent",
+    "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:generateContent",
 ];
 
 pub fn normalize_antigravity_upstream_model(requested: &str) -> &'static str {
@@ -210,8 +218,18 @@ pub fn normalize_antigravity_upstream_model(requested: &str) -> &'static str {
         } else {
             "gemini-4-argon"
         }
-    } else if clean.contains("image") || clean.contains("imagen") {
+    } else if clean.contains("image") || clean.contains("imagen") || clean.contains("dall-e") {
         "gemini-3.1-flash-image"
+    } else if clean.contains("web-search") || clean.contains("google-search") {
+        "gemini-2.5-flash"
+    } else if clean.contains("whisper") || clean.contains("transcrib") {
+        "gemini-3.8-flash-medium"
+    } else if clean == "gemini-3.1-flash-tts-preview" {
+        "gemini-3.1-flash-tts-preview"
+    } else if clean == "gemini-3.8-flash-tts" {
+        "gemini-3.8-flash-tts"
+    } else if clean.contains("tts") {
+        "gemini-3.8-flash"
     } else if clean.contains("pro") {
         "gemini-2.5-pro"
     } else if clean.contains("gemini-2.5-flash") {
@@ -310,12 +328,47 @@ struct ModelEntry {
     #[serde(rename = "quotaInfo")]
     quota_info: Option<QuotaInfo>,
     disabled: Option<bool>,
+    #[serde(rename = "disabledReason")]
+    disabled_reason: Option<String>,
+    #[serde(rename = "tagDescription")]
+    tag_description: Option<String>,
+    #[serde(rename = "supportsImages")]
+    supports_images: Option<bool>,
+    #[serde(rename = "supportsThinking")]
+    supports_thinking: Option<bool>,
+    #[serde(rename = "isInternal")]
+    is_internal: Option<bool>,
+    recommended: Option<bool>,
+    #[serde(rename = "maxTokens")]
+    max_tokens: Option<u32>,
+    #[serde(rename = "maxOutputTokens")]
+    max_output_tokens: Option<u32>,
+    #[serde(rename = "modelProvider")]
+    model_provider: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AgentModelSortGroup {
+    #[serde(default, rename = "modelIds")]
+    model_ids: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AgentModelSort {
+    #[serde(default)]
+    groups: Vec<AgentModelSortGroup>,
 }
 
 #[derive(Debug, Deserialize)]
 struct FetchModelsResponse {
     #[serde(default)]
     models: HashMap<String, ModelEntry>,
+    #[serde(default, rename = "agentModelSorts")]
+    agent_model_sorts: Vec<AgentModelSort>,
+    #[serde(default, rename = "imageGenerationModelIds")]
+    image_generation_model_ids: Vec<String>,
+    #[serde(default, rename = "webSearchModelIds")]
+    web_search_model_ids: Vec<String>,
 }
 
 fn url_encode(input: &str) -> String {
@@ -424,9 +477,10 @@ pub async fn fetch_user_info(
     client: &reqwest::Client,
     access_token: &str,
 ) -> Result<GoogleUserInfo, String> {
+    let ua = get_official_hub_user_agent();
     let resp = client
         .get(GOOGLE_USERINFO_URL)
-        .header("User-Agent", OFFICIAL_USER_AGENT)
+        .header("User-Agent", &ua)
         .bearer_auth(access_token)
         .send()
         .await
@@ -660,6 +714,26 @@ pub async fn fetch_models_and_quota(
     access_token: &str,
     project_id: Option<&str>,
 ) -> Result<(Vec<ModelCatalogItem>, u64, u64, String, DetailedQuotaInfo), String> {
+    let (_, models, quota_used, quota_limit, nearest_reset, quota_summary) =
+        fetch_account_models_and_quota(client, access_token, project_id).await?;
+    Ok((models, quota_used, quota_limit, nearest_reset, quota_summary))
+}
+
+pub async fn fetch_account_models_and_quota(
+    client: &reqwest::Client,
+    access_token: &str,
+    project_id: Option<&str>,
+) -> Result<
+    (
+        Vec<AccountModelStatus>,
+        Vec<ModelCatalogItem>,
+        u64,
+        u64,
+        String,
+        DetailedQuotaInfo,
+    ),
+    String,
+> {
     let quota_summary = fetch_user_quota_summary(client, access_token).await;
     let payload = if let Some(pid) = project_id {
         serde_json::json!({ "project": pid })
@@ -679,126 +753,139 @@ pub async fn fetch_models_and_quota(
         {
             if resp.status().is_success() {
                 if let Ok(data) = resp.json::<FetchModelsResponse>().await {
-                    let mut models: Vec<ModelCatalogItem> = Vec::new();
+                    let mut recommended_order: HashMap<String, usize> = HashMap::new();
+                    let mut idx = 0usize;
+                    for sort in &data.agent_model_sorts {
+                        for grp in &sort.groups {
+                            for mid in &grp.model_ids {
+                                recommended_order.entry(mid.clone()).or_insert_with(|| {
+                                    let cur = idx;
+                                    idx += 1;
+                                    cur
+                                });
+                            }
+                        }
+                    }
+                    let image_gen_set: std::collections::HashSet<&str> = data
+                        .image_generation_model_ids
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect();
+                    let web_search_set: std::collections::HashSet<&str> = data
+                        .web_search_model_ids
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect();
+
+                    let mut account_models: Vec<AccountModelStatus> = Vec::new();
                     let mut min_fraction: f64 = 1.0;
                     let mut nearest_reset = "in 4h 00m".to_string();
 
                     for (id, entry) in data.models {
-                        if entry.disabled == Some(true)
+                        let is_internal = entry.is_internal.unwrap_or(false)
                             || id.starts_with("chat_")
-                            || id.starts_with("tab_")
-                            || id.contains("gemini-3.5")
-                            || id.contains("gemini-3-flash")
-                            || id.contains("gemini-3.9")
-                            || id.contains("gemini-3.7")
-                            || id.contains("gemini-3.6")
-                            || (id != "gemini-3.1-flash-image" && id.contains("gemini-3.1"))
-                            || id.contains("flash-lite")
-                            || id.contains("lite")
-                            || id.contains("gpt-oss")
-                            || id == "o1"
-                            || id == "gpt-4o"
-                            || id == "gpt-4o-mini"
-                            || id == "o3-mini"
-                        {
+                            || id.starts_with("tab_");
+                        if is_internal {
                             continue;
                         }
 
-                        let clean_id = match id.as_str() {
-                            "claude-sonnet-5-5-high"
-                            | "claude-sonnet-5-5"
-                            | "claude-3-7-sonnet" => "claude-sonnet-5-5".to_string(),
-                            "claude-opus-5-5-high" | "claude-opus-5-5" => {
-                                "claude-opus-5-5".to_string()
-                            }
-                            "claude-sonnet-4-6" => "claude-sonnet-4-6".to_string(),
-                            "claude-opus-4-6-thinking" | "claude-opus-4-6" => {
-                                "claude-opus-4-6".to_string()
-                            }
-                            "gemini-3.8-flash-high"
-                            | "gemini-3.8-flash-medium"
-                            | "gemini-3.8-flash-low"
-                            | "gemini-3.8-flash-tiered"
-                            | "gemini-3.8-flash"
-                            | "gemini-2.5-flash-thinking"
-                            | "gemini-2.5-flash" => "gemini-3.8-flash".to_string(),
-                            "gemini-4-argon" | "gemini-2.5-pro" => "gemini-4-argon".to_string(),
-                            other => {
-                                let (base, _) =
-                                    crate::proxy::router::parse_model_and_reasoning(other, None);
-                                base
+                        let provider = match entry.model_provider.as_deref() {
+                            Some("MODEL_PROVIDER_ANTHROPIC") => "anthropic".to_string(),
+                            Some("MODEL_PROVIDER_OPENAI") => "openai".to_string(),
+                            Some("MODEL_PROVIDER_GOOGLE") => "gemini".to_string(),
+                            _ => {
+                                if id.contains("claude") {
+                                    "anthropic".to_string()
+                                } else if id.contains("gemini") {
+                                    "gemini".to_string()
+                                } else {
+                                    "openai".to_string()
+                                }
                             }
                         };
 
-                        let disp_name = match clean_id.as_str() {
-                            "claude-sonnet-5-5" => "Claude Sonnet 5.5".to_string(),
-                            "claude-opus-5-5" => "Claude Opus 5.5".to_string(),
-                            "claude-sonnet-4-6" => "Claude Sonnet 4.6".to_string(),
-                            "claude-opus-4-6" => "Claude Opus 4.6".to_string(),
-                            "gemini-3.8-flash" => "Gemini 3.8 Flash".to_string(),
-                            "gemini-4-argon" => "Gemini 4 Argon".to_string(),
-                            _ => entry
-                                .display_name
-                                .clone()
-                                .unwrap_or_else(|| clean_id.clone()),
-                        };
+                        let disabled = entry.disabled.unwrap_or(false);
+                        let frac = entry
+                            .quota_info
+                            .as_ref()
+                            .and_then(|q| q.remaining_fraction)
+                            .unwrap_or(if disabled { 0.0 } else { 1.0 });
+                        let reset_time = entry.quota_info.as_ref().and_then(|q| q.reset_time.clone());
 
-                        let provider = if clean_id.contains("claude") {
-                            "anthropic".to_string()
-                        } else if clean_id.contains("gemini") {
-                            "gemini".to_string()
+                        if !disabled && frac < min_fraction {
+                            min_fraction = frac;
+                        }
+                        if let Some(rt) = &reset_time {
+                            if let Ok(parsed_time) = DateTime::parse_from_rfc3339(rt) {
+                                let now = Utc::now();
+                                let dur = parsed_time.with_timezone(&Utc).signed_duration_since(now);
+                                let minutes = dur.num_minutes().max(0);
+                                let hours = minutes / 60;
+                                let rem_min = minutes % 60;
+                                nearest_reset = format!("in {}h {:02}m", hours, rem_min);
+                            }
+                        }
+
+                        let notice = entry
+                            .disabled_reason
+                            .filter(|s| !s.is_empty())
+                            .or_else(|| entry.tag_description.filter(|s| !s.is_empty()));
+
+                        let is_image_gen = image_gen_set.contains(id.as_str())
+                            || id.to_lowercase().contains("image");
+                        let modality = if is_image_gen {
+                            "image".to_string()
+                        } else if web_search_set.contains(id.as_str()) {
+                            "search".to_string()
                         } else {
-                            "openai".to_string()
+                            "chat".to_string()
                         };
 
-                        let supports_thinking = !clean_id.to_lowercase().contains("image") && clean_id != "Image generator";
+                        let supports_thinking = entry
+                            .supports_thinking
+                            .unwrap_or(!is_image_gen);
 
-                        let tier = "PRO".to_string();
+                        let sort_order = recommended_order.get(&id).copied().unwrap_or(usize::MAX);
+                        let is_recommended_agent = recommended_order.contains_key(&id);
 
-                        if let Some(qi) = entry.quota_info {
-                            if let Some(frac) = qi.remaining_fraction {
-                                if frac < min_fraction {
-                                    min_fraction = frac;
-                                }
-                            }
-                            if let Some(rt) = qi.reset_time {
-                                if let Ok(parsed_time) = DateTime::parse_from_rfc3339(&rt) {
-                                    let now = Utc::now();
-                                    let dur =
-                                        parsed_time.with_timezone(&Utc).signed_duration_since(now);
-                                    let minutes = dur.num_minutes().max(0);
-                                    let hours = minutes / 60;
-                                    let rem_min = minutes % 60;
-                                    nearest_reset = format!("in {}h {:02}m", hours, rem_min);
-                                }
-                            }
-                        }
-
-                        if !models.iter().any(|m| m.id == clean_id) {
-                            models.push(ModelCatalogItem {
-                                id: clean_id,
-                                display_name: disp_name,
-                                provider,
-                                tier,
-                                is_enabled: true,
-                                supports_thinking,
-                            });
-                        }
+                        account_models.push(AccountModelStatus {
+                            id: id.clone(),
+                            display_name: entry.display_name.unwrap_or_else(|| id.clone()),
+                            provider,
+                            disabled,
+                            remaining_fraction: frac,
+                            reset_time,
+                            supports_thinking,
+                            supports_images: entry.supports_images.unwrap_or(false),
+                            is_internal: false,
+                            recommended: entry.recommended.unwrap_or(false),
+                            notice,
+                            max_tokens: entry.max_tokens.unwrap_or(1_048_576),
+                            max_output_tokens: entry.max_output_tokens.unwrap_or(65_536),
+                            modality,
+                            is_recommended_agent,
+                            sort_order,
+                        });
                     }
 
-                    // Always ensure core flagship models are available in the catalog
-                    let default_models = crate::config::AppConfig::default().models;
-                    for def in default_models {
-                        if !models.iter().any(|m| m.id == def.id) {
-                            models.push(def);
-                        }
-                    }
+                    account_models.sort_by(|a, b| a.sort_order.cmp(&b.sort_order).then(a.id.cmp(&b.id)));
 
-                    if !models.is_empty() {
+                    if !account_models.is_empty() {
+                        let mut temp_cfg = AppConfig::default();
+                        temp_cfg.accounts.push(crate::config::UpstreamAccount {
+                            id: "probe".to_string(),
+                            is_active: true,
+                            tier: "PRO".to_string(),
+                            available_models: account_models.clone(),
+                            ..Default::default()
+                        });
+                        temp_cfg.rebuild_models_from_accounts();
+
                         let quota_limit = 100_000u64;
                         let quota_used = ((1.0 - min_fraction) * (quota_limit as f64)) as u64;
                         return Ok((
-                            models,
+                            account_models,
+                            temp_cfg.models,
                             quota_used,
                             quota_limit,
                             nearest_reset,
@@ -811,6 +898,176 @@ pub async fn fetch_models_and_quota(
     }
 
     Err("Could not fetch models from upstream Antigravity endpoints".to_string())
+}
+
+pub const WEB_SEARCH_SYSTEM_INSTRUCTION: &str = "You are a search engine bot. You will be given a query from a user. Your task is to search the web for relevant information that will help the user. You MUST perform a web search. Do not respond or interact with the user, please respond as if they typed the query into a search bar.";
+
+pub fn aspect_ratio_from_size_or_hint(aspect_ratio: Option<&str>, size: Option<&str>) -> Option<&'static str> {
+    if let Some(ar) = aspect_ratio {
+        return match ar.trim() {
+            "1:1" => Some("1:1"),
+            "16:9" => Some("16:9"),
+            "9:16" => Some("9:16"),
+            "4:3" => Some("4:3"),
+            "3:4" => Some("3:4"),
+            "3:2" => Some("3:2"),
+            "2:3" => Some("2:3"),
+            "21:9" => Some("21:9"),
+            _ => None,
+        };
+    }
+    if let Some(sz) = size {
+        return match sz.trim() {
+            "1024x1024" | "512x512" | "256x256" => Some("1:1"),
+            "1792x1024" | "1344x768" | "1280x720" => Some("16:9"),
+            "1024x1792" | "768x1344" | "720x1280" => Some("9:16"),
+            "1152x896" | "1024x768" => Some("4:3"),
+            "896x1152" | "768x1024" => Some("3:4"),
+            "1248x832" => Some("3:2"),
+            "832x1248" => Some("2:3"),
+            _ => None,
+        };
+    }
+    None
+}
+
+pub fn build_web_search_payload(
+    query: &str,
+    domain: Option<&str>,
+    target_model: &str,
+    project_id: Option<&str>,
+) -> Value {
+    let upstream_model = {
+        let lower = target_model.to_lowercase();
+        if lower.contains("2.5-flash") || lower.contains("argon") {
+            normalize_antigravity_upstream_model(target_model)
+        } else {
+            "gemini-2.5-flash"
+        }
+    };
+    let effective_query = match domain.map(str::trim).filter(|d| !d.is_empty()) {
+        Some(dom) if !query.contains("site:") => format!("{} site:{}", query.trim(), dom),
+        _ => query.trim().to_string(),
+    };
+    let pid = project_id.unwrap_or("aicode-consumers");
+    let ts = chrono::Utc::now().timestamp_millis();
+    let conv = &uuid::Uuid::new_v4().simple().to_string()[..16];
+    let traj = &uuid::Uuid::new_v4().simple().to_string()[..8];
+    let request_id = format!("search/{}/{}/{}/1", conv, ts, traj);
+
+    serde_json::json!({
+        "project": pid,
+        "requestId": request_id,
+        "model": upstream_model,
+        "userAgent": "antigravity",
+        "requestType": "web_search",
+        "request": {
+            "contents": [{
+                "role": "user",
+                "parts": [{ "text": effective_query }]
+            }],
+            "systemInstruction": {
+                "role": "user",
+                "parts": [{ "text": WEB_SEARCH_SYSTEM_INSTRUCTION }]
+            },
+            "tools": [{ "googleSearch": {} }],
+            "generationConfig": {
+                "temperature": 0.2
+            }
+        }
+    })
+}
+
+pub fn extract_grounding_info(actual: &Value) -> (Vec<String>, Vec<Value>, String) {
+    let mut search_queries: Vec<String> = Vec::new();
+    let mut results: Vec<Value> = Vec::new();
+    let mut seen_urls = std::collections::HashSet::new();
+
+    if let Some(candidates) = actual.get("candidates").and_then(|c| c.as_array()) {
+        for cand in candidates {
+            if let Some(gm) = cand.get("groundingMetadata") {
+                if let Some(queries) = gm.get("webSearchQueries").and_then(|q| q.as_array()) {
+                    for q in queries {
+                        if let Some(qs) = q.as_str() {
+                            if !search_queries.iter().any(|existing| existing == qs) {
+                                search_queries.push(qs.to_string());
+                            }
+                        }
+                    }
+                }
+
+                // Map chunk index -> snippet texts from groundingSupports
+                let mut chunk_snippets: std::collections::HashMap<usize, Vec<String>> =
+                    std::collections::HashMap::new();
+                if let Some(supports) = gm.get("groundingSupports").and_then(|s| s.as_array()) {
+                    for sup in supports {
+                        let snippet = sup
+                            .pointer("/segment/text")
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("")
+                            .trim();
+                        if !snippet.is_empty() {
+                            if let Some(indices) =
+                                sup.get("groundingChunkIndices").and_then(|i| i.as_array())
+                            {
+                                for idx in indices {
+                                    if let Some(u) = idx.as_u64() {
+                                        chunk_snippets
+                                            .entry(u as usize)
+                                            .or_default()
+                                            .push(snippet.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if let Some(chunks) = gm.get("groundingChunks").and_then(|c| c.as_array()) {
+                    for (idx, chunk) in chunks.iter().enumerate() {
+                        if let Some(web) = chunk.get("web") {
+                            let url = web
+                                .get("uri")
+                                .or_else(|| web.get("url"))
+                                .and_then(|u| u.as_str())
+                                .unwrap_or("")
+                                .trim();
+                            let title = web
+                                .get("title")
+                                .and_then(|t| t.as_str())
+                                .unwrap_or(url)
+                                .trim();
+                            if !url.is_empty() && seen_urls.insert(url.to_string()) {
+                                let snippet = chunk_snippets
+                                    .get(&idx)
+                                    .map(|v| v.join(" "))
+                                    .unwrap_or_default();
+                                results.push(serde_json::json!({
+                                    "index": results.len() + 1,
+                                    "title": title,
+                                    "url": url,
+                                    "snippet": snippet
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut md = String::new();
+    if !results.is_empty() {
+        md.push_str("\n\n### Sources\n");
+        for item in &results {
+            let idx = item.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
+            let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("Source");
+            let url = item.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            md.push_str(&format!("{}. [{}]({})\n", idx, title, url));
+        }
+    }
+
+    (search_queries, results, md)
 }
 
 pub fn build_antigravity_payload(
@@ -831,7 +1088,10 @@ pub fn build_antigravity_payload_with_meta(
     _ide_version_override: Option<&str>,
 ) -> Value {
     let upstream_model = normalize_antigravity_upstream_model(target_model);
-    let is_image_request = target_model.contains("image") || upstream_model.contains("image");
+    let lower_target = target_model.to_lowercase();
+    let is_image_request = lower_target.contains("image") || upstream_model.contains("image");
+    let is_web_search_model =
+        lower_target.contains("web-search") || lower_target.contains("google-search");
     let mut contents: Vec<Value> = Vec::new();
     let mut system_parts = Vec::new();
 
@@ -1035,8 +1295,22 @@ pub fn build_antigravity_payload_with_meta(
         .unwrap_or(65536);
     gen_config["maxOutputTokens"] = serde_json::json!(max_output_tok);
 
+    // Configure image generation options when targeting Gemini Flash Image
+    if is_image_request {
+        gen_config["responseModalities"] = serde_json::json!(["TEXT", "IMAGE"]);
+        let ar_hint = req
+            .extra
+            .get("aspect_ratio")
+            .or_else(|| req.extra.get("aspectRatio"))
+            .and_then(|v| v.as_str());
+        let size_hint = req.extra.get("size").and_then(|v| v.as_str());
+        if let Some(ar) = aspect_ratio_from_size_or_hint(ar_hint, size_hint) {
+            gen_config["imageConfig"] = serde_json::json!({ "aspectRatio": ar });
+        }
+    }
+
     // Configure thinking / reasoning according to model architecture and user selection
-    if !is_image_request {
+    if !is_image_request && !is_web_search_model {
         match reasoning_effort {
             Some(ReasoningEffort::Off) => {
                 if target_model.contains("argon") {
@@ -1051,7 +1325,9 @@ pub fn build_antigravity_payload_with_meta(
                 }
             }
             Some(ReasoningEffort::Low) => {
-                if target_model.contains("argon") {
+                if target_model.contains("argon")
+                    || (target_model.contains("gemini") && !target_model.contains("2.5"))
+                {
                     gen_config["thinkingConfig"] = serde_json::json!({
                         "includeThoughts": true,
                         "thinkingLevel": "LOW"
@@ -1069,7 +1345,9 @@ pub fn build_antigravity_payload_with_meta(
                 }
             }
             Some(ReasoningEffort::Medium) => {
-                if target_model.contains("argon") {
+                if target_model.contains("argon")
+                    || (target_model.contains("gemini") && !target_model.contains("2.5"))
+                {
                     gen_config["thinkingConfig"] = serde_json::json!({
                         "includeThoughts": true,
                         "thinkingLevel": "MEDIUM"
@@ -1087,7 +1365,9 @@ pub fn build_antigravity_payload_with_meta(
                 }
             }
             Some(ReasoningEffort::High) => {
-                if target_model.contains("argon") {
+                if target_model.contains("argon")
+                    || (target_model.contains("gemini") && !target_model.contains("2.5"))
+                {
                     gen_config["thinkingConfig"] = serde_json::json!({
                         "includeThoughts": true,
                         "thinkingLevel": "HIGH"
@@ -1165,15 +1445,27 @@ pub fn build_antigravity_payload_with_meta(
         "generationConfig": gen_config
     });
 
-    // Map OpenAI tools to Gemini functionDeclarations
+    // Map OpenAI tools to Gemini functionDeclarations and googleSearch grounding
     let mut function_declarations = Vec::new();
+    let mut enable_google_search = is_web_search_model;
     let tools_list = req
         .tools
         .as_ref()
         .or_else(|| req.extra.get("tools").and_then(|t| t.as_array()));
     if let Some(tools) = tools_list {
         for t in tools {
-            let fn_obj = if t.get("type").and_then(|s| s.as_str()) == Some("function") {
+            let t_type = t.get("type").and_then(|s| s.as_str()).unwrap_or("");
+            if t_type == "web_search"
+                || t_type == "web_search_preview"
+                || t_type == "web_search_2025_03_05"
+                || t_type == "google_search"
+                || t.get("googleSearch").is_some()
+                || t.get("google_search").is_some()
+            {
+                enable_google_search = true;
+                continue;
+            }
+            let fn_obj = if t_type == "function" {
                 t.get("function").unwrap_or(t)
             } else {
                 t
@@ -1198,27 +1490,50 @@ pub fn build_antigravity_payload_with_meta(
             }
         }
     }
-    if !is_image_request && !function_declarations.is_empty() {
-        inner_request["tools"] = serde_json::json!([
-            {
+    if !is_image_request {
+        let mut gemini_tools: Vec<Value> = Vec::new();
+        if !function_declarations.is_empty() {
+            gemini_tools.push(serde_json::json!({
                 "functionDeclarations": function_declarations
-            }
-        ]);
+            }));
+        }
+        if enable_google_search {
+            gemini_tools.push(serde_json::json!({
+                "googleSearch": {}
+            }));
+        }
+        if !gemini_tools.is_empty() {
+            inner_request["tools"] = serde_json::json!(gemini_tools);
+        }
     }
 
-    if !is_image_request && !system_parts.is_empty() {
-        inner_request["systemInstruction"] = serde_json::json!({
-            "role": "user",
-            "parts": system_parts
-        });
+    if !is_image_request {
+        if !system_parts.is_empty() {
+            inner_request["systemInstruction"] = serde_json::json!({
+                "role": "user",
+                "parts": system_parts
+            });
+        } else if is_web_search_model {
+            inner_request["systemInstruction"] = serde_json::json!({
+                "role": "user",
+                "parts": [{ "text": WEB_SEARCH_SYSTEM_INSTRUCTION }]
+            });
+        }
     }
 
     let pid = project_id.unwrap_or("aicode-consumers");
     let ts = chrono::Utc::now().timestamp_millis();
     let conv = &uuid::Uuid::new_v4().simple().to_string()[..16];
     let traj = &uuid::Uuid::new_v4().simple().to_string()[..8];
-    let request_id = format!("agent/{}/{}/{}/1", conv, ts, traj);
-    let request_type = if is_image_request { "image_gen" } else { "agent" };
+    let prefix = if is_web_search_model { "search" } else { "agent" };
+    let request_id = format!("{}/{}/{}/{}/1", prefix, conv, ts, traj);
+    let request_type = if is_image_request {
+        "image_gen"
+    } else if is_web_search_model {
+        "web_search"
+    } else {
+        "agent"
+    };
 
     serde_json::json!({
         "project": pid,
@@ -1255,7 +1570,10 @@ pub fn build_antigravity_payload_from_claude_with_meta(
     _ide_version_override: Option<&str>,
 ) -> Value {
     let upstream_model = normalize_antigravity_upstream_model(target_model);
-    let is_image_request = target_model.contains("image") || upstream_model.contains("image");
+    let lower_target = target_model.to_lowercase();
+    let is_image_request = lower_target.contains("image") || upstream_model.contains("image");
+    let is_web_search_model =
+        lower_target.contains("web-search") || lower_target.contains("google-search");
     let mut contents: Vec<Value> = Vec::new();
     let mut system_parts = Vec::new();
 
@@ -1401,7 +1719,9 @@ pub fn build_antigravity_payload_from_claude_with_meta(
                 }
             }
             Some(ReasoningEffort::Low) => {
-                if target_model.contains("argon") {
+                if target_model.contains("argon")
+                    || (target_model.contains("gemini") && !target_model.contains("2.5"))
+                {
                     gen_config["thinkingConfig"] =
                         serde_json::json!({ "includeThoughts": true, "thinkingLevel": "LOW" });
                 } else if target_model.contains("flash") {
@@ -1413,7 +1733,9 @@ pub fn build_antigravity_payload_from_claude_with_meta(
                 }
             }
             Some(ReasoningEffort::Medium) => {
-                if target_model.contains("argon") {
+                if target_model.contains("argon")
+                    || (target_model.contains("gemini") && !target_model.contains("2.5"))
+                {
                     gen_config["thinkingConfig"] =
                         serde_json::json!({ "includeThoughts": true, "thinkingLevel": "MEDIUM" });
                 } else if target_model.contains("flash") {
@@ -1425,7 +1747,9 @@ pub fn build_antigravity_payload_from_claude_with_meta(
                 }
             }
             Some(ReasoningEffort::High) => {
-                if target_model.contains("argon") {
+                if target_model.contains("argon")
+                    || (target_model.contains("gemini") && !target_model.contains("2.5"))
+                {
                     gen_config["thinkingConfig"] =
                         serde_json::json!({ "includeThoughts": true, "thinkingLevel": "HIGH" });
                 } else if target_model.contains("flash") {
@@ -1497,10 +1821,19 @@ pub fn build_antigravity_payload_from_claude_with_meta(
         "generationConfig": gen_config
     });
 
-    // Map Claude tools to Gemini functionDeclarations
+    // Map Claude tools to Gemini functionDeclarations and googleSearch grounding
     let mut function_declarations = Vec::new();
+    let mut enable_google_search = is_web_search_model;
     if let Some(tools) = req.get("tools").and_then(|t| t.as_array()) {
         for t in tools {
+            let t_type = t.get("type").and_then(|s| s.as_str()).unwrap_or("");
+            if t_type.starts_with("web_search")
+                || t_type == "google_search"
+                || t.get("googleSearch").is_some()
+            {
+                enable_google_search = true;
+                continue;
+            }
             if let Some(name) = t.get("name").and_then(|n| n.as_str()) {
                 let desc = t.get("description").and_then(|d| d.as_str()).unwrap_or("");
                 let params = t
@@ -1519,27 +1852,50 @@ pub fn build_antigravity_payload_from_claude_with_meta(
             }
         }
     }
-    if !is_image_request && !function_declarations.is_empty() {
-        inner_request["tools"] = serde_json::json!([
-            {
+    if !is_image_request {
+        let mut gemini_tools: Vec<Value> = Vec::new();
+        if !function_declarations.is_empty() {
+            gemini_tools.push(serde_json::json!({
                 "functionDeclarations": function_declarations
-            }
-        ]);
+            }));
+        }
+        if enable_google_search {
+            gemini_tools.push(serde_json::json!({
+                "googleSearch": {}
+            }));
+        }
+        if !gemini_tools.is_empty() {
+            inner_request["tools"] = serde_json::json!(gemini_tools);
+        }
     }
 
-    if !is_image_request && !system_parts.is_empty() {
-        inner_request["systemInstruction"] = serde_json::json!({
-            "role": "user",
-            "parts": system_parts
-        });
+    if !is_image_request {
+        if !system_parts.is_empty() {
+            inner_request["systemInstruction"] = serde_json::json!({
+                "role": "user",
+                "parts": system_parts
+            });
+        } else if is_web_search_model {
+            inner_request["systemInstruction"] = serde_json::json!({
+                "role": "user",
+                "parts": [{ "text": WEB_SEARCH_SYSTEM_INSTRUCTION }]
+            });
+        }
     }
 
     let pid = project_id.unwrap_or("aicode-consumers");
     let ts = chrono::Utc::now().timestamp_millis();
     let conv = &uuid::Uuid::new_v4().simple().to_string()[..16];
     let traj = &uuid::Uuid::new_v4().simple().to_string()[..8];
-    let request_id = format!("agent/{}/{}/{}/1", conv, ts, traj);
-    let request_type = if is_image_request { "image_gen" } else { "agent" };
+    let prefix = if is_web_search_model { "search" } else { "agent" };
+    let request_id = format!("{}/{}/{}/{}/1", prefix, conv, ts, traj);
+    let request_type = if is_image_request {
+        "image_gen"
+    } else if is_web_search_model {
+        "web_search"
+    } else {
+        "agent"
+    };
 
     serde_json::json!({
         "project": pid,
@@ -1699,6 +2055,11 @@ pub fn convert_antigravity_response_to_openai(raw: &Value, model: &str) -> OpenA
                 }
             }
         }
+    }
+
+    let (_queries, _sources, sources_md) = extract_grounding_info(actual);
+    if !sources_md.is_empty() {
+        full_text.push_str(&sources_md);
     }
 
     let finish_reason = if !tool_calls.is_empty() {

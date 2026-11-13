@@ -22,9 +22,9 @@
     <category>Network</category>
   </categories>
   <releases>
-    <release version="0.1.3" date="2026-11-07">
+    <release version="@VERSION@" date="@DATE@">
       <description>
-        <p>AMR v0.1.3: Stealth spoofing suite, reasoning clones, AppImage metadata fix, UI layout polishing.</p>
+        <p>AMR v@VERSION@: Pure Rust AI API proxy, protocol emulator, multimodal audio/image support, and quota-aware dispatcher.</p>
       </description>
     </release>
   </releases>

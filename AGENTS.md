@@ -5,11 +5,11 @@ Below is the definitive record of changes and protocol advancements implemented 
 
 ### Version Changelog (English)
 - **v0.1.5 (Latest)**:
-  - **Upstream Image Generation Fix**: Resolved upstream `404 Not Found (Requested entity was not found)` by correctly mapping image generation requests to `gemini-3.1-flash-image` (and aliases `image-generator`, `dall-e-3`).
-  - **OpenAI Standard Model Compliance**: Enforced standard lower-case hyphenated model identifiers across catalogs, removing spaced names (`Image generator` → `gemini-3.1-flash-image`).
-  - **OpenAI Audio STT (`/v1/audio/transcriptions`)**: Added full OpenAI Whisper protocol compatibility accepting multipart/form-data audio (`file`, `model`, `prompt`, `response_format`), automatically converting raw audio into base64 `inlineData` for Gemini speech transcription.
-  - **OpenAI Audio TTS (`/v1/audio/speech`) & Audio Models**: Added `/v1/audio/speech` endpoint and cataloged `whisper-1` (STT) and `tts-1` (TTS) into `/v1/models` broadcast.
-  - **Automated Dynamic Packaging**: Refactored `build_appimage.sh`, `build_deb.sh`, `build_rpm.sh`, and `.github/workflows/release.yml` to automatically extract the release version dynamically from `Cargo.toml` instead of hardcoded fallbacks.
+  - **Antigravity 2.29.1 Client Emulation**: Updated upstream hub version and CL metadata (`antigravity/hub/2.29.1`, `CL 1015941558`) to match latest Antigravity desktop release (`44.5.1`).
+  - **Upstream Image, STT, & TTS Protocol Fixes**: Switched `/v1/images/generations`, `/v1/audio/transcriptions`, and `/v1/audio/speech` to non-streaming `v1internal:generateContent` (`Accept: application/json`) with automatic OAuth token refresh, aspect ratio support, PCM-to-WAV wrapping, and authentic voice mapping.
+  - **Web Search (`POST /v1/search` & `googleSearch` Grounding)**: Reverse-engineered Antigravity `GetWebSearchResults` (`requestType: "web_search"`, `googleSearch` tool, `groundingMetadata` sources) and exposed `POST /v1/search`, the `web-search` catalog model, and OpenAI `web_search` tool mapping in `/v1/chat/completions`.
+  - **Personalized UI Test Modals & Modality Badges**: Added distinct model badges (`Image Gen`, `Audio STT`, `Audio TTS`, `Web Search`) and tailored interactive Test Dialogs for image preview/saving, STT audio file browsing/transcription, TTS voice synthesis/playback, and manual web search with sources.
+  - **Metadata-Driven Version Placeholders & Packaging**: Synchronized `Cargo.toml` (`0.1.5`), Slint UI version, metainfo XML/desktop stamping in `build_appimage.sh` / `build_deb.sh` / `build_rpm.sh`, `README.md` placeholders, and dynamic changelog extraction in `.github/workflows/release.yml`.
 
 - **v0.1.4**:
   - **Window & Tray Integration**: Fixed window minimize-to-tray lifecycle on Linux/Windows and preserved dynamic tray context actions.

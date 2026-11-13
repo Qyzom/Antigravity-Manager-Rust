@@ -116,26 +116,83 @@ pub fn resolve_model_with_effort(
 
     match account.provider.as_str() {
         "antigravity" | "google" | "gemini" => {
+            if lower.contains("web-search") || lower.contains("google-search") {
+                return ("web-search".to_string(), None);
+            } else if lower.contains("whisper") || lower.contains("transcrib") || lower == "stt-1" {
+                return ("whisper-1".to_string(), None);
+            } else if lower.contains("tts") {
+                return ("tts-1".to_string(), None);
+            } else if lower.contains("image") || lower.contains("imagen") || lower.contains("dall-e") {
+                if let Some(img) = account
+                    .available_models
+                    .iter()
+                    .find(|m| !m.disabled && (m.modality == "image" || m.id.to_lowercase().contains("image")))
+                {
+                    return (img.id.clone(), None);
+                }
+                return ("gemini-3.1-flash-image".to_string(), None);
+            }
+
+            // Dynamic resolution against real upstream models parsed for this account
+            if !account.available_models.is_empty() {
+                let (req_base, _) = crate::config::AppConfig::strip_effort_suffix(&lower);
+                let candidates: Vec<&crate::config::AccountModelStatus> = account
+                    .available_models
+                    .iter()
+                    .filter(|m| {
+                        !m.disabled
+                            && crate::config::AppConfig::strip_effort_suffix(&m.id.to_lowercase()).0
+                                == req_base
+                    })
+                    .collect();
+
+                if !candidates.is_empty() {
+                    let find_suffix = |suf: &str| {
+                        candidates
+                            .iter()
+                            .find(|m| m.id.to_lowercase().ends_with(suf))
+                            .map(|m| m.id.clone())
+                    };
+                    let find_exact = |exact: &str| {
+                        candidates
+                            .iter()
+                            .find(|m| m.id.to_lowercase() == exact)
+                            .map(|m| m.id.clone())
+                    };
+
+                    let chosen = match effective_effort {
+                        Some(ReasoningEffort::Off) => find_exact(req_base)
+                            .or_else(|| find_suffix("-none"))
+                            .or_else(|| find_suffix("-low"))
+                            .unwrap_or_else(|| candidates[0].id.clone()),
+                        Some(ReasoningEffort::Low) => find_suffix("-low")
+                            .or_else(|| find_suffix("-medium"))
+                            .or_else(|| find_exact(req_base))
+                            .unwrap_or_else(|| candidates[0].id.clone()),
+                        Some(ReasoningEffort::Medium) => find_suffix("-medium")
+                            .or_else(|| find_suffix("-high"))
+                            .or_else(|| find_exact(req_base))
+                            .unwrap_or_else(|| candidates[0].id.clone()),
+                        Some(ReasoningEffort::High) => find_suffix("-high")
+                            .or_else(|| find_suffix("-thinking"))
+                            .or_else(|| find_exact(req_base))
+                            .unwrap_or_else(|| candidates[0].id.clone()),
+                        None => find_exact(&lower)
+                            .or_else(|| find_suffix("-medium"))
+                            .or_else(|| find_suffix("-thinking"))
+                            .unwrap_or_else(|| candidates[0].id.clone()),
+                    };
+                    return (chosen, effective_effort);
+                }
+            }
+
+            // Fallback when account.available_models has not been fetched yet
             if lower.contains("opus") {
-                if lower.contains("4-6") || lower.contains("4.6") {
-                    match effective_effort {
-                        Some(ReasoningEffort::Off) => {
-                            ("claude-opus-4-6".to_string(), Some(ReasoningEffort::Off))
-                        }
-                        Some(ReasoningEffort::Low) => (
-                            "claude-opus-4-6-thinking".to_string(),
-                            Some(ReasoningEffort::Low),
-                        ),
-                        Some(ReasoningEffort::Medium) => (
-                            "claude-opus-4-6-thinking".to_string(),
-                            Some(ReasoningEffort::Medium),
-                        ),
-                        Some(ReasoningEffort::High) => (
-                            "claude-opus-4-6-thinking".to_string(),
-                            Some(ReasoningEffort::High),
-                        ),
-                        None => ("claude-opus-4-6-thinking".to_string(), None),
-                    }
+                if lower.contains("4-6") || lower.contains("4.6") || !lower.contains("5-5") {
+                    (
+                        "claude-opus-4-6-thinking".to_string(),
+                        effective_effort,
+                    )
                 } else {
                     match effective_effort {
                         Some(ReasoningEffort::Low) => (
@@ -160,7 +217,7 @@ pub fn resolve_model_with_effort(
                     }
                 }
             } else if lower.contains("claude") || lower.contains("sonnet") {
-                if lower.contains("4-6") || lower.contains("4.6") {
+                if lower.contains("4-6") || lower.contains("4.6") || !lower.contains("5-5") {
                     (
                         "claude-sonnet-4-6".to_string(),
                         effective_effort.or(Some(ReasoningEffort::High)),
@@ -188,6 +245,8 @@ pub fn resolve_model_with_effort(
                         ),
                     }
                 }
+            } else if lower.contains("gpt-oss") {
+                ("gpt-oss-120b-medium".to_string(), effective_effort)
             } else if lower.contains("argon") {
                 match effective_effort {
                     Some(ReasoningEffort::Low) => {
@@ -209,11 +268,28 @@ pub fn resolve_model_with_effort(
                         Some(ReasoningEffort::Medium),
                     ),
                 }
-            } else if lower.contains("image") || lower.contains("imagen") {
+            } else if lower.contains("image") || lower.contains("imagen") || lower.contains("dall-e") {
                 ("gemini-3.1-flash-image".to_string(), None)
-            } else if lower.contains("tiered") {
+            } else if lower.contains("web-search") || lower.contains("google-search") {
+                ("web-search".to_string(), None)
+            } else if lower.contains("whisper") || lower.contains("transcrib") || lower == "stt-1" {
+                ("whisper-1".to_string(), None)
+            } else if lower.contains("tts") {
+                ("tts-1".to_string(), None)
+            } else if lower == "gemini-3.8-flash-tiered" || lower.contains("tiered") {
                 ("gemini-3.8-flash-tiered".to_string(), effective_effort)
+            } else if lower == "gemini-2.5-flash"
+                || lower == "gemini-2.5-flash-lite"
+                || lower == "gemini-2.5-flash-thinking"
+                || lower == "gemini-2.5-pro"
+                || lower == "gemini-3-flash"
+                || lower == "gemini-3.1-flash-lite"
+                || lower == "gemini-3.5-flash-lite"
+            {
+                (lower, effective_effort)
             } else {
+                // Standard OpenAI `gemini-3.8-flash` (plus explicit -low/-medium/-high or fallback)
+                // Note: bare `gemini-3.8-flash` returns 404 upstream, so Off uses `gemini-3.8-flash-low` + thinkingBudget=0.
                 match effective_effort {
                     Some(ReasoningEffort::Low) => (
                         "gemini-3.8-flash-low".to_string(),
@@ -228,7 +304,7 @@ pub fn resolve_model_with_effort(
                         Some(ReasoningEffort::High),
                     ),
                     Some(ReasoningEffort::Off) => (
-                        "gemini-3.8-flash".to_string(),
+                        "gemini-3.8-flash-low".to_string(),
                         Some(ReasoningEffort::Off),
                     ),
                     None => (
@@ -298,7 +374,11 @@ pub fn convert_openai_to_claude(
         }
     }
 
-    let is_thinking_capable = target_model.contains("3-7") || target_model.contains("claude-3-7");
+    let is_thinking_capable = target_model.contains("3-7")
+        || target_model.contains("claude-3-7")
+        || target_model.contains("4-6")
+        || target_model.contains("5-5")
+        || target_model.contains("thinking");
     let thinking_config = if is_thinking_capable {
         match effort {
             Some(ReasoningEffort::Off) => None,

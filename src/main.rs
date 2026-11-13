@@ -164,54 +164,44 @@ fn full_circle_path(cx: f64, cy: f64, r: f64) -> String {
     )
 }
 
+fn detect_model_modality(id: &str) -> &'static str {
+    let lower = id.to_lowercase();
+    if lower.contains("image") || lower.contains("imagen") || lower.contains("dall-e") {
+        "image"
+    } else if lower.contains("whisper") || lower.contains("transcrib") || lower == "stt-1" {
+        "stt"
+    } else if lower.contains("tts") {
+        "tts"
+    } else if lower.contains("web-search") || lower.contains("google-search") {
+        "search"
+    } else {
+        "chat"
+    }
+}
+
 fn get_display_models(cfg: &AppConfig) -> Vec<ModelItemData> {
     let mut result = Vec::new();
     let mut seen_ids = std::collections::HashSet::new();
 
     for m in &cfg.models {
-        let (base_id, _) = amr::proxy::router::parse_model_and_reasoning(&m.id, None);
-
-        if !seen_ids.insert(base_id.clone()) {
+        if !seen_ids.insert(m.id.clone()) {
             continue;
         }
-
-        let disp_name = match base_id.as_str() {
-            "claude-sonnet-5-5" => "Claude Sonnet 5.5",
-            "claude-opus-5-5" => "Claude Opus 5.5",
-            "claude-sonnet-4-6" => "Claude Sonnet 4.6",
-            "claude-opus-4-6" => "Claude Opus 4.6",
-            "gemini-4-argon" => "Gemini 4 Argon",
-            "gemini-3.8-flash" => "Gemini 3.8 Flash",
-            _ => &m.display_name,
-        };
+        let modality = detect_model_modality(&m.id);
 
         result.push(ModelItemData {
-            id: base_id.clone().into(),
-            display_name: disp_name.to_string().into(),
+            id: m.id.clone().into(),
+            display_name: m.display_name.clone().into(),
             provider: m.provider.clone().into(),
             tier: m.tier.clone().into(),
             is_enabled: m.is_enabled,
             supports_thinking: m.supports_thinking,
+            modality: modality.into(),
+            availability_status: m.availability_status.clone().into(),
+            quota_percent: m.quota_percent,
+            notice: m.notice.clone().into(),
+            available_accounts_count: m.available_accounts_count as i32,
         });
-
-        if !cfg.group_reasoning_clones && m.supports_thinking {
-            for (suffix, label) in [
-                ("-none", "none"),
-                ("-low", "low"),
-                ("-medium", "medium"),
-                ("-high", "high"),
-            ] {
-                let clone_id = format!("{}{}", base_id, suffix);
-                result.push(ModelItemData {
-                    id: clone_id.into(),
-                    display_name: format!("{} ({})", disp_name, label).into(),
-                    provider: m.provider.clone().into(),
-                    tier: m.tier.clone().into(),
-                    is_enabled: m.is_enabled,
-                    supports_thinking: suffix != "-none",
-                });
-            }
-        }
     }
     result
 }
@@ -411,7 +401,10 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         btn_default: t.btn_default.into(),
         opt_percent: t.opt_percent.into(),
         opt_fraction: t.opt_fraction.into(),
-        about_app_desc: t.about_app_desc.into(),
+        about_app_desc: t
+            .about_app_desc
+            .replace("{version}", env!("CARGO_PKG_VERSION"))
+            .into(),
         about_spec_title: t.about_spec_title.into(),
         about_spec_runtime: t.about_spec_runtime.into(),
         about_spec_transport: t.about_spec_transport.into(),
@@ -584,6 +577,29 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_stage_cooldown: t.lbl_stage_cooldown.into(),
         lbl_stage_quarantine: t.lbl_stage_quarantine.into(),
         lbl_stage_probing: t.lbl_stage_probing.into(),
+        lbl_badge_image: t.lbl_badge_image.into(),
+        lbl_badge_stt: t.lbl_badge_stt.into(),
+        lbl_badge_tts: t.lbl_badge_tts.into(),
+        lbl_badge_search: t.lbl_badge_search.into(),
+        lbl_model_disabled: t.lbl_model_disabled.into(),
+        lbl_model_exhausted: t.lbl_model_exhausted.into(),
+        lbl_model_notice: t.lbl_model_notice.into(),
+        lbl_test_aspect_ratio: t.lbl_test_aspect_ratio.into(),
+        lbl_test_audio_file: t.lbl_test_audio_file.into(),
+        lbl_test_audio_file_placeholder: t.lbl_test_audio_file_placeholder.into(),
+        btn_browse_file: t.btn_browse_file.into(),
+        lbl_test_language: t.lbl_test_language.into(),
+        lbl_test_voice: t.lbl_test_voice.into(),
+        lbl_test_speed: t.lbl_test_speed.into(),
+        lbl_test_search_domain: t.lbl_test_search_domain.into(),
+        lbl_test_stt_prompt_placeholder: t.lbl_test_stt_prompt_placeholder.into(),
+        lbl_test_tts_prompt_placeholder: t.lbl_test_tts_prompt_placeholder.into(),
+        lbl_test_search_prompt_placeholder: t.lbl_test_search_prompt_placeholder.into(),
+        lbl_test_stt_default_prompt: t.lbl_test_stt_default_prompt.into(),
+        lbl_test_tts_default_prompt: t.lbl_test_tts_default_prompt.into(),
+        lbl_test_search_default_prompt: t.lbl_test_search_default_prompt.into(),
+        btn_save_output: t.btn_save_output.into(),
+        btn_play_audio: t.btn_play_audio.into(),
     };
     ui.set_github_update_status(t.btn_check_updates.clone().into());
     ui.set_test_prompt(t.lbl_test_default_prompt.clone().into());
@@ -796,56 +812,7 @@ fn capture_and_save_screenshots(target_dir: &str) -> Result<(), Box<dyn std::err
     ];
     main_window.set_accounts(Rc::new(VecModel::from(accounts)).into());
 
-    let models = vec![
-        ModelItemData {
-            id: "claude-sonnet-5-5".into(),
-            display_name: "Claude Sonnet 5.5".into(),
-            provider: "Anthropic".into(),
-            tier: "PRO".into(),
-            is_enabled: true,
-            supports_thinking: true,
-        },
-        ModelItemData {
-            id: "claude-opus-5-5".into(),
-            display_name: "Claude Opus 5.5".into(),
-            provider: "Anthropic".into(),
-            tier: "PRO".into(),
-            is_enabled: true,
-            supports_thinking: true,
-        },
-        ModelItemData {
-            id: "claude-sonnet-4-6".into(),
-            display_name: "Claude Sonnet 4.6".into(),
-            provider: "Anthropic".into(),
-            tier: "PRO".into(),
-            is_enabled: true,
-            supports_thinking: true,
-        },
-        ModelItemData {
-            id: "claude-opus-4-6".into(),
-            display_name: "Claude Opus 4.6".into(),
-            provider: "Anthropic".into(),
-            tier: "PRO".into(),
-            is_enabled: true,
-            supports_thinking: true,
-        },
-        ModelItemData {
-            id: "gemini-4-argon".into(),
-            display_name: "Gemini 4 Argon".into(),
-            provider: "Google".into(),
-            tier: "PRO".into(),
-            is_enabled: true,
-            supports_thinking: true,
-        },
-        ModelItemData {
-            id: "gemini-3.8-flash".into(),
-            display_name: "Gemini 3.8 Flash".into(),
-            provider: "Google".into(),
-            tier: "PRO".into(),
-            is_enabled: true,
-            supports_thinking: true,
-        },
-    ];
+    let models = get_display_models(&AppConfig::default());
     main_window.set_models(Rc::new(VecModel::from(models)).into());
 
     let logs = vec![
@@ -1431,7 +1398,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         log::info!("Synchronizing active upstream models on proxy launch...");
         let mut res =
-            antigravity::fetch_models_and_quota(&client, &token, active_pid.as_deref()).await;
+            antigravity::fetch_account_models_and_quota(&client, &token, active_pid.as_deref()).await;
 
         if res.is_err() {
             if let Some(ref rtok) = refresh_tok {
@@ -1447,7 +1414,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         let _ = cfg.save();
                     }
-                    res = antigravity::fetch_models_and_quota(
+                    res = antigravity::fetch_account_models_and_quota(
                         &client,
                         &new_tok,
                         active_pid.as_deref(),
@@ -1457,14 +1424,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        if let Ok((models, used, limit, reset, detailed_quota)) = res {
+        if let Ok((acc_models, _models, used, limit, reset, detailed_quota)) = res {
             log::info!(
-                "Successfully synchronized {} models from Google Antigravity on startup",
-                models.len()
+                "Successfully synchronized {} upstream models from Google Antigravity on startup",
+                acc_models.len()
             );
             {
                 let mut cfg = startup_cfg.write();
                 if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == acc_id) {
+                    acc.available_models = acc_models;
                     acc.quota_used = used;
                     acc.quota_limit = limit;
                     acc.quota_reset = reset;
@@ -1477,9 +1445,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     acc.gemini_weekly_percent = detailed_quota.gemini_weekly_percent;
                     acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
                 }
-                if !models.is_empty() {
-                    cfg.models = models;
-                }
+                cfg.rebuild_models_from_accounts();
                 let _ = cfg.save();
             }
             startup_ver.fetch_add(1, Ordering::SeqCst);
@@ -1783,6 +1749,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let next_val = {
             let mut cfg = c_grp.write();
             cfg.group_reasoning_clones = !cfg.group_reasoning_clones;
+            cfg.rebuild_models_from_accounts();
             let _ = cfg.save();
             cfg.group_reasoning_clones
         };
@@ -1904,20 +1871,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (project_id, tier) =
                     antigravity::fetch_project_and_tier(&http_client, &access_token).await;
 
-                let (fetched_models, quota_used, quota_limit, quota_reset, detailed_quota) =
-                    match antigravity::fetch_models_and_quota(
+                let (acc_models, _fetched_models, quota_used, quota_limit, quota_reset, detailed_quota) =
+                    match antigravity::fetch_account_models_and_quota(
                         &http_client,
                         &access_token,
                         project_id.as_deref(),
                     )
                     .await
                     {
-                        Ok(res) => (Some(res.0), res.1, res.2, res.3, res.4),
+                        Ok(res) => (res.0, Some(res.1), res.2, res.3, res.4, res.5),
                         Err(_) => {
                             let det =
                                 antigravity::fetch_user_quota_summary(&http_client, &access_token)
                                     .await;
-                            (None, 0, 100_000, "in 4h 00m".to_string(), det)
+                            (Vec::new(), None, 0, 100_000, "in 4h 00m".to_string(), det)
                         }
                     };
 
@@ -1954,21 +1921,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ),
                     device_profile: Some(amr::config::DeviceProfile::generate()),
                     proxy_url: proxy_opt,
+                    available_models: acc_models,
                 };
 
                 {
                     let mut cfg = c_clone.write();
                     cfg.accounts.push(new_acc);
-                    if let Some(m) = fetched_models {
-                        // Filter out any uncurated internal junk models
-                        let clean_models: Vec<_> = m
-                            .into_iter()
-                            .filter(|x| !x.id.starts_with("chat_") && !x.id.contains("gemini-3.5"))
-                            .collect();
-                        if !clean_models.is_empty() {
-                            cfg.models = clean_models;
-                        }
-                    }
+                    cfg.rebuild_models_from_accounts();
                     let _ = cfg.save();
                 }
 
@@ -2070,7 +2029,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            let mut res = antigravity::fetch_models_and_quota(&client, &token, resolved_pid.as_deref()).await;
+            let mut res = antigravity::fetch_account_models_and_quota(&client, &token, resolved_pid.as_deref()).await;
 
             // If token expired, try refreshing via refresh token
             if res.is_err() {
@@ -2087,19 +2046,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             let _ = cfg.save();
                         }
-                        res = antigravity::fetch_models_and_quota(&client, &token, resolved_pid.as_deref()).await;
+                        res = antigravity::fetch_account_models_and_quota(&client, &token, resolved_pid.as_deref()).await;
                     }
                 }
             }
 
             let success = match res {
-                Ok((models, used, limit, reset, detailed_quota)) => {
+                Ok((acc_models, _models, used, limit, reset, detailed_quota)) => {
                     {
                         let mut cfg = c_clone.write();
                         if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id_str) {
                             acc.status = "ACTIVE".to_string();
                             acc.error_message = None;
                             acc.is_active = true;
+                            acc.available_models = acc_models;
                             acc.quota_used = used;
                             acc.quota_limit = limit;
                             acc.quota_reset = reset;
@@ -2115,12 +2075,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 acc.tier = "PRO".to_string();
                             }
                         }
-                        for m in models {
-                            if !cfg.models.iter().any(|existing| existing.id == m.id) {
-                                cfg.models.push(m);
-                            }
-                        }
-                        cfg.sanitize_models();
+                        cfg.rebuild_models_from_accounts();
                         let _ = cfg.save();
                     }
                     true
@@ -2443,23 +2398,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let c_test_dlg = Arc::clone(&config_arc);
     main_window.on_open_test_dialog(move |model_id_slint| {
         if let Some(h) = h_test_dlg.upgrade() {
-            let is_image =
-                model_id_slint == "gemini-3.1-flash-image" || model_id_slint.to_lowercase().contains("image");
+            let modality = detect_model_modality(&model_id_slint);
             let lang = Language::from_str_code(&c_test_dlg.read().language);
             let t = get_translations(lang);
             h.set_test_model_id(model_id_slint);
+            h.set_test_modality(modality.into());
             h.set_test_status(t.test_status_ready.into());
             h.set_test_latency("0 ms".into());
             h.set_test_tokens("0".into());
             h.set_test_response("".into());
+            h.set_test_has_preview_image(false);
+            h.set_test_preview_image(slint::Image::default());
+            h.set_test_has_audio_output(false);
+            h.set_test_audio_output_path("".into());
             h.set_test_reasoning_effort_index(0);
-            if is_image {
-                h.set_test_stream(false);
-                h.set_test_prompt(t.lbl_test_image_prompt.into());
-            } else if h.get_test_prompt().is_empty()
-                || h.get_test_prompt() == t.lbl_test_image_prompt
-            {
-                h.set_test_prompt(t.lbl_test_default_prompt.into());
+
+            match modality {
+                "image" => {
+                    h.set_test_stream(false);
+                    h.set_test_prompt(t.lbl_test_image_prompt.into());
+                }
+                "stt" => {
+                    h.set_test_stream(false);
+                    h.set_test_prompt(t.lbl_test_stt_default_prompt.into());
+                }
+                "tts" => {
+                    h.set_test_stream(false);
+                    h.set_test_prompt(t.lbl_test_tts_default_prompt.into());
+                }
+                "search" => {
+                    h.set_test_stream(false);
+                    h.set_test_prompt(t.lbl_test_search_default_prompt.into());
+                }
+                _ => {
+                    h.set_test_prompt(t.lbl_test_default_prompt.into());
+                }
             }
             h.set_show_test_dialog(true);
         }
@@ -2467,6 +2440,144 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test execution cancellation flag
     let test_cancelled = Arc::new(AtomicBool::new(false));
+
+    // Browse local audio file for STT test dialog
+    let h_browse = window_handle.clone();
+    main_window.on_browse_test_audio_file(move || {
+        let h_async = h_browse.clone();
+        tokio::spawn(async move {
+            #[cfg(target_os = "linux")]
+            let selected = {
+                let mut chosen: Option<String> = None;
+                if let Ok(out) = tokio::process::Command::new("zenity")
+                    .args([
+                        "--file-selection",
+                        "--title=Select Audio File",
+                        "--file-filter=Audio | *.mp3 *.wav *.ogg *.opus *.m4a *.aac *.flac *.webm",
+                    ])
+                    .output()
+                    .await
+                {
+                    if out.status.success() {
+                        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                        if !s.is_empty() {
+                            chosen = Some(s);
+                        }
+                    }
+                }
+                if chosen.is_none() {
+                    if let Ok(out) = tokio::process::Command::new("kdialog")
+                        .args(["--getopenfilename", ".", "*.mp3 *.wav *.ogg *.opus *.m4a *.aac *.flac *.webm"])
+                        .output()
+                        .await
+                    {
+                        if out.status.success() {
+                            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                            if !s.is_empty() {
+                                chosen = Some(s);
+                            }
+                        }
+                    }
+                }
+                chosen
+            };
+            #[cfg(target_os = "windows")]
+            let selected = {
+                use std::os::windows::process::CommandExt;
+                let script = "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Filter = 'Audio Files|*.mp3;*.wav;*.ogg;*.opus;*.m4a;*.aac;*.flac;*.webm|All Files|*.*'; if($f.ShowDialog() -eq 'OK'){ $f.FileName }";
+                tokio::process::Command::new("powershell")
+                    .args(["-NoProfile", "-Command", script])
+                    .creation_flags(0x08000000)
+                    .output()
+                    .await
+                    .ok()
+                    .and_then(|o| {
+                        let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                        if s.is_empty() { None } else { Some(s) }
+                    })
+            };
+            #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+            let selected: Option<String> = None;
+
+            if let Some(path) = selected {
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(ui) = h_async.upgrade() {
+                        ui.set_test_audio_file_path(path.into());
+                    }
+                });
+            }
+        });
+    });
+
+    // Play generated TTS audio via native player
+    let h_play = window_handle.clone();
+    main_window.on_play_test_audio(move || {
+        if let Some(h) = h_play.upgrade() {
+            let path = h.get_test_audio_output_path().to_string();
+            if path.trim().is_empty() {
+                return;
+            }
+            tokio::spawn(async move {
+                #[cfg(target_os = "linux")]
+                {
+                    let players = ["pw-play", "paplay", "aplay", "mpv", "ffplay"];
+                    for player in players {
+                        let mut cmd = tokio::process::Command::new(player);
+                        if player == "mpv" {
+                            cmd.arg("--no-video").arg(&path);
+                        } else if player == "ffplay" {
+                            cmd.args(["-nodisp", "-autoexit", "-loglevel", "quiet"]).arg(&path);
+                        } else {
+                            cmd.arg(&path);
+                        }
+                        if let Ok(mut child) = cmd.spawn() {
+                            let _ = child.wait().await;
+                            return;
+                        }
+                    }
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    use std::os::windows::process::CommandExt;
+                    let safe_path = path.replace('\'', "''");
+                    let ps = format!("(New-Object Media.SoundPlayer '{}').PlaySync()", safe_path);
+                    let _ = tokio::process::Command::new("powershell")
+                        .args(["-NoProfile", "-Command", &ps])
+                        .creation_flags(0x08000000)
+                        .output()
+                        .await;
+                }
+            });
+        }
+    });
+
+    // Save generated Image or TTS Audio to Downloads
+    let h_save_out = window_handle.clone();
+    main_window.on_save_test_output(move || {
+        if let Some(h) = h_save_out.upgrade() {
+            let modality = h.get_test_modality().to_string();
+            let src_path = if modality == "tts" {
+                h.get_test_audio_output_path().to_string()
+            } else {
+                std::env::temp_dir()
+                    .join("amr_generated_preview.png")
+                    .to_string_lossy()
+                    .to_string()
+            };
+            if src_path.is_empty() || !std::path::Path::new(&src_path).exists() {
+                return;
+            }
+            let ts = chrono::Utc::now().format("%Y%m%d_%H%M%S");
+            let ext = if modality == "tts" { "wav" } else { "png" };
+            let prefix = if modality == "tts" { "amr_speech" } else { "amr_image" };
+            let dest_dir = dirs::download_dir().unwrap_or_else(std::env::temp_dir);
+            let dest_path = dest_dir.join(format!("{}_{}.{}", prefix, ts, ext));
+            if std::fs::copy(&src_path, &dest_path).is_ok() {
+                let prev = h.get_test_response().to_string();
+                h.set_test_response(format!("{}\n\n[Saved to {}]", prev, dest_path.display()).into());
+            }
+        }
+    });
 
     // Cancel test callback
     let cancel_flag = Arc::clone(&test_cancelled);
@@ -2498,10 +2609,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let prompt = h.get_test_prompt().to_string();
             let model = h.get_test_model_id().to_string();
+            let modality = h.get_test_modality().to_string();
             let timeout_val: u64 = h.get_test_timeout_secs().to_string().parse().unwrap_or(60);
             let max_tok: u64 = h.get_test_max_tokens().to_string().parse().unwrap_or(2048);
             let temp: f64 = h.get_test_temperature().to_string().parse().unwrap_or(0.7);
             let is_stream = h.get_test_stream();
+            let aspect_ratio = h.get_test_image_aspect_ratio().to_string();
+            let audio_path = h.get_test_audio_file_path().to_string();
+            let stt_lang = h.get_test_stt_language().to_string();
+            let tts_voice = h.get_test_tts_voice().to_string();
+            let tts_speed: f32 = h.get_test_tts_speed().to_string().parse().unwrap_or(1.0);
+            let search_domain = h.get_test_search_domain().to_string();
             let effort_idx = h.get_test_reasoning_effort_index();
             let reasoning_effort = match effort_idx {
                 1 => Some("none"),
@@ -2522,6 +2640,324 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .timeout(Duration::from_secs(timeout_val))
                     .build()
                     .unwrap_or_default();
+
+                // Personalized endpoint dispatch by modality
+                if modality == "image" {
+                    let url = format!("http://127.0.0.1:{}/v1/images/generations", port_test);
+                    let req_payload = serde_json::json!({
+                        "model": model,
+                        "prompt": prompt,
+                        "aspect_ratio": aspect_ratio,
+                        "response_format": "b64_json"
+                    });
+                    match client.post(&url).json(&req_payload).send().await {
+                        Ok(resp) => {
+                            let status_code = resp.status();
+                            let lat = start.elapsed().as_millis();
+                            let body_text = resp.text().await.unwrap_or_default();
+                            if !status_code.is_success() {
+                                let clean_err = antigravity::extract_clean_error_message(&body_text);
+                                let _ = slint::invoke_from_event_loop(move || {
+                                    if let Some(ui) = h_async.upgrade() {
+                                        ui.set_test_status(format!("{} Error", status_code.as_u16()).into());
+                                        ui.set_test_latency(format!("{} ms", lat).into());
+                                        ui.set_test_response(format!("Error ({}): {}", status_code.as_u16(), clean_err).into());
+                                        ui.set_test_running(false);
+                                    }
+                                });
+                                return;
+                            }
+                            let parsed: serde_json::Value = serde_json::from_str(&body_text).unwrap_or_default();
+                            let b64 = parsed.pointer("/data/0/b64_json").and_then(|v| v.as_str()).unwrap_or("");
+                            let revised = parsed.pointer("/data/0/revised_prompt").and_then(|v| v.as_str()).unwrap_or(&prompt);
+                            let mime = parsed.pointer("/data/0/mime_type").and_then(|v| v.as_str()).unwrap_or("image/png");
+                            use base64::Engine as _;
+                            if let Ok(raw_bytes) = base64::engine::general_purpose::STANDARD.decode(b64.trim()) {
+                                let preview_path = std::env::temp_dir().join("amr_generated_preview.png");
+                                if let Ok(dyn_img) = image::load_from_memory(&raw_bytes) {
+                                    let _ = dyn_img.save(&preview_path);
+                                    let rgba = dyn_img.to_rgba8();
+                                    let (w, h_px) = (rgba.width(), rgba.height());
+                                    let raw_rgba = rgba.into_raw();
+                                    let info = format!(
+                                        "Image generated cleanly\nModel: {}\nAspect Ratio: {}\nResolution: {}x{}\nFormat: {}\nSize: {} bytes\nRevised Prompt: {}",
+                                        model, aspect_ratio, w, h_px, mime, raw_bytes.len(), revised
+                                    );
+                                    let _ = slint::invoke_from_event_loop(move || {
+                                        if let Some(ui) = h_async.upgrade() {
+                                            let pix = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(&raw_rgba, w, h_px);
+                                            ui.set_test_preview_image(slint::Image::from_rgba8(pix));
+                                            ui.set_test_has_preview_image(true);
+                                            ui.set_test_status(format!("{} OK", status_code.as_u16()).into());
+                                            ui.set_test_latency(format!("{} ms", lat).into());
+                                            ui.set_test_tokens(format!("{}x{}", w, h_px).into());
+                                            ui.set_test_response(info.into());
+                                            ui.set_test_running(false);
+                                        }
+                                    });
+                                    return;
+                                }
+                            }
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(ui) = h_async.upgrade() {
+                                    ui.set_test_status("200 OK (Decode Error)".into());
+                                    ui.set_test_latency(format!("{} ms", lat).into());
+                                    ui.set_test_response(body_text.into());
+                                    ui.set_test_running(false);
+                                }
+                            });
+                        }
+                        Err(e) => {
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(ui) = h_async.upgrade() {
+                                    let lang = Language::from_str_code(&c_async_err.read().language);
+                                    let t = get_translations(lang);
+                                    ui.set_test_status(t.test_status_error.into());
+                                    ui.set_test_response(format!("{}{}", t.test_err_request_prefix, e).into());
+                                    ui.set_test_running(false);
+                                }
+                            });
+                        }
+                    }
+                    return;
+                }
+
+                if modality == "stt" {
+                    let trimmed_path = audio_path.trim().to_string();
+                    let file_bytes = match tokio::fs::read(&trimmed_path).await {
+                        Ok(b) if !b.is_empty() => b,
+                        Ok(_) => {
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(ui) = h_async.upgrade() {
+                                    ui.set_test_status("Error (Empty File)".into());
+                                    ui.set_test_response(format!("Audio file is empty: {}", trimmed_path).into());
+                                    ui.set_test_running(false);
+                                }
+                            });
+                            return;
+                        }
+                        Err(e) => {
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(ui) = h_async.upgrade() {
+                                    ui.set_test_status("Missing Audio File".into());
+                                    ui.set_test_response(format!("Select or enter a valid audio file path (.mp3, .wav, .ogg, .m4a, .flac).\nRead error: {}", e).into());
+                                    ui.set_test_running(false);
+                                }
+                            });
+                            return;
+                        }
+                    };
+                    let fname = std::path::Path::new(&trimmed_path)
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("audio.mp3")
+                        .to_string();
+                    let part = reqwest::multipart::Part::bytes(file_bytes).file_name(fname);
+                    let mut form = reqwest::multipart::Form::new()
+                        .part("file", part)
+                        .text("model", model.clone())
+                        .text("response_format", "verbose_json");
+                    if !prompt.trim().is_empty() {
+                        form = form.text("prompt", prompt.clone());
+                    }
+                    if !stt_lang.trim().is_empty() {
+                        form = form.text("language", stt_lang.trim().to_string());
+                    }
+                    let url = format!("http://127.0.0.1:{}/v1/audio/transcriptions", port_test);
+                    match client.post(&url).multipart(form).send().await {
+                        Ok(resp) => {
+                            let status_code = resp.status();
+                            let lat = start.elapsed().as_millis();
+                            let body_text = resp.text().await.unwrap_or_default();
+                            let display_text = if status_code.is_success() {
+                                serde_json::from_str::<serde_json::Value>(&body_text)
+                                    .ok()
+                                    .and_then(|v| v.get("text").and_then(|t| t.as_str()).map(|s| s.to_string()))
+                                    .unwrap_or(body_text)
+                            } else {
+                                format!("Error ({}): {}", status_code.as_u16(), antigravity::extract_clean_error_message(&body_text))
+                            };
+                            let chars = display_text.chars().count();
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(ui) = h_async.upgrade() {
+                                    ui.set_test_status(if status_code.is_success() { format!("{} OK", status_code.as_u16()).into() } else { format!("{} Error", status_code.as_u16()).into() });
+                                    ui.set_test_latency(format!("{} ms", lat).into());
+                                    ui.set_test_tokens(format!("{} chars", chars).into());
+                                    ui.set_test_response(display_text.into());
+                                    ui.set_test_running(false);
+                                }
+                            });
+                        }
+                        Err(e) => {
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(ui) = h_async.upgrade() {
+                                    let lang = Language::from_str_code(&c_async_err.read().language);
+                                    let t = get_translations(lang);
+                                    ui.set_test_status(t.test_status_error.into());
+                                    ui.set_test_response(format!("{}{}", t.test_err_request_prefix, e).into());
+                                    ui.set_test_running(false);
+                                }
+                            });
+                        }
+                    }
+                    return;
+                }
+
+                if modality == "tts" {
+                    let url = format!("http://127.0.0.1:{}/v1/audio/speech", port_test);
+                    let req_payload = serde_json::json!({
+                        "model": model,
+                        "input": prompt,
+                        "voice": tts_voice,
+                        "speed": tts_speed,
+                        "response_format": "wav"
+                    });
+                    match client.post(&url).json(&req_payload).send().await {
+                        Ok(resp) => {
+                            let status_code = resp.status();
+                            let lat = start.elapsed().as_millis();
+                            let ct = resp
+                                .headers()
+                                .get(reqwest::header::CONTENT_TYPE)
+                                .and_then(|v| v.to_str().ok())
+                                .unwrap_or("audio/wav")
+                                .to_string();
+                            let bytes = resp.bytes().await.unwrap_or_default();
+                            if !status_code.is_success() {
+                                let body_str = String::from_utf8_lossy(&bytes);
+                                let clean_err = antigravity::extract_clean_error_message(&body_str);
+                                let _ = slint::invoke_from_event_loop(move || {
+                                    if let Some(ui) = h_async.upgrade() {
+                                        ui.set_test_status(format!("{} Error", status_code.as_u16()).into());
+                                        ui.set_test_latency(format!("{} ms", lat).into());
+                                        ui.set_test_response(format!("Error ({}): {}", status_code.as_u16(), clean_err).into());
+                                        ui.set_test_running(false);
+                                    }
+                                });
+                                return;
+                            }
+                            let ext = if ct.contains("mpeg") || ct.contains("mp3") { "mp3" } else { "wav" };
+                            let out_path = std::env::temp_dir().join(format!("amr_tts_output.{}", ext));
+                            let write_ok = tokio::fs::write(&out_path, &bytes).await.is_ok();
+                            let byte_len = bytes.len();
+                            let path_str = out_path.to_string_lossy().to_string();
+                            let msg = format!(
+                                "Audio synthesized cleanly\nVoice: {}\nSpeed: {:.2}x\nContent-Type: {}\nBytes: {}\nTemp File: {}\nWrite OK: {}",
+                                tts_voice, tts_speed, ct, byte_len, path_str, write_ok
+                            );
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(ui) = h_async.upgrade() {
+                                    ui.set_test_audio_output_path(path_str.into());
+                                    ui.set_test_has_audio_output(write_ok && byte_len > 0);
+                                    ui.set_test_status(format!("{} OK", status_code.as_u16()).into());
+                                    ui.set_test_latency(format!("{} ms", lat).into());
+                                    ui.set_test_tokens(format!("{} B", byte_len).into());
+                                    ui.set_test_response(msg.into());
+                                    ui.set_test_running(false);
+                                }
+                            });
+                        }
+                        Err(e) => {
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(ui) = h_async.upgrade() {
+                                    let lang = Language::from_str_code(&c_async_err.read().language);
+                                    let t = get_translations(lang);
+                                    ui.set_test_status(t.test_status_error.into());
+                                    ui.set_test_response(format!("{}{}", t.test_err_request_prefix, e).into());
+                                    ui.set_test_running(false);
+                                }
+                            });
+                        }
+                    }
+                    return;
+                }
+
+                if modality == "search" {
+                    let url = format!("http://127.0.0.1:{}/v1/search", port_test);
+                    let mut req_payload = serde_json::json!({
+                        "query": prompt
+                    });
+                    if !search_domain.trim().is_empty() {
+                        req_payload["domain"] = serde_json::json!(search_domain.trim());
+                    }
+                    match client.post(&url).json(&req_payload).send().await {
+                        Ok(resp) => {
+                            let status_code = resp.status();
+                            let lat = start.elapsed().as_millis();
+                            let body_text = resp.text().await.unwrap_or_default();
+                            if !status_code.is_success() {
+                                let clean_err = antigravity::extract_clean_error_message(&body_text);
+                                let _ = slint::invoke_from_event_loop(move || {
+                                    if let Some(ui) = h_async.upgrade() {
+                                        ui.set_test_status(format!("{} Error", status_code.as_u16()).into());
+                                        ui.set_test_latency(format!("{} ms", lat).into());
+                                        ui.set_test_response(format!("Error ({}): {}", status_code.as_u16(), clean_err).into());
+                                        ui.set_test_running(false);
+                                    }
+                                });
+                                return;
+                            }
+                            let parsed: serde_json::Value = serde_json::from_str(&body_text).unwrap_or_default();
+                            let answer = parsed.get("answer").and_then(|v| v.as_str()).unwrap_or("");
+                            let queries = parsed
+                                .get("search_queries")
+                                .and_then(|q| q.as_array())
+                                .map(|arr| {
+                                    arr.iter()
+                                        .filter_map(|x| x.as_str())
+                                        .collect::<Vec<_>>()
+                                        .join(" | ")
+                                })
+                                .unwrap_or_default();
+                            let results = parsed.get("results").and_then(|r| r.as_array()).cloned().unwrap_or_default();
+                            let mut formatted = String::new();
+                            if !answer.is_empty() {
+                                formatted.push_str(answer);
+                            }
+                            if !queries.is_empty() {
+                                formatted.push_str(&format!("\n\nSearch Queries: {}", queries));
+                            }
+                            if !results.is_empty() {
+                                formatted.push_str("\n\nSources:");
+                                for item in &results {
+                                    let idx = item.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
+                                    let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("Source");
+                                    let r_url = item.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                                    let snip = item.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
+                                    formatted.push_str(&format!("\n[{}] {}\n    {}", idx, title, r_url));
+                                    if !snip.is_empty() {
+                                        formatted.push_str(&format!("\n    \"{}\"", snip));
+                                    }
+                                }
+                            }
+                            if formatted.is_empty() {
+                                formatted = body_text;
+                            }
+                            let src_count = results.len();
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(ui) = h_async.upgrade() {
+                                    ui.set_test_status(format!("{} OK", status_code.as_u16()).into());
+                                    ui.set_test_latency(format!("{} ms", lat).into());
+                                    ui.set_test_tokens(format!("{} sources", src_count).into());
+                                    ui.set_test_response(formatted.into());
+                                    ui.set_test_running(false);
+                                }
+                            });
+                        }
+                        Err(e) => {
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(ui) = h_async.upgrade() {
+                                    let lang = Language::from_str_code(&c_async_err.read().language);
+                                    let t = get_translations(lang);
+                                    ui.set_test_status(t.test_status_error.into());
+                                    ui.set_test_response(format!("{}{}", t.test_err_request_prefix, e).into());
+                                    ui.set_test_running(false);
+                                }
+                            });
+                        }
+                    }
+                    return;
+                }
 
                 let test_url = format!("http://127.0.0.1:{}/v1/chat/completions", port_test);
                 let mut req_payload = serde_json::json!({

@@ -6,6 +6,10 @@ if [ ! -f target/release/amr ]; then
     cargo build --release --bin amr
 fi
 
+VERSION="${1:-$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)}"
+ARCH="${2:-x86_64}"
+BUILD_DATE="$(date -u +%Y-%m-%d)"
+
 APPDIR="target/AppDir"
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin"
@@ -18,11 +22,13 @@ mkdir -p "$APPDIR/usr/share/metainfo"
 mkdir -p "$APPDIR/usr/share/appdata"
 
 cp target/release/amr "$APPDIR/usr/bin/"
-cp packaging/linux/amr.desktop "$APPDIR/usr/share/applications/"
-cp packaging/linux/amr.desktop "$APPDIR/"
-cp packaging/linux/amr.metainfo.xml "$APPDIR/usr/share/metainfo/amr.metainfo.xml"
-cp packaging/linux/amr.metainfo.xml "$APPDIR/usr/share/metainfo/io.github.amr.metainfo.xml"
-cp packaging/linux/amr.metainfo.xml "$APPDIR/usr/share/appdata/amr.appdata.xml"
+cp packaging/linux/amr.desktop "$APPDIR/usr/share/applications/amr.desktop"
+echo "X-AppImage-Version=${VERSION}" >> "$APPDIR/usr/share/applications/amr.desktop"
+cp "$APPDIR/usr/share/applications/amr.desktop" "$APPDIR/amr.desktop"
+
+sed -e "s/@VERSION@/${VERSION}/g" -e "s/@DATE@/${BUILD_DATE}/g" packaging/linux/amr.metainfo.xml > "$APPDIR/usr/share/metainfo/amr.metainfo.xml"
+cp "$APPDIR/usr/share/metainfo/amr.metainfo.xml" "$APPDIR/usr/share/metainfo/io.github.amr.metainfo.xml"
+cp "$APPDIR/usr/share/metainfo/amr.metainfo.xml" "$APPDIR/usr/share/appdata/amr.appdata.xml"
 cp assets/icons/logo_256.png "$APPDIR/amr.png"
 cp assets/icons/logo_256.png "$APPDIR/.DirIcon"
 
@@ -35,8 +41,6 @@ exec "$HERE/usr/bin/amr" "$@"
 EOF
 chmod +x "$APPDIR/AppRun"
 
-VERSION="${1:-$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)}"
-ARCH="${2:-x86_64}"
 echo "==> AppDir structure prepared at $APPDIR"
 RUNTIME_FLAG=""
 if [ -f "target/runtime-${ARCH}" ]; then

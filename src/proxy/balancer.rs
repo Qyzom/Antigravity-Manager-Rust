@@ -486,6 +486,37 @@ impl LoadBalancer {
             };
         }
 
+        // 1b. Prefer accounts where the requested model is explicitly available & not disabled
+        let target_canon = AppConfig::canonical_catalog_id(target_model);
+        let is_virtual = matches!(
+            target_model,
+            "web-search" | "whisper-1" | "tts-1" | "stt-1"
+        );
+        let model_eligible: Vec<UpstreamAccount> = if is_virtual {
+            quota_eligible.clone()
+        } else {
+            let filtered: Vec<UpstreamAccount> = quota_eligible
+                .iter()
+                .filter(|a| {
+                    if a.available_models.is_empty() {
+                        return true;
+                    }
+                    a.available_models.iter().any(|m| {
+                        !m.disabled
+                            && m.remaining_fraction > 0.0
+                            && (m.id == target_model
+                                || AppConfig::canonical_catalog_id(&m.id) == target_canon)
+                    })
+                })
+                .cloned()
+                .collect();
+            if filtered.is_empty() {
+                quota_eligible
+            } else {
+                filtered
+            }
+        };
+
         // 2. Evaluate Account Health & Probing Eligibility
         let (healthy_zero_fail, probing_accounts) = {
             let health_map = self.account_health.read();
@@ -493,7 +524,7 @@ impl LoadBalancer {
             let mut zero_fail = Vec::new();
             let mut probing = Vec::new();
 
-            for acc in quota_eligible {
+            for acc in model_eligible {
                 if !acc.is_active {
                     continue;
                 }

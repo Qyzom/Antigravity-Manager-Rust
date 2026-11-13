@@ -80,10 +80,98 @@ pub struct ModelCatalogItem {
     pub tier: String, // "Free", "Pro"
     pub is_enabled: bool,
     pub supports_thinking: bool,
+    #[serde(default = "default_availability_status")]
+    pub availability_status: String, // "available", "disabled", "exhausted", "notice"
+    #[serde(default = "default_pct_100")]
+    pub quota_percent: i32,
+    #[serde(default)]
+    pub notice: String,
+    #[serde(default)]
+    pub available_accounts_count: usize,
+    #[serde(default = "default_max_tokens")]
+    pub max_tokens: u32,
+    #[serde(default = "default_max_output_tokens")]
+    pub max_output_tokens: u32,
+}
+
+impl Default for ModelCatalogItem {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            display_name: String::new(),
+            provider: "gemini".to_string(),
+            tier: default_tier(),
+            is_enabled: true,
+            supports_thinking: false,
+            availability_status: default_availability_status(),
+            quota_percent: 100,
+            notice: String::new(),
+            available_accounts_count: 0,
+            max_tokens: default_max_tokens(),
+            max_output_tokens: default_max_output_tokens(),
+        }
+    }
 }
 
 fn default_tier() -> String {
     "Pro".to_string()
+}
+
+fn default_availability_status() -> String {
+    "available".to_string()
+}
+
+fn default_max_tokens() -> u32 {
+    1_000_000
+}
+
+fn default_max_output_tokens() -> u32 {
+    65_536
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AccountModelStatus {
+    pub id: String,
+    pub display_name: String,
+    pub provider: String,
+    #[serde(default)]
+    pub disabled: bool,
+    #[serde(default = "default_fraction_one")]
+    pub remaining_fraction: f64,
+    #[serde(default)]
+    pub reset_time: Option<String>,
+    #[serde(default)]
+    pub supports_thinking: bool,
+    #[serde(default)]
+    pub supports_images: bool,
+    #[serde(default)]
+    pub is_internal: bool,
+    #[serde(default)]
+    pub recommended: bool,
+    #[serde(default)]
+    pub notice: Option<String>,
+    #[serde(default = "default_max_tokens")]
+    pub max_tokens: u32,
+    #[serde(default = "default_max_output_tokens")]
+    pub max_output_tokens: u32,
+    #[serde(default = "default_modality_chat")]
+    pub modality: String, // "chat", "image", "search"
+    #[serde(default)]
+    pub is_recommended_agent: bool,
+    #[serde(default = "default_sort_order")]
+    pub sort_order: usize,
+}
+
+fn default_modality_chat() -> String {
+    "chat".to_string()
+}
+
+fn default_sort_order() -> usize {
+    usize::MAX
+}
+
+fn default_fraction_one() -> f64 {
+    1.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,6 +221,8 @@ pub struct UpstreamAccount {
     pub device_profile: Option<DeviceProfile>,
     #[serde(default)]
     pub proxy_url: Option<String>,
+    #[serde(default)]
+    pub available_models: Vec<AccountModelStatus>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -189,6 +279,7 @@ impl Default for UpstreamAccount {
             added_at: None,
             device_profile: None,
             proxy_url: None,
+            available_models: Vec::new(),
         }
     }
 }
@@ -234,14 +325,14 @@ fn default_max_log_entries() -> usize {
 }
 
 pub const VERSION_AMR_RELEASE: &str = "2.23.1";
-pub const VERSION_ANTIGRAVITY_LATEST: &str = "2.28.1";
+pub const VERSION_ANTIGRAVITY_LATEST: &str = "2.29.1";
 
 fn default_spoof_platform() -> String {
     "AUTO".to_string()
 }
 
 fn default_spoof_ide_version() -> String {
-    VERSION_AMR_RELEASE.to_string()
+    VERSION_ANTIGRAVITY_LATEST.to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -338,6 +429,12 @@ pub struct AppConfig {
     pub accounts: Vec<UpstreamAccount>,
     pub active_account_id: Option<String>,
     pub models: Vec<ModelCatalogItem>,
+    #[serde(default)]
+    pub default_agent_model: Option<String>,
+    #[serde(default)]
+    pub image_generation_models: Vec<String>,
+    #[serde(default)]
+    pub web_search_models: Vec<String>,
 }
 
 fn default_master_api_key() -> String {
@@ -436,7 +533,7 @@ impl Default for AppConfig {
             cooldown_duration_secs: 300,
             cooldown_jitter_percent: 15,
             spoof_platform: "AUTO".to_string(),
-            spoof_ide_version: VERSION_AMR_RELEASE.to_string(),
+            spoof_ide_version: VERSION_ANTIGRAVITY_LATEST.to_string(),
             spoof_arch: "AUTO".to_string(),
             spoof_channel: "stable".to_string(),
             strip_telemetry_traces: true,
@@ -455,80 +552,10 @@ impl Default for AppConfig {
             master_api_key: "sk-amr-v1-master-key".to_string(),
             accounts: Vec::new(),
             active_account_id: None,
-            models: vec![
-                ModelCatalogItem {
-                    id: "claude-sonnet-5-5".to_string(),
-                    display_name: "Claude Sonnet 5.5".to_string(),
-                    provider: "anthropic".to_string(),
-                    tier: "PRO".to_string(),
-                    is_enabled: true,
-                    supports_thinking: true,
-                },
-                ModelCatalogItem {
-                    id: "claude-opus-5-5".to_string(),
-                    display_name: "Claude Opus 5.5".to_string(),
-                    provider: "anthropic".to_string(),
-                    tier: "PRO".to_string(),
-                    is_enabled: true,
-                    supports_thinking: true,
-                },
-                ModelCatalogItem {
-                    id: "claude-sonnet-4-6".to_string(),
-                    display_name: "Claude Sonnet 4.6".to_string(),
-                    provider: "anthropic".to_string(),
-                    tier: "PRO".to_string(),
-                    is_enabled: true,
-                    supports_thinking: true,
-                },
-                ModelCatalogItem {
-                    id: "claude-opus-4-6".to_string(),
-                    display_name: "Claude Opus 4.6".to_string(),
-                    provider: "anthropic".to_string(),
-                    tier: "PRO".to_string(),
-                    is_enabled: true,
-                    supports_thinking: true,
-                },
-                ModelCatalogItem {
-                    id: "gemini-4-argon".to_string(),
-                    display_name: "Gemini 4 Argon".to_string(),
-                    provider: "gemini".to_string(),
-                    tier: "PRO".to_string(),
-                    is_enabled: true,
-                    supports_thinking: true,
-                },
-                ModelCatalogItem {
-                    id: "gemini-3.8-flash".to_string(),
-                    display_name: "Gemini 3.8 Flash".to_string(),
-                    provider: "gemini".to_string(),
-                    tier: "PRO".to_string(),
-                    is_enabled: true,
-                    supports_thinking: true,
-                },
-                ModelCatalogItem {
-                    id: "gemini-3.1-flash-image".to_string(),
-                    display_name: "Gemini 3.1 Flash Image".to_string(),
-                    provider: "gemini".to_string(),
-                    tier: "PRO".to_string(),
-                    is_enabled: true,
-                    supports_thinking: false,
-                },
-                ModelCatalogItem {
-                    id: "whisper-1".to_string(),
-                    display_name: "Whisper 1 (Audio STT)".to_string(),
-                    provider: "openai".to_string(),
-                    tier: "PRO".to_string(),
-                    is_enabled: true,
-                    supports_thinking: false,
-                },
-                ModelCatalogItem {
-                    id: "tts-1".to_string(),
-                    display_name: "TTS 1 (Audio Speech)".to_string(),
-                    provider: "openai".to_string(),
-                    tier: "PRO".to_string(),
-                    is_enabled: true,
-                    supports_thinking: false,
-                },
-            ],
+            models: Vec::new(),
+            default_agent_model: None,
+            image_generation_models: Vec::new(),
+            web_search_models: Vec::new(),
         }
     }
 }
@@ -572,115 +599,263 @@ impl AppConfig {
     }
 
     pub fn sanitize_models(&mut self) {
+        let has_account_models = self
+            .accounts
+            .iter()
+            .any(|a| a.is_active && !a.available_models.is_empty());
+
+        if has_account_models {
+            self.rebuild_models_from_accounts();
+            return;
+        }
+
+        // Remove only purely internal IDE models
         self.models.retain(|m| {
-            !m.id.starts_with("chat_")
-                && !m.id.starts_with("tab_")
-                && !m.id.contains("gemini-3.5")
-                && !m.id.contains("gemini-3-flash")
-                && !m.id.contains("gemini-3.7")
-                && !m.id.contains("gemini-3.6")
-                && !(m.id != "gemini-3.1-flash-image" && m.id.contains("gemini-3.1"))
-                && !m.id.contains("flash-lite")
-                && !m.id.contains("lite")
-                && !m.id.contains("preview")
-                && !m.id.contains("gpt-oss")
-                && !m.id.contains("tiered")
-                && m.id != "gemini-3.9-flash"
-                && m.id != "o1"
-                && m.id != "gpt-4o"
-                && m.id != "gpt-4o-mini"
-                && m.id != "o3-mini"
-                && m.id != "claude-3-5-sonnet"
-                && m.id != "claude-3-7-sonnet"
-                && m.id != "gemini-2.5-flash"
-                && m.id != "gemini-2.5-flash-thinking"
-                && m.id != "gemini-2.5-pro"
-                && !m.id.ends_with("-low")
-                && !m.id.ends_with("-medium")
-                && !m.id.ends_with("-high")
-                && !m.id.ends_with("-no-thinking")
-                && !m.id.ends_with(" (low)")
-                && !m.id.ends_with(" (medium)")
-                && !m.id.ends_with(" (high)")
-                && !m.id.ends_with(" (no-thinking)")
+            !m.id.starts_with("chat_") && !m.id.starts_with("tab_")
         });
 
-        for m in &mut self.models {
-            let (base_id, _) = crate::proxy::router::parse_model_and_reasoning(&m.id, None);
-            m.id = base_id;
-
-            if m.id == "claude-sonnet-5-5-high"
-                || m.id == "claude-sonnet-5-5"
-                || m.id == "claude-3-7-sonnet"
-            {
-                m.id = "claude-sonnet-5-5".to_string();
-                m.display_name = "Claude Sonnet 5.5".to_string();
-                m.provider = "anthropic".to_string();
-                m.supports_thinking = true;
-            } else if m.id == "claude-opus-5-5-high" || m.id == "claude-opus-5-5" {
-                m.id = "claude-opus-5-5".to_string();
-                m.display_name = "Claude Opus 5.5".to_string();
-                m.provider = "anthropic".to_string();
-                m.supports_thinking = true;
-            } else if m.id == "claude-sonnet-4-6" {
-                m.display_name = "Claude Sonnet 4.6".to_string();
-                m.provider = "anthropic".to_string();
-                m.supports_thinking = true;
-            } else if m.id == "claude-opus-4-6-thinking" || m.id == "claude-opus-4-6" {
-                m.id = "claude-opus-4-6".to_string();
-                m.display_name = "Claude Opus 4.6".to_string();
-                m.provider = "anthropic".to_string();
-                m.supports_thinking = true;
-            } else if m.id == "gemini-3.8-flash-high"
-                || m.id == "gemini-3.8-flash-medium"
-                || m.id == "gemini-3.8-flash-low"
-                || m.id == "gemini-3.8-flash-tiered"
-                || m.id == "gemini-2.5-flash-thinking"
-                || m.id == "gemini-2.5-flash"
-                || m.id == "gemini-3.8-flash"
-            {
-                m.id = "gemini-3.8-flash".to_string();
-                m.display_name = "Gemini 3.8 Flash".to_string();
-                m.provider = "gemini".to_string();
-                m.supports_thinking = true;
-            } else if m.id == "gemini-2.5-pro" || m.id == "gemini-4-argon" {
-                m.id = "gemini-4-argon".to_string();
-                m.display_name = "Gemini 4 Argon".to_string();
-                m.provider = "gemini".to_string();
-                m.supports_thinking = true;
-            } else if m.id == "Image generator"
-                || m.id.to_lowercase().contains("imagen")
-                || m.id == "image-generator"
-                || m.id == "gemini-3.1-flash-image"
-            {
-                m.id = "gemini-3.1-flash-image".to_string();
-                m.display_name = "Gemini 3.1 Flash Image".to_string();
-                m.provider = "gemini".to_string();
-                m.supports_thinking = false;
-            } else if m.id == "whisper-1" || m.id == "stt" {
-                m.id = "whisper-1".to_string();
-                m.display_name = "Whisper 1 (Audio STT)".to_string();
-                m.provider = "openai".to_string();
-                m.supports_thinking = false;
-            } else if m.id == "tts-1" || m.id == "tts" {
-                m.id = "tts-1".to_string();
-                m.display_name = "TTS 1 (Audio Speech)".to_string();
-                m.provider = "openai".to_string();
-                m.supports_thinking = false;
-            }
-        }
-
-        // Always ensure all 6 flagship models are present
-        let defaults = Self::default().models;
-        for def in defaults {
-            if !self.models.iter().any(|m| m.id == def.id) {
-                self.models.push(def);
-            }
-        }
-
-        // Deduplicate models by ID
         let mut seen_ids = std::collections::HashSet::new();
         self.models.retain(|m| seen_ids.insert(m.id.clone()));
+    }
+
+    /// Strip known reasoning/effort suffixes algorithmically without hardcoding model names.
+    pub fn strip_effort_suffix(raw_id: &str) -> (&str, Option<&'static str>) {
+        for (suffix, eff) in [
+            ("-thinking", "thinking"),
+            ("-minimal", "minimal"),
+            ("-low", "low"),
+            ("-medium", "medium"),
+            ("-high", "high"),
+            ("-none", "none"),
+            ("-off", "off"),
+        ] {
+            if let Some(base) = raw_id.strip_suffix(suffix) {
+                if !base.is_empty() {
+                    return (base, Some(eff));
+                }
+            }
+        }
+        (raw_id, None)
+    }
+
+    /// Normalize an upstream model ID into a clean base ID when grouping is enabled.
+    pub fn canonical_catalog_id(raw_id: &str) -> String {
+        Self::strip_effort_suffix(raw_id).0.to_string()
+    }
+
+    /// Rebuild `self.models` dynamically from real per-account `available_models`
+    /// while preserving user `is_enabled` toggles and respecting `group_reasoning_clones`.
+    pub fn rebuild_models_from_accounts(&mut self) {
+        let prev_enabled: std::collections::HashMap<String, bool> = self
+            .models
+            .iter()
+            .map(|m| (m.id.clone(), m.is_enabled))
+            .collect();
+
+        let active_accounts: Vec<&UpstreamAccount> =
+            self.accounts.iter().filter(|a| a.is_active).collect();
+
+        if !active_accounts
+            .iter()
+            .any(|a| !a.available_models.is_empty())
+        {
+            return;
+        }
+
+        // Check whether upstream provided curated user-facing lists (agentModelSorts / imageGenerationModelIds)
+        let has_curated = active_accounts.iter().any(|a| {
+            a.available_models
+                .iter()
+                .any(|m| m.is_recommended_agent || m.modality == "image")
+        });
+
+        // Count how many distinct upstream IDs map to each stripped base (so singletons like gpt-oss-120b-medium keep their real ID)
+        let mut base_variants: std::collections::HashMap<String, std::collections::HashSet<String>> =
+            std::collections::HashMap::new();
+        for acc in &active_accounts {
+            for am in &acc.available_models {
+                if am.is_internal || am.id.starts_with("chat_") || am.id.starts_with("tab_") {
+                    continue;
+                }
+                if has_curated && !am.is_recommended_agent && am.modality != "image" {
+                    continue;
+                }
+                let (base, _) = Self::strip_effort_suffix(&am.id);
+                base_variants
+                    .entry(base.to_string())
+                    .or_default()
+                    .insert(am.id.clone());
+            }
+        }
+
+        struct AggModel {
+            id: String,
+            display_name: String,
+            provider: String,
+            tier: String,
+            supports_thinking: bool,
+            any_enabled: bool,
+            any_quota: bool,
+            best_pct: i32,
+            accounts_ok: std::collections::HashSet<String>,
+            notices: Vec<String>,
+            max_tokens: u32,
+            max_output_tokens: u32,
+            sort_order: usize,
+            modality: String,
+        }
+
+        let mut agg: std::collections::BTreeMap<String, AggModel> = std::collections::BTreeMap::new();
+
+        for acc in &active_accounts {
+            for am in &acc.available_models {
+                if am.is_internal || am.id.starts_with("chat_") || am.id.starts_with("tab_") {
+                    continue;
+                }
+                if has_curated && !am.is_recommended_agent && am.modality != "image" {
+                    continue;
+                }
+
+                let (base, eff) = Self::strip_effort_suffix(&am.id);
+                let should_group = self.group_reasoning_clones
+                    && (eff == Some("thinking")
+                        || base_variants.get(base).is_some_and(|s| s.len() > 1));
+
+                let cid = if should_group {
+                    base.to_string()
+                } else {
+                    am.id.clone()
+                };
+
+                let clean_display = if should_group {
+                    let mut d = if am.display_name.is_empty() {
+                        cid.clone()
+                    } else {
+                        am.display_name.clone()
+                    };
+                    for tag in [" (High)", " (Medium)", " (Low)", " (Minimal)", " (Thinking)"] {
+                        if let Some(stripped) = d.strip_suffix(tag) {
+                            d = stripped.to_string();
+                            break;
+                        }
+                    }
+                    d
+                } else if am.display_name.is_empty() {
+                    cid.clone()
+                } else {
+                    am.display_name.clone()
+                };
+
+                let pct = (am.remaining_fraction * 100.0).round().clamp(0.0, 100.0) as i32;
+                let ok_here = !am.disabled && am.remaining_fraction > 0.0;
+
+                let entry = agg.entry(cid.clone()).or_insert_with(|| AggModel {
+                    id: cid.clone(),
+                    display_name: clean_display,
+                    provider: am.provider.clone(),
+                    tier: acc.tier.clone(),
+                    supports_thinking: am.supports_thinking,
+                    any_enabled: false,
+                    any_quota: false,
+                    best_pct: 0,
+                    accounts_ok: std::collections::HashSet::new(),
+                    notices: Vec::new(),
+                    max_tokens: am.max_tokens,
+                    max_output_tokens: am.max_output_tokens,
+                    sort_order: am.sort_order,
+                    modality: am.modality.clone(),
+                });
+
+                entry.sort_order = entry.sort_order.min(am.sort_order);
+                entry.supports_thinking |= am.supports_thinking;
+                entry.max_tokens = entry.max_tokens.max(am.max_tokens);
+                entry.max_output_tokens = entry.max_output_tokens.max(am.max_output_tokens);
+                if !am.disabled {
+                    entry.any_enabled = true;
+                    entry.best_pct = entry.best_pct.max(pct);
+                }
+                if ok_here {
+                    entry.any_quota = true;
+                    entry.accounts_ok.insert(acc.id.clone());
+                }
+                if let Some(n) = &am.notice {
+                    if !n.is_empty() && !entry.notices.contains(n) {
+                        entry.notices.push(n.clone());
+                    }
+                }
+            }
+        }
+
+        let mut rebuilt: Vec<(usize, ModelCatalogItem)> = agg
+            .into_values()
+            .map(|a| {
+                let notice = a.notices.join(" | ");
+                let availability_status = if !a.any_enabled {
+                    "disabled".to_string()
+                } else if !a.any_quota {
+                    "exhausted".to_string()
+                } else if !notice.is_empty() {
+                    "notice".to_string()
+                } else {
+                    "available".to_string()
+                };
+                let is_enabled = prev_enabled.get(&a.id).copied().unwrap_or(true);
+                let order = if a.modality == "image" {
+                    usize::MAX - 10
+                } else {
+                    a.sort_order
+                };
+                (
+                    order,
+                    ModelCatalogItem {
+                        id: a.id,
+                        display_name: a.display_name,
+                        provider: a.provider,
+                        tier: a.tier,
+                        is_enabled,
+                        supports_thinking: a.supports_thinking,
+                        availability_status,
+                        quota_percent: if a.any_enabled { a.best_pct } else { 0 },
+                        notice,
+                        available_accounts_count: a.accounts_ok.len(),
+                        max_tokens: a.max_tokens,
+                        max_output_tokens: a.max_output_tokens,
+                    },
+                )
+            })
+            .collect();
+
+        // Append AMR virtual utility endpoints backed by active accounts (Audio STT & Audio TTS)
+        let active_count = active_accounts.len();
+        for (idx, (vid, vname, vprov)) in [
+            ("whisper-1", "Whisper 1 (Audio STT)", "openai"),
+            ("tts-1", "TTS 1 (Audio Speech)", "openai"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let is_enabled = prev_enabled.get(vid).copied().unwrap_or(true);
+            rebuilt.push((
+                usize::MAX - 5 + idx,
+                ModelCatalogItem {
+                    id: vid.to_string(),
+                    display_name: vname.to_string(),
+                    provider: vprov.to_string(),
+                    tier: "PRO".to_string(),
+                    is_enabled,
+                    supports_thinking: false,
+                    availability_status: "available".to_string(),
+                    quota_percent: 100,
+                    notice: String::new(),
+                    available_accounts_count: active_count,
+                    max_tokens: 1_048_576,
+                    max_output_tokens: 65_536,
+                },
+            ));
+        }
+
+        rebuilt.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.id.cmp(&b.1.id)));
+        self.models = rebuilt.into_iter().map(|(_, m)| m).collect();
     }
 
     pub fn load() -> Self {
@@ -983,10 +1158,14 @@ impl AppConfig {
         let mut seen_ids = std::collections::HashSet::new();
 
         for m in &self.models {
-            if !m.is_enabled {
+            if !m.is_enabled || m.availability_status == "disabled" {
                 continue;
             }
-            let (base_id, _) = crate::proxy::router::parse_model_and_reasoning(&m.id, None);
+            let (base_id, _) = if self.group_reasoning_clones {
+                crate::proxy::router::parse_model_and_reasoning(&m.id, None)
+            } else {
+                (m.id.clone(), None)
+            };
             if !seen_ids.insert(base_id.clone()) {
                 continue;
             }
@@ -997,7 +1176,117 @@ impl AppConfig {
                 m.provider.as_str()
             };
 
-            // Base model enriched with reasoning and capability metadata
+            // Base model enriched with modality, reasoning and capability metadata
+            let lower_id = base_id.to_lowercase();
+            let is_image = lower_id.contains("image") || lower_id.contains("dall-e");
+            let is_stt = lower_id.contains("whisper") || lower_id.contains("transcrib");
+            let is_tts = lower_id.contains("tts");
+            let is_search = lower_id.contains("web-search") || lower_id.contains("google-search");
+
+            let (input_modalities, output_modalities, capabilities, supported_parameters) =
+                if is_image {
+                    (
+                        serde_json::json!(["text", "image"]),
+                        serde_json::json!(["image", "text"]),
+                        serde_json::json!({
+                            "chat_completions": true,
+                            "image_generation": true,
+                            "images": true,
+                            "reasoning": false,
+                            "thinking": false,
+                            "reasoning_effort": false,
+                            "reasoningEffort": false,
+                            "thinking_budget": false,
+                            "max_thinking_budget": false
+                        }),
+                        serde_json::json!(["prompt", "aspect_ratio", "size", "n", "response_format", "temperature"]),
+                    )
+                } else if is_stt {
+                    (
+                        serde_json::json!(["audio"]),
+                        serde_json::json!(["text"]),
+                        serde_json::json!({
+                            "chat_completions": true,
+                            "audio_transcription": true,
+                            "speech_to_text": true,
+                            "reasoning": false,
+                            "thinking": false,
+                            "reasoning_effort": false,
+                            "reasoningEffort": false,
+                            "thinking_budget": false,
+                            "max_thinking_budget": false,
+                            "images": false
+                        }),
+                        serde_json::json!(["file", "model", "prompt", "language", "response_format"]),
+                    )
+                } else if is_tts {
+                    (
+                        serde_json::json!(["text"]),
+                        serde_json::json!(["audio"]),
+                        serde_json::json!({
+                            "chat_completions": true,
+                            "audio_speech": true,
+                            "text_to_speech": true,
+                            "reasoning": false,
+                            "thinking": false,
+                            "reasoning_effort": false,
+                            "reasoningEffort": false,
+                            "thinking_budget": false,
+                            "max_thinking_budget": false,
+                            "images": false
+                        }),
+                        serde_json::json!(["input", "model", "voice", "response_format", "speed"]),
+                    )
+                } else if is_search {
+                    (
+                        serde_json::json!(["text"]),
+                        serde_json::json!(["text"]),
+                        serde_json::json!({
+                            "chat_completions": true,
+                            "web_search": true,
+                            "google_search": true,
+                            "grounding": true,
+                            "reasoning": false,
+                            "thinking": false,
+                            "reasoning_effort": false,
+                            "reasoningEffort": false,
+                            "thinking_budget": false,
+                            "max_thinking_budget": false,
+                            "images": false
+                        }),
+                        serde_json::json!(["query", "domain", "temperature", "max_tokens", "tools"]),
+                    )
+                } else {
+                    (
+                        serde_json::json!(["text", "image"]),
+                        serde_json::json!(["text"]),
+                        serde_json::json!({
+                            "chat_completions": true,
+                            "web_search": true,
+                            "reasoning": m.supports_thinking,
+                            "thinking": m.supports_thinking,
+                            "reasoning_effort": m.supports_thinking,
+                            "reasoningEffort": m.supports_thinking,
+                            "thinking_budget": m.supports_thinking,
+                            "max_thinking_budget": m.supports_thinking,
+                            "images": true
+                        }),
+                        serde_json::json!([
+                            "reasoning_effort",
+                            "reasoningEffort",
+                            "temperature",
+                            "max_tokens",
+                            "max_completion_tokens",
+                            "thinking",
+                            "thinking_budget",
+                            "budget_tokens",
+                            "max_thinking_budget",
+                            "reasoning_budget",
+                            "tools"
+                        ]),
+                    )
+                };
+
             let mut model_json = serde_json::json!({
                 "id": base_id,
                 "object": "model",
@@ -1005,32 +1294,15 @@ impl AppConfig {
                 "owned_by": owned_by,
                 "display_name": m.display_name,
                 "tier": m.tier,
-                "context_window": 1000000,
-                "max_tokens": 65536,
-                "input_modalities": ["text", "image"],
-                "capabilities": {
-                    "chat_completions": true,
-                    "reasoning": m.supports_thinking,
-                    "thinking": m.supports_thinking,
-                    "reasoning_effort": m.supports_thinking,
-                    "reasoningEffort": m.supports_thinking,
-                    "thinking_budget": m.supports_thinking,
-                    "max_thinking_budget": m.supports_thinking,
-                    "images": true
-                },
-                "supported_parameters": [
-                    "reasoning_effort",
-                    "reasoningEffort",
-                    "temperature",
-                    "max_tokens",
-                    "max_completion_tokens",
-                    "thinking",
-                    "thinking_budget",
-                    "budget_tokens",
-                    "max_thinking_budget",
-                    "reasoning_budget",
-                    "tools"
-                ]
+                "context_window": m.max_tokens,
+                "max_tokens": m.max_output_tokens,
+                "availability_status": m.availability_status,
+                "quota_percent": m.quota_percent,
+                "available_accounts": m.available_accounts_count,
+                "input_modalities": input_modalities,
+                "output_modalities": output_modalities,
+                "capabilities": capabilities,
+                "supported_parameters": supported_parameters
             });
 
             if m.supports_thinking {

@@ -12,8 +12,8 @@ pub fn get_profile(name: &str) -> FingerprintProfile {
     match name {
         "Google Antigravity Client (1.107.0)" | "Antigravity IDE" | "Antigravity CLI" => {
             FingerprintProfile {
-                name: "Google Antigravity Client (1.107.0)",
-                user_agent: "antigravity/1.107.0 linux/x64",
+                name: "Antigravity IDE",
+                user_agent: "",
                 extra_headers: vec![
                     ("x-goog-api-client", "gl-go/1.21.0 gdcl/0.1.0"),
                     ("x-client-vendor", "Google-Antigravity"),
@@ -52,8 +52,8 @@ pub fn get_profile(name: &str) -> FingerprintProfile {
             extra_headers: vec![("x-app-name", "opencode")],
         },
         _ => FingerprintProfile {
-            name: "Google Antigravity Client (1.107.0)",
-            user_agent: "antigravity/1.107.0 linux/x64",
+            name: "Antigravity IDE",
+            user_agent: "",
             extra_headers: vec![("x-goog-api-client", "gl-go/1.21.0 gdcl/0.1.0")],
         },
     }
@@ -61,7 +61,14 @@ pub fn get_profile(name: &str) -> FingerprintProfile {
 
 pub fn apply_fingerprint(headers: &mut HeaderMap, profile_name: &str) {
     let profile = get_profile(profile_name);
-    if let Ok(ua_val) = HeaderValue::from_str(profile.user_agent) {
+    let dynamic_ua;
+    let ua_str = if profile.user_agent.is_empty() {
+        dynamic_ua = crate::proxy::antigravity::get_official_hub_user_agent();
+        dynamic_ua.as_str()
+    } else {
+        profile.user_agent
+    };
+    if let Ok(ua_val) = HeaderValue::from_str(ua_str) {
         headers.insert(reqwest::header::USER_AGENT, ua_val);
     }
     for (k, v) in profile.extra_headers {

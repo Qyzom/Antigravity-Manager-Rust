@@ -8,4 +8,3 @@ Type=Application
 Categories=Development;Network;
 StartupWMClass=amr
 StartupNotify=true
-X-AppImage-Version=0.1.3

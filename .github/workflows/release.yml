@@ -151,6 +151,36 @@ jobs:
       - name: List dist files
         run: ls -la dist/
 
+      - name: Generate Release Body from Metadata
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VER="${TAG#v}"
+          python3 - "$TAG" "$VER" << 'PYEOF' > release_body.md
+          import sys, re
+
+          tag, ver = sys.argv[1], sys.argv[2]
+          with open("AGENTS.md", "r", encoding="utf-8") as f:
+              text = f.read()
+
+          # Match section like "- **v0.1.5 (Latest)**:" or "- **v0.1.5**:"
+          pattern = rf"(?ms)^- \*\*v{re.escape(ver)}\b[^\n]*:\n((?:  +.*\n)+)"
+          m = re.search(pattern, text)
+
+          print(f"## AMR (Antigravity Manager Rust) {tag}\n")
+          if m:
+              print("### Release Highlights & What's Changed")
+              for line in m.group(1).splitlines():
+                  print(line[2:] if line.startswith("  ") else line)
+              print()
+
+          print("### Standalone Packages (x86_64 & ARM64):")
+          print(f"- **Linux AppImage:** `AMR-{ver}-x86_64.AppImage` & `AMR-{ver}-aarch64.AppImage` (Portable binary for Linux)")
+          print(f"- **Debian / Ubuntu DEB:** `AMR_{ver}_amd64.deb` & `AMR_{ver}_arm64.deb`")
+          print(f"- **Fedora / RHEL RPM:** `AMR-{ver}-1.x86_64.rpm` & `AMR-{ver}-1.aarch64.rpm`")
+          print(f"- **Windows Portable EXE:** `AMR-{ver}-x86_64.exe` & `AMR-{ver}-arm64.exe` (Standalone single-file executable)")
+          PYEOF
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -159,19 +189,6 @@ jobs:
           files: dist/*
           draft: false
           prerelease: false
-          body: |
-            ## AMR (Antigravity Manager Rust) ${{ github.ref_name }}
-
-            ### Release Highlights & What's Changed
-            - **Google Antigravity Upstream Fix**: Resolved `404 Not Found (Requested entity was not found)` by mapping image generation requests to `gemini-3.1-flash-image` (with `image-generator` & `dall-e-3` aliases).
-            - **OpenAI Model Compliance**: Standardized all broadcast models to OpenAI-compliant lower-case identifiers.
-            - **OpenAI Audio STT (`/v1/audio/transcriptions`)**: Full Whisper API compatibility for multipart audio transcription via Gemini Pa upstream.
-            - **OpenAI Audio TTS (`/v1/audio/speech`) & Audio Models**: Added audio speech synthesis endpoint and cataloged `whisper-1` & `tts-1` models.
-            - **Dynamic Automated Packaging**: Standalone release packages dynamically bound to project versioning.
-
-            ### Standalone Packages (x86_64 & ARM64):
-            - **Linux AppImage:** `AMR-*-x86_64.AppImage` & `AMR-*-aarch64.AppImage` (Portable binary for Linux)
-            - **Debian / Ubuntu DEB:** `AMR_*_amd64.deb` & `AMR_*_arm64.deb`
-            - **Fedora / RHEL RPM:** `AMR-*-1.x86_64.rpm` & `AMR-*-1.aarch64.rpm`
-            - **Windows Portable EXE:** `AMR-*-x86_64.exe` & `AMR-*-arm64.exe` (Standalone single-file executable)
+          generate_release_notes: true
+          body_path: release_body.md
 

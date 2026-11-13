@@ -18,7 +18,8 @@ done
 cp target/release/amr "$DEB_DIR/usr/bin/amr"
 chmod 755 "$DEB_DIR/usr/bin/amr"
 cp packaging/linux/amr.desktop "$DEB_DIR/usr/share/applications/amr.desktop"
-cp packaging/linux/amr.metainfo.xml "$DEB_DIR/usr/share/metainfo/amr.metainfo.xml"
+BUILD_DATE="$(date -u +%Y-%m-%d)"
+sed -e "s/@VERSION@/${VERSION}/g" -e "s/@DATE@/${BUILD_DATE}/g" packaging/linux/amr.metainfo.xml > "$DEB_DIR/usr/share/metainfo/amr.metainfo.xml"
 
 cat << EOF > "$DEB_DIR/DEBIAN/control"
 Package: amr

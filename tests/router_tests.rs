@@ -41,6 +41,7 @@ mod tests {
             added_at: None,
             device_profile: None,
             proxy_url: None,
+            available_models: Vec::new(),
         };
 
         assert_eq!(
@@ -100,34 +101,88 @@ mod tests {
 
     #[test]
     fn test_broadcast_models_generation() {
+        use amr::config::{AccountModelStatus, UpstreamAccount};
+
         let mut cfg = AppConfig::default();
+        cfg.accounts.push(UpstreamAccount {
+            id: "acc_broadcast".into(),
+            api_key: "test_token".into(),
+            is_active: true,
+            available_models: vec![
+                AccountModelStatus {
+                    id: "claude-sonnet-4-6".into(),
+                    display_name: "Claude Sonnet 4.6".into(),
+                    provider: "claude".into(),
+                    supports_thinking: true,
+                    remaining_fraction: 1.0,
+                    modality: "text".into(),
+                    is_recommended_agent: true,
+                    sort_order: 0,
+                    ..Default::default()
+                },
+                AccountModelStatus {
+                    id: "gemini-3.8-flash-low".into(),
+                    display_name: "Gemini 3.8 Flash (Low)".into(),
+                    provider: "gemini".into(),
+                    supports_thinking: true,
+                    remaining_fraction: 1.0,
+                    modality: "text".into(),
+                    is_recommended_agent: true,
+                    sort_order: 1,
+                    ..Default::default()
+                },
+                AccountModelStatus {
+                    id: "gemini-3.8-flash-medium".into(),
+                    display_name: "Gemini 3.8 Flash (Medium)".into(),
+                    provider: "gemini".into(),
+                    supports_thinking: true,
+                    remaining_fraction: 1.0,
+                    modality: "text".into(),
+                    is_recommended_agent: true,
+                    sort_order: 2,
+                    ..Default::default()
+                },
+                AccountModelStatus {
+                    id: "gemini-3.8-flash-high".into(),
+                    display_name: "Gemini 3.8 Flash (High)".into(),
+                    provider: "gemini".into(),
+                    supports_thinking: true,
+                    remaining_fraction: 1.0,
+                    modality: "text".into(),
+                    is_recommended_agent: true,
+                    sort_order: 3,
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        });
+
         cfg.group_reasoning_clones = false;
         cfg.expose_reasoning_variants = true;
+        cfg.rebuild_models_from_accounts();
 
         let broadcasted = cfg.get_broadcast_models();
         assert!(broadcasted.iter().any(|m| m["id"] == "claude-sonnet-4-6"));
         assert!(broadcasted
             .iter()
-            .any(|m| m["id"] == "claude-sonnet-4-6 (low)"));
+            .any(|m| m["id"] == "gemini-3.8-flash-low"));
         assert!(broadcasted
             .iter()
-            .any(|m| m["id"] == "claude-sonnet-4-6 (medium)"));
+            .any(|m| m["id"] == "gemini-3.8-flash-medium"));
         assert!(broadcasted
             .iter()
-            .any(|m| m["id"] == "claude-sonnet-4-6 (high)"));
-        assert!(broadcasted
-            .iter()
-            .any(|m| m["id"] == "claude-sonnet-4-6 (no-thinking)"));
+            .any(|m| m["id"] == "gemini-3.8-flash-high"));
 
-        // When group_reasoning_clones is enabled, clones should NOT be present
+        // When group_reasoning_clones is enabled, effort variants collapse into canonical IDs
         cfg.group_reasoning_clones = true;
+        cfg.rebuild_models_from_accounts();
         let grouped = cfg.get_broadcast_models();
         assert!(grouped.iter().any(|m| m["id"] == "claude-sonnet-4-6"));
         assert!(grouped
             .iter()
-            .any(|m| m["id"] == "claude-sonnet-4-6"
+            .any(|m| m["id"] == "gemini-3.8-flash"
                 && m["reasoning"]["supported_efforts"].is_array()));
-        assert!(!grouped.iter().any(|m| m["id"] == "claude-sonnet-4-6 (low)"));
+        assert!(!grouped.iter().any(|m| m["id"] == "gemini-3.8-flash-low"));
     }
 
     #[test]
@@ -576,6 +631,7 @@ mod tests {
             added_at: None,
             device_profile: None,
             proxy_url: None,
+            available_models: Vec::new(),
         };
 
         let acc_b = UpstreamAccount {
@@ -605,6 +661,7 @@ mod tests {
             added_at: None,
             device_profile: None,
             proxy_url: None,
+            available_models: Vec::new(),
         };
 
         cfg.accounts = vec![acc_a.clone(), acc_b.clone()];
@@ -671,6 +728,7 @@ mod tests {
             added_at: None,
             device_profile: None,
             proxy_url: None,
+            available_models: Vec::new(),
         };
 
         // Account 2: Pro tier, Claude quota 60%, Gemini 90%
@@ -701,6 +759,7 @@ mod tests {
             added_at: None,
             device_profile: None,
             proxy_url: None,
+            available_models: Vec::new(),
         };
 
         cfg.accounts = vec![acc_free.clone(), acc_pro.clone()];
@@ -957,6 +1016,7 @@ mod tests {
             added_at: None,
             device_profile: None,
             proxy_url: None,
+            available_models: Vec::new(),
         };
 
         let acc_healthy = UpstreamAccount {
@@ -986,6 +1046,7 @@ mod tests {
             added_at: None,
             device_profile: None,
             proxy_url: None,
+            available_models: Vec::new(),
         };
 
         let acc_error = UpstreamAccount {
@@ -1015,6 +1076,7 @@ mod tests {
             added_at: None,
             device_profile: None,
             proxy_url: None,
+            available_models: Vec::new(),
         };
 
         cfg.accounts = vec![acc_low.clone(), acc_healthy.clone(), acc_error.clone()];
@@ -1111,41 +1173,77 @@ mod tests {
 
     #[test]
     fn test_model_deduplication_and_grouping() {
-        use amr::config::{AppConfig, ModelCatalogItem};
+        use amr::config::{AccountModelStatus, AppConfig, ModelCatalogItem, UpstreamAccount};
 
         let mut cfg = AppConfig::default();
-        // Simulate corrupted config with clones and duplicates
+        // Simulate corrupted config with internal models and duplicates
         cfg.models.push(ModelCatalogItem {
-            id: "gemini-3.8-flash-medium".into(),
-            display_name: "Gemini 3.8 Flash (Medium)".into(),
+            id: "chat_20706".into(),
+            display_name: "Internal Chat".into(),
             provider: "gemini".into(),
             tier: "PRO".into(),
             is_enabled: true,
-            supports_thinking: true,
+            supports_thinking: false,
+            ..Default::default()
         });
         cfg.models.push(ModelCatalogItem {
-            id: "gemini-3.8-flash-low".into(),
-            display_name: "Gemini 3.8 Flash (Low)".into(),
+            id: "gemini-3.8-flash".into(),
+            display_name: "Gemini 3.8 Flash".into(),
             provider: "gemini".into(),
             tier: "PRO".into(),
             is_enabled: true,
             supports_thinking: true,
+            ..Default::default()
         });
 
         cfg.sanitize_models();
-        // After sanitization, 9 unique models remain (including gemini-3.1-flash-image, whisper-1, tts-1)
-        assert_eq!(cfg.models.len(), 9);
-        assert!(cfg.models.iter().any(|m| m.id == "gemini-3.1-flash-image"));
-        assert!(cfg.models.iter().any(|m| m.id == "whisper-1"));
-        assert!(cfg.models.iter().any(|m| m.id == "tts-1"));
+        assert_eq!(cfg.models.len(), 1);
         assert!(cfg.models.iter().any(|m| m.id == "gemini-3.8-flash"));
+        assert!(!cfg.models.iter().any(|m| m.id == "chat_20706"));
+
+        // Verify dynamic per-account rebuild collapses effort variants & keeps disabled status
+        cfg.accounts.push(UpstreamAccount {
+            id: "acc1".into(),
+            is_active: true,
+            available_models: vec![
+                AccountModelStatus {
+                    id: "gemini-3.8-flash-low".into(),
+                    display_name: "Gemini 3.8 Flash (Low)".into(),
+                    provider: "gemini".into(),
+                    supports_thinking: true,
+                    remaining_fraction: 0.9,
+                    ..Default::default()
+                },
+                AccountModelStatus {
+                    id: "gemini-3.8-flash-high".into(),
+                    display_name: "Gemini 3.8 Flash (High)".into(),
+                    provider: "gemini".into(),
+                    supports_thinking: true,
+                    remaining_fraction: 0.9,
+                    ..Default::default()
+                },
+                AccountModelStatus {
+                    id: "gemini-4-argon-disabled".into(),
+                    display_name: "Gemini 4 Argon".into(),
+                    provider: "gemini".into(),
+                    disabled: true,
+                    remaining_fraction: 0.0,
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        });
+        cfg.rebuild_models_from_accounts();
+        assert!(cfg.models.iter().any(|m| m.id == "gemini-3.8-flash" && m.availability_status == "available"));
+        assert!(cfg.models.iter().any(|m| m.id == "gemini-4-argon-disabled" && m.availability_status == "disabled"));
+        assert!(cfg.models.iter().any(|m| m.id == "tts-1"));
         assert!(!cfg.models.iter().any(|m| m.id == "gemini-3.8-flash-medium"));
-        let opus46 = cfg
+        let flash = cfg
             .models
             .iter()
-            .find(|m| m.id == "claude-opus-4-6")
+            .find(|m| m.id == "gemini-3.8-flash")
             .unwrap();
-        assert!(opus46.supports_thinking);
+        assert!(flash.supports_thinking);
     }
 
     #[tokio::test]
@@ -1312,15 +1410,16 @@ mod tests {
     #[test]
     fn test_upstream_spoofing_headers_cleanliness_and_resilience() {
         use amr::proxy::antigravity::{
-            get_official_hub_user_agent, FETCH_MODELS_ENDPOINTS, LOAD_PROJECT_ENDPOINTS,
-            QUOTA_SUMMARY_ENDPOINTS, STREAM_ENDPOINTS,
+            get_official_hub_user_agent, FETCH_MODELS_ENDPOINTS, GENERATE_ENDPOINTS,
+            LOAD_PROJECT_ENDPOINTS, QUOTA_SUMMARY_ENDPOINTS, STREAM_ENDPOINTS,
         };
-        use amr::proxy::server::build_upstream_headers;
+        use amr::proxy::server::{build_upstream_headers, build_upstream_headers_json};
 
         // 1. Verify all endpoints never contain public unauthenticated/broken prod endpoint
         for ep in QUOTA_SUMMARY_ENDPOINTS
             .iter()
             .chain(STREAM_ENDPOINTS.iter())
+            .chain(GENERATE_ENDPOINTS.iter())
             .chain(LOAD_PROJECT_ENDPOINTS.iter())
             .chain(FETCH_MODELS_ENDPOINTS.iter())
         {
@@ -1342,7 +1441,7 @@ mod tests {
             "dummy_client_id",
             "dummy_machine_id",
             "LINUX",
-            "2.28.1",
+            "2.29.1",
             "x86_64",
             "stable",
             true,
@@ -1364,7 +1463,8 @@ mod tests {
             "claude-code-20250219"
         );
         let ua = headers_claude.get("user-agent").unwrap().to_str().unwrap();
-        assert!(ua.starts_with("antigravity/hub/2.28.1"));
+        assert!(ua.starts_with("antigravity/hub/2.29.1"));
+        assert!(ua.contains("cl=1015941558"));
         assert!(ua.contains("os_type=linux"));
         assert!(ua.contains("arch=x86_64"));
 
@@ -1376,13 +1476,13 @@ mod tests {
         assert!(!headers_claude.contains_key("x-session-id"));
         assert!(!headers_claude.contains_key("x-api-key"));
 
-        // 3. Verify Gemini upstream headers (must not attach anthropic-beta)
-        let headers_gemini = build_upstream_headers(
+        // 3. Verify Gemini upstream headers (must not attach anthropic-beta) & JSON non-stream accept
+        let headers_gemini = build_upstream_headers_json(
             "ya29.gemini_token",
             "dummy_client_id",
             "dummy_machine_id",
             "WINDOWS",
-            "2.28.1",
+            "2.29.1",
             "arm64",
             "stable",
             false,
@@ -1390,13 +1490,15 @@ mod tests {
             "gemini-3.8-flash-medium",
         );
         assert!(!headers_gemini.contains_key("anthropic-beta"));
+        assert_eq!(headers_gemini.get("accept").unwrap(), "application/json");
         let ua_win = headers_gemini.get("user-agent").unwrap().to_str().unwrap();
         assert!(ua_win.contains("os_type=windows"));
         assert!(ua_win.contains("arch=arm64"));
 
         // 4. Verify get_official_hub_user_agent
         let official_ua = get_official_hub_user_agent();
-        assert!(official_ua.starts_with("antigravity/hub/2.28.1"));
+        assert!(official_ua.starts_with("antigravity/hub/2.29.1"));
+        assert!(official_ua.contains("cl=1015941558"));
     }
 
     #[test]
@@ -1444,6 +1546,7 @@ mod tests {
             added_at: None,
             device_profile: None,
             proxy_url: None,
+            available_models: Vec::new(),
         };
 
         assert_eq!(resolve_model("gemini-3.1-flash-image", &account), "gemini-3.1-flash-image");
@@ -1482,8 +1585,41 @@ mod tests {
 
     #[test]
     fn test_deepseek_harness_reasoning_metadata_and_dispatch() {
+        use amr::config::{AccountModelStatus, UpstreamAccount};
+
         let mut cfg = AppConfig::default();
         cfg.group_reasoning_clones = true;
+        cfg.accounts.push(UpstreamAccount {
+            id: "acc_ds".into(),
+            api_key: "test_token".into(),
+            is_active: true,
+            available_models: vec![
+                AccountModelStatus {
+                    id: "gemini-3.8-flash-high".into(),
+                    display_name: "Gemini 3.8 Flash (High)".into(),
+                    provider: "gemini".into(),
+                    supports_thinking: true,
+                    remaining_fraction: 1.0,
+                    modality: "text".into(),
+                    is_recommended_agent: true,
+                    sort_order: 0,
+                    ..Default::default()
+                },
+                AccountModelStatus {
+                    id: "gemini-3.1-flash-image".into(),
+                    display_name: "Gemini 3.1 Flash Image".into(),
+                    provider: "gemini".into(),
+                    supports_thinking: false,
+                    remaining_fraction: 1.0,
+                    modality: "image".into(),
+                    is_recommended_agent: false,
+                    sort_order: 1,
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        });
+        cfg.rebuild_models_from_accounts();
 
         let models = cfg.get_broadcast_models();
         let gemini = models.iter().find(|m| m["id"] == "gemini-3.8-flash").expect("gemini-3.8-flash not found");
@@ -1549,6 +1685,7 @@ mod tests {
             added_at: None,
             device_profile: None,
             proxy_url: None,
+            available_models: Vec::new(),
         };
 
         let (m_low, eff_low) = resolve_model_with_effort("gemini-3.8-flash", &acc, Some(ReasoningEffort::Low));
@@ -1564,11 +1701,191 @@ mod tests {
         assert_eq!(eff_high, Some(ReasoningEffort::High));
 
         let (m_off, eff_off) = resolve_model_with_effort("gemini-3.8-flash", &acc, Some(ReasoningEffort::Off));
-        assert_eq!(m_off, "gemini-3.8-flash");
+        assert_eq!(m_off, "gemini-3.8-flash-low");
         assert_eq!(eff_off, Some(ReasoningEffort::Off));
 
-        // Test sanitize_models preservation of gemini-3.1-flash-image
+        // Verify real upstream models are preserved directly instead of being hijacked
+        let (m_25, _) = resolve_model_with_effort("gemini-2.5-flash", &acc, None);
+        assert_eq!(m_25, "gemini-2.5-flash");
+        let (m_3f, _) = resolve_model_with_effort("gemini-3-flash", &acc, None);
+        assert_eq!(m_3f, "gemini-3-flash");
+        let (m_oss, _) = resolve_model_with_effort("gpt-oss-120b-medium", &acc, None);
+        assert_eq!(m_oss, "gpt-oss-120b-medium");
+
+        // Test sanitize_models preservation of utility modality models
         cfg.sanitize_models();
         assert!(cfg.models.iter().any(|m| m.id == "gemini-3.1-flash-image"));
+        assert!(cfg.models.iter().any(|m| m.id == "whisper-1"));
+        assert!(cfg.models.iter().any(|m| m.id == "tts-1"));
+    }
+
+    #[test]
+    fn test_multimodal_capabilities_and_web_search_grounding() {
+        use amr::proxy::antigravity::{
+            aspect_ratio_from_size_or_hint, build_antigravity_payload, build_web_search_payload,
+            convert_antigravity_response_to_openai, extract_grounding_info,
+        };
+        use amr::proxy::router::resolve_model;
+
+        use amr::config::AccountModelStatus;
+        let mut cfg = AppConfig::default();
+        cfg.accounts.push(UpstreamAccount {
+            id: "acc_mm".into(),
+            is_active: true,
+            available_models: vec![
+                AccountModelStatus {
+                    id: "gemini-3.8-flash".into(),
+                    display_name: "Gemini 3.8 Flash".into(),
+                    provider: "gemini".into(),
+                    supports_thinking: true,
+                    remaining_fraction: 1.0,
+                    modality: "text".into(),
+                    is_recommended_agent: true,
+                    sort_order: 0,
+                    ..Default::default()
+                },
+                AccountModelStatus {
+                    id: "gemini-3.1-flash-image".into(),
+                    display_name: "Gemini 3.1 Flash Image".into(),
+                    provider: "gemini".into(),
+                    supports_thinking: false,
+                    remaining_fraction: 1.0,
+                    modality: "image".into(),
+                    is_recommended_agent: false,
+                    sort_order: 1,
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        });
+        cfg.rebuild_models_from_accounts();
+        let broadcasted = cfg.get_broadcast_models();
+
+        let img = broadcasted.iter().find(|m| m["id"] == "gemini-3.1-flash-image").unwrap();
+        assert_eq!(img["capabilities"]["image_generation"], true);
+        assert_eq!(img["capabilities"]["reasoning"], false);
+        assert_eq!(img["output_modalities"], serde_json::json!(["image", "text"]));
+
+        let stt = broadcasted.iter().find(|m| m["id"] == "whisper-1").unwrap();
+        assert_eq!(stt["capabilities"]["audio_transcription"], true);
+        assert_eq!(stt["input_modalities"], serde_json::json!(["audio"]));
+
+        let tts = broadcasted.iter().find(|m| m["id"] == "tts-1").unwrap();
+        assert_eq!(tts["capabilities"]["audio_speech"], true);
+        assert_eq!(tts["output_modalities"], serde_json::json!(["audio"]));
+
+        let acc = UpstreamAccount {
+            id: "acc_1".into(),
+            name: "test".into(),
+            provider: "antigravity".into(),
+            base_url: "https://api.test".into(),
+            api_key: "key".into(),
+            fingerprint: "Default".into(),
+            tier: "PRO".into(),
+            quota_used: 0,
+            quota_limit: 100,
+            quota_reset: "in 2h".into(),
+            claude_gpt_percent: 100,
+            claude_gpt_reset: "in 4h".into(),
+            claude_gpt_weekly_percent: 100,
+            claude_gpt_weekly_reset: "in 7d".into(),
+            gemini_percent: 100,
+            gemini_reset: "in 4h".into(),
+            gemini_weekly_percent: 100,
+            gemini_weekly_reset: "in 7d".into(),
+            status: "Active".into(),
+            error_message: None,
+            refresh_token: None,
+            project_id: Some("proj-1".into()),
+            is_active: true,
+            added_at: None,
+            device_profile: None,
+            proxy_url: None,
+            available_models: Vec::new(),
+        };
+        assert_eq!(resolve_model("whisper-1", &acc), "whisper-1");
+        assert_eq!(resolve_model("tts-1", &acc), "tts-1");
+        assert_eq!(resolve_model("web-search", &acc), "web-search");
+
+        // Verify native Google Gemini model list builder and payload
+        let gemini_models = amr::proxy::mappers::gemini::build_gemini_models_list(&cfg.models);
+        assert!(gemini_models["models"].as_array().unwrap().iter().any(|m| m["name"] == "models/gemini-3.8-flash"));
+        let gem_req = serde_json::json!({
+            "contents": [{"role": "user", "parts": [{"text": "Hello Gemini"}]}],
+            "generationConfig": {"temperature": 0.5}
+        });
+        let gem_payload = amr::proxy::mappers::gemini::build_antigravity_from_gemini(&gem_req, "gemini-3.8-flash", Some("proj-1"));
+        assert_eq!(gem_payload["project"], "proj-1");
+        assert_eq!(gem_payload["request"]["contents"][0]["parts"][0]["text"], "Hello Gemini");
+
+        // Verify MCP protocol tools structure
+        let mcp_tools = serde_json::json!({
+            "tools": [
+                { "name": "google_web_search" },
+                { "name": "fetch_web_page" }
+            ]
+        });
+        assert!(mcp_tools["tools"].as_array().unwrap().iter().any(|t| t["name"] == "google_web_search"));
+        assert!(mcp_tools["tools"].as_array().unwrap().iter().any(|t| t["name"] == "fetch_web_page"));
+
+        assert_eq!(aspect_ratio_from_size_or_hint(None, Some("1792x1024")), Some("16:9"));
+        assert_eq!(aspect_ratio_from_size_or_hint(Some("3:4"), None), Some("3:4"));
+
+        // Direct web search payload schema (GetWebSearchResults)
+        let ws_payload = build_web_search_payload("rust release", Some("rust-lang.org"), "web-search", Some("proj-1"));
+        assert_eq!(ws_payload["requestType"], "web_search");
+        assert_eq!(ws_payload["model"], "gemini-2.5-flash");
+        assert!(ws_payload["request"]["contents"][0]["parts"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("site:rust-lang.org"));
+        assert!(ws_payload["request"]["tools"][0].get("googleSearch").is_some());
+
+        // Chat completion with web_search tool maps to googleSearch
+        let req = OpenAIChatRequest {
+            model: "gemini-3.8-flash".into(),
+            messages: vec![OpenAIMessage {
+                role: "user".into(),
+                content: Value::String("Latest Rust version?".into()),
+                reasoning_content: None,
+                refusal: None,
+                name: None,
+                tool_calls: None,
+                tool_call_id: None,
+            }],
+            stream: false,
+            temperature: None,
+            max_tokens: None,
+            max_completion_tokens: None,
+            reasoning_effort: None,
+            stream_options: None,
+            tools: Some(vec![serde_json::json!({ "type": "web_search" })]),
+            tool_choice: None,
+            extra: Default::default(),
+        };
+        let chat_payload = build_antigravity_payload(&req, "gemini-3.8-flash", Some("proj-1"), None);
+        assert!(chat_payload["request"]["tools"][0].get("googleSearch").is_some());
+
+        // Grounding metadata parsing & citation rendering
+        let fake_raw = serde_json::json!({
+            "response": {
+                "candidates": [{
+                    "content": { "parts": [{ "text": "Rust 1.85 is released." }] },
+                    "groundingMetadata": {
+                        "webSearchQueries": ["rust latest version"],
+                        "groundingChunks": [{ "web": { "uri": "https://blog.rust-lang.org/", "title": "Rust Blog" } }],
+                        "groundingSupports": [{ "segment": { "text": "Rust 1.85 is released." }, "groundingChunkIndices": [0] }]
+                    }
+                }]
+            }
+        });
+        let (queries, results, md) = extract_grounding_info(fake_raw.get("response").unwrap());
+        assert_eq!(queries, vec!["rust latest version"]);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["title"], "Rust Blog");
+        assert!(md.contains("https://blog.rust-lang.org/"));
+
+        let oai = convert_antigravity_response_to_openai(&fake_raw, "web-search");
+        assert!(oai.choices[0].message.content.as_str().unwrap().contains("### Sources"));
     }
 }
