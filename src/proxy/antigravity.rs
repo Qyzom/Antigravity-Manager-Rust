@@ -11,7 +11,7 @@ use std::sync::OnceLock;
 struct ThoughtSignatureCache {
     by_call_id: HashMap<String, String>,
     call_id_to_name: HashMap<String, String>,
-    order: Vec<String>,
+    order: std::collections::VecDeque<String>,
 }
 
 fn get_signature_cache() -> &'static RwLock<ThoughtSignatureCache> {
@@ -20,7 +20,7 @@ fn get_signature_cache() -> &'static RwLock<ThoughtSignatureCache> {
         RwLock::new(ThoughtSignatureCache {
             by_call_id: HashMap::new(),
             call_id_to_name: HashMap::new(),
-            order: Vec::new(),
+            order: std::collections::VecDeque::new(),
         })
     })
 }
@@ -30,13 +30,15 @@ pub fn record_thought_signature(call_id: &str, tool_name: &str, sig: &str) {
         return;
     }
     let mut cache = get_signature_cache().write();
-    if cache.order.len() >= 1000 {
-        if let Some(oldest) = cache.order.pop() {
+    while cache.order.len() >= 1000 {
+        if let Some(oldest) = cache.order.pop_front() {
             cache.by_call_id.remove(&oldest);
             cache.call_id_to_name.remove(&oldest);
+        } else {
+            break;
         }
     }
-    cache.order.push(call_id.to_string());
+    cache.order.push_back(call_id.to_string());
     cache.by_call_id.insert(call_id.to_string(), sig.to_string());
     if !tool_name.is_empty() {
         cache.call_id_to_name.insert(call_id.to_string(), tool_name.to_string());

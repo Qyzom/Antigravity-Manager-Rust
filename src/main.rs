@@ -1130,6 +1130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Background dual-cadence account refresh task
     let bg_cfg = Arc::clone(&config_arc);
     let bg_ver = Arc::clone(&cfg_version);
+    let bg_balancer = Arc::clone(&balancer_arc);
     let mut bg_stop_rx = stop_receiver.clone();
 
     tokio::spawn(async move {
@@ -1164,6 +1165,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     break;
                 }
             }
+
+            bg_balancer.cleanup_expired_sessions(3600);
 
             let (active_id, active_mins, pool_mins, jitter_pct) = {
                 let cfg = bg_cfg.read();

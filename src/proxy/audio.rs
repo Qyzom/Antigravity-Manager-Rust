@@ -55,7 +55,7 @@ pub fn normalize_audio_mime(fmt: &str) -> &'static str {
     }
 }
 
-fn pick_dynamic_gemini_model(state: &AppState, modality: &str, requested: Option<&str>) -> String {
+pub(crate) fn pick_dynamic_gemini_model(state: &AppState, modality: &str, requested: Option<&str>) -> String {
     if let Some(req_m) = requested.filter(|s| !s.trim().is_empty()) {
         let lower = req_m.to_lowercase();
         if lower != "whisper-1"
@@ -234,7 +234,7 @@ fn detect_container_content_type(bytes: &[u8], upstream_mime: &str) -> &'static 
 }
 
 /// Shared non-streaming upstream executor for `v1internal:generateContent` with automatic OAuth refresh and balancer telemetry.
-async fn execute_generate_content(
+pub(crate) async fn execute_generate_content(
     state: &AppState,
     model_hint: &str,
     target_model_for_headers: &str,

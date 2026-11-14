@@ -1888,4 +1888,131 @@ mod tests {
         let oai = convert_antigravity_response_to_openai(&fake_raw, "web-search");
         assert!(oai.choices[0].message.content.as_str().unwrap().contains("### Sources"));
     }
+
+    #[test]
+    fn test_strip_html_tags_utf8_resilience() {
+        use amr::proxy::mcp::strip_html_tags;
+
+        // 1. Cyrillic and script stripping
+        let html_ru = "<html><head><script>alert('test');</script><style>body { color: red; }</style></head><body><h1>Привет, мир!</h1><p>Тестирование UTF-8 парсера без паники.</p></body></html>";
+        let clean_ru = strip_html_tags(html_ru);
+        assert_eq!(clean_ru, "Привет, мир! Тестирование UTF-8 парсера без паники.");
+
+        // 2. CJK and multi-byte characters
+        let html_cjk = "<div class=\"content\"><h2>你好世界</h2><span>这是一个测试 🚀</span></div>";
+        let clean_cjk = strip_html_tags(html_cjk);
+        assert_eq!(clean_cjk, "你好世界 这是一个测试 🚀");
+
+        // 3. Plain text with whitespace collapsing
+        let plain = "   Много    пробелов \n\n и  переносов   строк   ";
+        assert_eq!(strip_html_tags(plain), "Много пробелов и переносов строк");
+    }
+
+    #[test]
+    fn test_thought_signature_cache_fifo_eviction() {
+        use amr::proxy::antigravity::{get_thought_signature, record_thought_signature};
+
+        let unique_prefix = uuid::Uuid::new_v4().simple().to_string();
+
+        // Insert 1020 items with unique prefix
+        for i in 0..1020 {
+            let call_id = format!("{}_call_{}", unique_prefix, i);
+            let sig = format!("sig_{}", i);
+            record_thought_signature(&call_id, "test_tool", &sig);
+        }
+
+        // Oldest item (0) must definitely be evicted in FIFO order (max capacity is 1000)
+        let first_id = format!("{}_call_0", unique_prefix);
+        assert_eq!(get_thought_signature(&first_id), None, "Item 0 should have been evicted");
+
+        // The newest items (1000..1020) must be present
+        for i in 1000..1020 {
+            let call_id = format!("{}_call_{}", unique_prefix, i);
+            let expected_sig = format!("sig_{}", i);
+            assert_eq!(get_thought_signature(&call_id), Some(expected_sig));
+        }
+    }
+
+    #[test]
+    fn test_format_amr_error_message_disabled_model_preserved() {
+        use amr::proxy::server::format_amr_error_message;
+        use reqwest::StatusCode;
+
+        // When a model is disabled, the message contains 'disabled' and must NOT be replaced with OAuth failure
+        let raw_disabled = "Model 'gemini-exp' is disabled by administrator in settings.";
+        let formatted_ru = format_amr_error_message(raw_disabled, StatusCode::FORBIDDEN, "ru", true);
+        assert!(formatted_ru.contains("Model 'gemini-exp' is disabled"));
+        assert!(formatted_ru.starts_with("AMR: Ошибка спуфинга — "));
+
+        let formatted_en = format_amr_error_message(raw_disabled, StatusCode::FORBIDDEN, "en", true);
+        assert!(formatted_en.contains("Model 'gemini-exp' is disabled"));
+        assert!(formatted_en.starts_with("AMR: Spoof error — "));
+
+        // Standard 429
+        let msg_429 = format_amr_error_message("Rate limited", StatusCode::TOO_MANY_REQUESTS, "ru", true);
+        assert!(msg_429.contains("исчерпали квоту"));
+
+        // Standard 503
+        let msg_503 = format_amr_error_message("No accounts", StatusCode::SERVICE_UNAVAILABLE, "ru", true);
+        assert!(msg_503.contains("Нет доступных активных аккаунтов"));
+    }
+
+    #[test]
+    fn test_gemini_native_mappers() {
+        use amr::config::ModelCatalogItem;
+        use amr::proxy::mappers::gemini::{build_antigravity_from_gemini, build_gemini_models_list};
+
+        let req = serde_json::json!({
+            "contents": [{
+                "role": "user",
+                "parts": [{ "text": "Hello Gemini" }]
+            }]
+        });
+
+        let pa = build_antigravity_from_gemini(&req, "gemini-3.8-flash-low", Some("test-proj"));
+        assert_eq!(pa["project"], "test-proj");
+        assert_eq!(pa["model"], "gemini-3.8-flash-low");
+        assert_eq!(pa["request"]["contents"][0]["parts"][0]["text"], "Hello Gemini");
+
+        let catalog = vec![
+            ModelCatalogItem {
+                id: "gemini-3.8-flash".into(),
+                display_name: "Gemini 3.8 Flash".into(),
+                provider: "gemini".into(),
+                is_enabled: true,
+                max_tokens: 1048576,
+                max_output_tokens: 8192,
+                ..Default::default()
+            },
+            ModelCatalogItem {
+                id: "disabled-model".into(),
+                display_name: "Disabled Model".into(),
+                provider: "gemini".into(),
+                is_enabled: false,
+                max_tokens: 1048576,
+                max_output_tokens: 8192,
+                ..Default::default()
+            },
+        ];
+
+        let models_list = build_gemini_models_list(&catalog);
+        let list_arr = models_list["models"].as_array().unwrap();
+        assert_eq!(list_arr.len(), 1);
+        assert_eq!(list_arr[0]["name"], "models/gemini-3.8-flash");
+    }
+
+    #[test]
+    fn test_balancer_expired_sessions_cleanup() {
+        use amr::proxy::balancer::LoadBalancer;
+
+        let balancer = LoadBalancer::new();
+        // Initially no active pins
+        let (_, _, _, _, active_pins) = balancer.get_metrics();
+        assert_eq!(active_pins, 0);
+
+        // cleanup on empty is safe
+        balancer.cleanup_expired_sessions(3600);
+        let (_, _, _, _, active_pins_after) = balancer.get_metrics();
+        assert_eq!(active_pins_after, 0);
+    }
 }

@@ -2744,11 +2744,17 @@ pub fn format_amr_error_message(raw: &str, status: StatusCode, lang: &str, stand
             "zh" => "AMR 账号池中没有可用的活跃账号。",
             _ => "No active accounts available in AMR pool.",
         },
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => match lang.to_lowercase().as_str() {
-            "ru" => "Ошибка авторизации Google OAuth или доступ запрещен.",
-            "zh" => "Google OAuth 认证失败或权限不足。",
-            _ => "Authentication failure or permission denied.",
-        },
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+            if raw.to_lowercase().contains("disabled") {
+                raw
+            } else {
+                match lang.to_lowercase().as_str() {
+                    "ru" => "Ошибка авторизации Google OAuth или доступ запрещен.",
+                    "zh" => "Google OAuth 认证失败或权限不足。",
+                    _ => "Authentication failure or permission denied.",
+                }
+            }
+        }
         _ => raw,
     };
     format!("{}{}", prefix, detail)
@@ -2768,7 +2774,7 @@ pub async fn test_proxy_connection(proxy_url: &str) -> Result<u64, String> {
 
     let t0 = std::time::Instant::now();
     let res = client
-        .get("https://cloudcode-pa.googleapis.com")
+        .get("https://daily-cloudcode-pa.googleapis.com")
         .send()
         .await
         .map_err(|e| format!("Connection failed: {}", e))?;
@@ -2822,74 +2828,105 @@ pub async fn run_diagnostic_check(state: &AppState, model_id: &str) -> (u16, u64
         &target_model,
     );
 
-    let url = format!(
-        "https://cloudcode-pa.googleapis.com/v1internal:generateContent?model={}",
-        target_model
+    let test_req = crate::proxy::mappers::openai::OpenAIChatRequest {
+        model: target_model.clone(),
+        messages: vec![crate::proxy::mappers::openai::OpenAIMessage {
+            role: "user".to_string(),
+            content: serde_json::Value::String("Hello, diagnostic test.".to_string()),
+            reasoning_content: None,
+            refusal: None,
+            name: None,
+            tool_calls: None,
+            tool_call_id: None,
+        }],
+        stream: false,
+        temperature: Some(0.2),
+        max_tokens: Some(10),
+        max_completion_tokens: None,
+        reasoning_effort: None,
+        stream_options: None,
+        tools: None,
+        tool_choice: None,
+        extra: std::collections::HashMap::new(),
+    };
+
+    let test_payload = crate::proxy::antigravity::build_antigravity_payload(
+        &test_req,
+        &target_model,
+        account.project_id.as_deref(),
+        None,
     );
 
-    let test_body = serde_json::json!({
-        "contents": [{
-            "role": "user",
-            "parts": [{"text": "Hello, diagnostic test."}]
-        }],
-        "generationConfig": {
-            "maxOutputTokens": 10,
-            "temperature": 0.2
-        }
-    });
+    let client = state.get_client_for_account(&account);
+    let endpoints = if cfg.lock_production_endpoints {
+        &crate::proxy::antigravity::GENERATE_ENDPOINTS[..1]
+    } else {
+        &crate::proxy::antigravity::GENERATE_ENDPOINTS[..]
+    };
 
-    let client = state.http_client.clone();
-    match client.post(&url).headers(headers).json(&test_body).send().await {
-        Ok(resp) => {
-            let status = resp.status().as_u16();
-            let latency = t0.elapsed().as_millis() as u64;
-            if resp.status().is_success() {
-                (status, latency, "OK: Model is responsive and healthy".to_string())
-            } else if (status == 401 || status == 403) && account.refresh_token.is_some() {
-                if let Some(ref rt) = account.refresh_token {
-                    if let Ok(tok_res) = crate::proxy::antigravity::refresh_token(&client, rt).await {
-                        let fresh_token = tok_res.access_token;
-                        {
-                            let mut cfg_w = state.config.write();
-                            if let Some(acc) = cfg_w.accounts.iter_mut().find(|a| a.id == account.id) {
-                                acc.api_key = fresh_token.clone();
-                                if tok_res.refresh_token.is_some() {
-                                    acc.refresh_token = tok_res.refresh_token.clone();
+    let mut last_status = 502;
+    let mut last_err = "No response from upstream".to_string();
+
+    for &endpoint_url in endpoints {
+        match client.post(endpoint_url).headers(headers.clone()).json(&test_payload).send().await {
+            Ok(resp) => {
+                let status = resp.status().as_u16();
+                last_status = status;
+                let latency = t0.elapsed().as_millis() as u64;
+                if resp.status().is_success() {
+                    state.balancer.record_success(&account.id);
+                    return (status, latency, "OK: Model is responsive and healthy".to_string());
+                } else if (status == 401 || status == 403) && account.refresh_token.is_some() {
+                    if let Some(ref rt) = account.refresh_token {
+                        if let Ok(tok_res) = crate::proxy::antigravity::refresh_token(&state.http_client, rt).await {
+                            let fresh_token = tok_res.access_token;
+                            {
+                                let mut cfg_w = state.config.write();
+                                if let Some(acc) = cfg_w.accounts.iter_mut().find(|a| a.id == account.id) {
+                                    acc.api_key = fresh_token.clone();
+                                    if tok_res.refresh_token.is_some() {
+                                        acc.refresh_token = tok_res.refresh_token.clone();
+                                    }
                                 }
+                                let _ = cfg_w.save();
                             }
-                            let _ = cfg_w.save();
-                        }
-                        account.api_key = fresh_token;
-                        let retry_headers = build_upstream_headers_json(
-                            &account.api_key,
-                            &client_id,
-                            &machine_id,
-                            platform,
-                            &ide_ver,
-                            &spoof_arch,
-                            &spoof_channel,
-                            spoof_go,
-                            inject_meta,
-                            &target_model,
-                        );
-                        if let Ok(retry_resp) = client.post(&url).headers(retry_headers).json(&test_body).send().await {
-                            let retry_status = retry_resp.status().as_u16();
-                            let retry_lat = t0.elapsed().as_millis() as u64;
-                            if retry_resp.status().is_success() {
-                                return (retry_status, retry_lat, "OK: Model is responsive and healthy (token auto-refreshed)".to_string());
-                            } else {
-                                let err_text = retry_resp.text().await.unwrap_or_default();
-                                return (retry_status, retry_lat, format!("Upstream HTTP {}: {}", retry_status, err_text));
+                            account.api_key = fresh_token;
+                            let retry_headers = build_upstream_headers_json(
+                                &account.api_key,
+                                &client_id,
+                                &machine_id,
+                                platform,
+                                &ide_ver,
+                                &spoof_arch,
+                                &spoof_channel,
+                                spoof_go,
+                                inject_meta,
+                                &target_model,
+                            );
+                            if let Ok(retry_resp) = client.post(endpoint_url).headers(retry_headers).json(&test_payload).send().await {
+                                let retry_status = retry_resp.status().as_u16();
+                                let retry_lat = t0.elapsed().as_millis() as u64;
+                                if retry_resp.status().is_success() {
+                                    state.balancer.record_success(&account.id);
+                                    return (retry_status, retry_lat, "OK: Model is responsive and healthy (token auto-refreshed)".to_string());
+                                } else {
+                                    let err_text = retry_resp.text().await.unwrap_or_default();
+                                    return (retry_status, retry_lat, format!("Upstream HTTP {}: {}", retry_status, err_text));
+                                }
                             }
                         }
                     }
+                    return (status, latency, format!("Upstream HTTP {}: Authentication failed", status));
+                } else {
+                    let err_text = resp.text().await.unwrap_or_default();
+                    last_err = format!("Upstream HTTP {}: {}", status, err_text);
                 }
-                (status, latency, format!("Upstream HTTP {}: Authentication failed", status))
-            } else {
-                let err_text = resp.text().await.unwrap_or_default();
-                (status, latency, format!("Upstream HTTP {}: {}", status, err_text))
+            }
+            Err(e) => {
+                last_err = format!("Network error: {}", e);
             }
         }
-        Err(e) => (502, t0.elapsed().as_millis() as u64, format!("Network error: {}", e)),
     }
+
+    (last_status, t0.elapsed().as_millis() as u64, last_err)
 }

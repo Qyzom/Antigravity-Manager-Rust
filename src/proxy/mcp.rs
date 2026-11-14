@@ -253,96 +253,58 @@ pub async fn mcp_handler(
 }
 
 async fn execute_mcp_web_search(state: &AppState, payload: &Value) -> String {
-    let query = payload.get("query").and_then(|q| q.as_str()).unwrap_or("");
+    let query = payload.get("query").and_then(|q| q.as_str()).unwrap_or("").trim();
+    if query.is_empty() {
+        return "Search query is empty.".to_string();
+    }
 
-    let selected_account = {
-        let cfg = state.config.read();
-        state
-            .balancer
-            .select_account(&cfg, "gemini-3.8-flash", None)
-    };
+    let target_model = crate::proxy::audio::pick_dynamic_gemini_model(state, "search", None);
+    let res = crate::proxy::audio::execute_generate_content(state, &target_model, &target_model, |acc| {
+        crate::proxy::antigravity::build_web_search_payload(query, None, &target_model, acc.project_id.as_deref())
+    })
+    .await;
 
-    let account = match selected_account {
-        Ok(acc) => acc,
-        Err(e) => return format!("Search failed: {}", e),
-    };
-
-    let (platform_str, ide_ver) = {
-        let cfg = state.config.read();
-        (cfg.resolved_platform(), cfg.spoof_ide_version.clone())
-    };
-
-    let search_payload = crate::proxy::antigravity::build_web_search_payload(
-        query,
-        None,
-        "gemini-2.5-flash",
-        account.project_id.as_deref(),
-    );
-
-    let client = state.get_client_for_account(&account);
-    let token = account.api_key.clone();
-    let (client_id, machine_id) = if let Some(ref dp) = account.device_profile {
-        (dp.dev_device_id.clone(), dp.machine_id.clone())
-    } else {
-        (uuid::Uuid::new_v4().to_string(), uuid::Uuid::new_v4().simple().to_string())
-    };
-
-    let headers = crate::proxy::server::build_upstream_headers_json(
-        &token,
-        &client_id,
-        &machine_id,
-        platform_str,
-        &ide_ver,
-        "AUTO",
-        "stable",
-        true,
-        true,
-        "gemini-3.5-flash-lite",
-    );
-
-    for &endpoint in crate::proxy::antigravity::GENERATE_ENDPOINTS.iter() {
-        if let Ok(res) = client
-            .post(endpoint)
-            .headers(headers.clone())
-            .json(&search_payload)
-            .send()
-            .await
-        {
-            if res.status().is_success() {
-                if let Ok(val) = res.json::<Value>().await {
-                    let mut text = String::new();
-                    let actual = val.get("response").unwrap_or(&val);
-                    if let Some(cands) = actual.get("candidates").and_then(|c| c.as_array()) {
-                        for cand in cands {
-                            if let Some(parts) = cand.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array()) {
-                                for part in parts {
-                                    if let Some(t) = part.get("text").and_then(|txt| txt.as_str()) {
-                                        text.push_str(t);
-                                    }
-                                }
+    match res {
+        Ok((val, _account_name)) => {
+            let actual = val.get("response").unwrap_or(&val);
+            let mut text = String::new();
+            if let Some(cands) = actual.get("candidates").and_then(|c| c.as_array()) {
+                for cand in cands {
+                    if let Some(parts) = cand.get("content").and_then(|c| c.get("parts")).and_then(|p| p.as_array()) {
+                        for part in parts {
+                            if part.get("thought").and_then(|t| t.as_bool()) == Some(true) {
+                                continue;
+                            }
+                            if let Some(t) = part.get("text").and_then(|txt| txt.as_str()) {
+                                text.push_str(t);
                             }
                         }
                     }
-                    let (_, _, sources) = crate::proxy::antigravity::extract_grounding_info(actual);
-                    if !sources.is_empty() {
-                        text.push_str(&sources);
-                    }
-                    if !text.is_empty() {
-                        return text;
-                    }
                 }
             }
+            let (_, _, sources) = crate::proxy::antigravity::extract_grounding_info(actual);
+            if !sources.is_empty() {
+                text.push_str(&sources);
+            }
+            if !text.is_empty() {
+                return text;
+            }
+            format!("Search query '{}' executed, but no grounding text was returned.", query)
         }
+        Err((status, err)) => format!("Search failed (HTTP {}): {}", status, err),
     }
-
-    format!("Search query '{}' executed, but no grounding text was returned.", query)
 }
 
 async fn execute_mcp_fetch_url(state: &AppState, url_str: &str) -> String {
-    // 1. Direct fetch using proxy client with natural user agent
+    let clean_url = url_str.trim();
+    if !clean_url.starts_with("http://") && !clean_url.starts_with("https://") {
+        return format!("Invalid URL scheme for '{}'. Only http:// and https:// URLs are supported.", clean_url);
+    }
+
+    // Direct fetch using proxy client with natural user agent
     let client = &state.http_client;
     match client
-        .get(url_str)
+        .get(clean_url)
         .header(
             "User-Agent",
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
@@ -355,57 +317,69 @@ async fn execute_mcp_fetch_url(state: &AppState, url_str: &str) -> String {
         Ok(resp) => {
             if resp.status().is_success() {
                 let html = resp.text().await.unwrap_or_default();
-                // Strip tags for clean markdown/text content
+                // Strip tags for clean markdown/text content preserving all UTF-8 characters
                 let clean = strip_html_tags(&html);
-                if clean.len() > 30000 {
-                    format!("{}\n\n[Content truncated at 30,000 characters]", &clean[..30000])
+                if clean.chars().count() > 30000 {
+                    let truncated: String = clean.chars().take(30000).collect();
+                    format!("{}\n\n[Content truncated at 30,000 characters]", truncated)
                 } else {
                     clean
                 }
             } else {
-                format!("Failed to fetch URL {}: HTTP {}", url_str, resp.status())
+                format!("Failed to fetch URL {}: HTTP {}", clean_url, resp.status())
             }
         }
-        Err(e) => format!("Error connecting to URL {}: {}", url_str, e),
+        Err(e) => format!("Error connecting to URL {}: {}", clean_url, e),
     }
 }
 
-fn strip_html_tags(html: &str) -> String {
-    let mut out = String::new();
+pub fn strip_html_tags(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
     let mut in_tag = false;
-    let mut in_script = false;
+    let mut in_script_or_style = false;
+    let mut tag_buffer = String::new();
 
-    let lower = html.to_lowercase();
-    let mut i = 0;
-    let bytes = html.as_bytes();
-
-    while i < bytes.len() {
-        if !in_tag && bytes[i] == b'<' {
+    for c in html.chars() {
+        if c == '<' {
             in_tag = true;
-            if lower[i..].starts_with("<script") || lower[i..].starts_with("<style") {
-                in_script = true;
-            }
-            i += 1;
+            tag_buffer.clear();
             continue;
         }
 
-        if in_tag && bytes[i] == b'>' {
-            in_tag = false;
-            if in_script && (lower[..i].ends_with("</script") || lower[..i].ends_with("</style")) {
-                in_script = false;
+        if in_tag {
+            if c == '>' {
+                in_tag = false;
+                let tag_lower = tag_buffer.trim().to_lowercase();
+                if tag_lower.starts_with("script") || tag_lower.starts_with("style") {
+                    in_script_or_style = true;
+                } else if tag_lower.starts_with("/script") || tag_lower.starts_with("/style") {
+                    in_script_or_style = false;
+                } else {
+                    let bare_tag = tag_lower.strip_prefix('/').unwrap_or(&tag_lower);
+                    let tag_name = bare_tag.split_whitespace().next().unwrap_or("");
+                    if matches!(
+                        tag_name,
+                        "p" | "div" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
+                            | "li" | "tr" | "br" | "hr" | "header" | "footer"
+                            | "article" | "section" | "blockquote"
+                    ) {
+                        out.push(' ');
+                    }
+                }
+                tag_buffer.clear();
+            } else if tag_buffer.len() < 32 {
+                tag_buffer.push(c);
             }
-            i += 1;
             continue;
         }
 
-        if !in_tag && !in_script {
-            out.push(bytes[i] as char);
+        if !in_script_or_style {
+            out.push(c);
         }
-        i += 1;
     }
 
-    // Collapse multi-newlines and spaces
-    let mut final_text = String::new();
+    // Collapse multi-newlines and spaces preserving UTF-8 cleanly
+    let mut final_text = String::with_capacity(out.len());
     let mut last_space = false;
     for c in out.chars() {
         if c.is_whitespace() {

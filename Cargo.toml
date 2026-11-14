@@ -61,10 +61,6 @@ windows-sys = { version = "0.59", features = [
 [build-dependencies]
 slint-build = "1.9"
 
-[dev-dependencies]
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
-
-
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"
 
@@ -73,6 +69,7 @@ opt-level = 3
 lto = "fat"
 codegen-units = 1
 panic = "unwind"
+strip = "symbols"
 
 [package.metadata.generate-rpm]
 assets = [
@@ -80,5 +77,3 @@ assets = [
     { source = "packaging/linux/amr.desktop", dest = "/usr/share/applications/amr.desktop", mode = "644" },
     { source = "assets/icons/logo_256.png", dest = "/usr/share/icons/hicolor/256x256/apps/amr.png", mode = "644" },
 ]
-
-strip = "symbols"

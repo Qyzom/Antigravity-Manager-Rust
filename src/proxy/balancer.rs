@@ -139,7 +139,7 @@ impl LoadBalancer {
         }
     }
 
-    /// Extract or compute a rock-solid, stable session fingerprint across multi-turn interactions
+    /// Extract or compute a deterministic session fingerprint across multi-turn interactions
     pub fn extract_session_fingerprint(
         req: &OpenAIChatRequest,
         header_session_id: Option<&str>,

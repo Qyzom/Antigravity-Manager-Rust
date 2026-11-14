@@ -80,7 +80,7 @@
 | Specification | AntigravityManager (Draculabo) | Antigravity-Manager (lbjlaq) | AMR |
 | :--- | :---: | :---: | :---: |
 | **Tech Stack** | TypeScript, Electron 37, Node.js 24 | Rust, Tauri v2, WebKitGTK | **Pure Rust (Tokio, Axum, Slint 1.9)** |
-| **Tracked Repository Files** | 2,597 files | 598 files | **61 files** |
+| **Tracked Repository Files** | 2,597 files | 598 files | **59 files** |
 | **GUI RAM (RSS)** | ~220 – 380 MB | ~120 – 180 MB | **~22 MB** |
 | **Headless / Daemon Mode** | Not supported | Not supported | **Supported (~2.5 MB RAM)** |
 | **Cold Startup Latency** | 3.5 – 5.0 s | 1.5 – 2.2 s | **< 60 ms** |
@@ -192,8 +192,8 @@ AMR provides a specialized anti-detection engine designed to replicate genuine G
 
 1. **Authentic Binary Signatures & Client Metadata:**
    - **Go SDK Header:** Emulates the official Go language server runtime via `X-Goog-Api-Client: gl-go/1.28.0 gdcl/0.1.0`.
-   - **Client Info Payload:** Injects official IDE telemetry into requests (`clientType: "ANTIGRAVITY"`, `ideType: "ANTIGRAVITY"`, `ideVersion: "2.28.1"`).
-   - **Production Endpoint Enforcement:** Locks requests strictly to production API gateways (`cloudcode-pa.googleapis.com`), preventing suspicious flapping to internal Google sandboxes (`daily-cloudcode-pa`, `.sandbox.googleapis.com`).
+   - **Client Info Payload:** Injects official IDE telemetry into requests (`clientType: "ANTIGRAVITY"`, `ideType: "ANTIGRAVITY"`, `ideVersion: "2.29.1"`).
+   - **Production Endpoint Enforcement:** Locks requests strictly to official production API gateways (`daily-cloudcode-pa.googleapis.com`), preventing suspicious flapping to internal Google test sandboxes (`.sandbox.googleapis.com`).
 
 2. **Adaptive Exponential Backoff Ladder (Anti-429 Protection):**
    - When an account receives an HTTP 429 (`Too Many Requests`), it is never hammered in rapid retry loops. Instead, AMR steps the account through an adaptive backoff ladder:

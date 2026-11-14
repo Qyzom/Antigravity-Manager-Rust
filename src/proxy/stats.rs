@@ -376,10 +376,16 @@ impl ProxyStats {
                 error_msg: error_msg.map(|s| s.to_string()),
             };
 
-            // Write to disk logs.jsonl
+            // Write to disk logs.jsonl with 50 MB rotation cap to prevent disk exhaustion
             let log_path = Self::logs_file_path();
             if let Some(parent) = log_path.parent() {
                 let _ = std::fs::create_dir_all(parent);
+            }
+            if let Ok(meta) = std::fs::metadata(&log_path) {
+                if meta.len() > 50 * 1024 * 1024 {
+                    let backup = log_path.with_extension("jsonl.old");
+                    let _ = std::fs::rename(&log_path, backup);
+                }
             }
             if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) {
                 if let Ok(line) = serde_json::to_string(&item) {

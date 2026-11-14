@@ -9,3 +9,7 @@ Cargo.lock
 *.exe
 *.deb
 *.rpm
+stats.json
+logs.jsonl
+logs.jsonl.old
+config.json
