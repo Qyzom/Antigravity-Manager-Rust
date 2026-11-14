@@ -489,6 +489,13 @@ pub async fn handle_audio_transcriptions(
     State(state): State<AppState>,
     mut multipart: Multipart,
 ) -> Response {
+    if !state.config.read().is_model_enabled("whisper-1") {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "AMR: Model 'whisper-1' is disabled by administrator in settings.".to_string(),
+            "model_disabled",
+        );
+    }
     let start_time = Instant::now();
     let mut audio_bytes: Option<Vec<u8>> = None;
     let mut filename: Option<String> = None;
@@ -657,6 +664,14 @@ pub async fn handle_image_generations(
     State(state): State<AppState>,
     Json(req): Json<ImageGenerationRequest>,
 ) -> Response {
+    let target_check = req.model.as_deref().unwrap_or("gemini-3.1-flash-image");
+    if !state.config.read().is_model_enabled(target_check) {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            format!("AMR: Model '{}' is disabled by administrator in settings.", target_check),
+            "model_disabled",
+        );
+    }
     let start_time = Instant::now();
     let prompt = req.prompt.trim().to_string();
     if prompt.is_empty() {
@@ -810,6 +825,13 @@ pub async fn handle_audio_speech(
     State(state): State<AppState>,
     Json(req): Json<AudioSpeechRequest>,
 ) -> Response {
+    if !state.config.read().is_model_enabled("tts-1") {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "AMR: Model 'tts-1' is disabled by administrator in settings.".to_string(),
+            "model_disabled",
+        );
+    }
     let start_time = Instant::now();
     let input_text = req.input.trim().to_string();
     if input_text.is_empty() {
@@ -971,6 +993,13 @@ pub async fn handle_web_search(
     State(state): State<AppState>,
     Json(req): Json<WebSearchRequest>,
 ) -> Response {
+    if !state.config.read().is_model_enabled("web-search") {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "AMR: Model 'web-search' is disabled by administrator in settings.".to_string(),
+            "model_disabled",
+        );
+    }
     let start_time = Instant::now();
     let query = req.query.trim().to_string();
     if query.is_empty() {

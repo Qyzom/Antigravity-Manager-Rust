@@ -303,10 +303,10 @@ async fn oauth_callback(
                     .cloned()
                     .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
                 let det = crate::proxy::antigravity::DetailedQuotaInfo {
-                    claude_gpt_percent: 100,
-                    claude_gpt_reset: "in 4h 00m".to_string(),
-                    claude_gpt_weekly_percent: 100,
-                    claude_gpt_weekly_reset: "in 7d 00h".to_string(),
+                    claude_percent: 100,
+                    claude_reset: "in 4h 00m".to_string(),
+                    claude_weekly_percent: 100,
+                    claude_weekly_reset: "in 7d 00h".to_string(),
                     gemini_percent: 100,
                     gemini_reset: "in 4h 00m".to_string(),
                     gemini_weekly_percent: 100,
@@ -371,10 +371,10 @@ async fn oauth_callback(
             existing.quota_used = quota_used;
             existing.quota_limit = quota_limit;
             existing.quota_reset = quota_reset;
-            existing.claude_gpt_percent = detailed_quota.claude_gpt_percent;
-            existing.claude_gpt_reset = detailed_quota.claude_gpt_reset;
-            existing.claude_gpt_weekly_percent = detailed_quota.claude_gpt_weekly_percent;
-            existing.claude_gpt_weekly_reset = detailed_quota.claude_gpt_weekly_reset;
+            existing.claude_percent = detailed_quota.claude_percent;
+            existing.claude_reset = detailed_quota.claude_reset;
+            existing.claude_weekly_percent = detailed_quota.claude_weekly_percent;
+            existing.claude_weekly_reset = detailed_quota.claude_weekly_reset;
             existing.gemini_percent = detailed_quota.gemini_percent;
             existing.gemini_reset = detailed_quota.gemini_reset;
             existing.gemini_weekly_percent = detailed_quota.gemini_weekly_percent;
@@ -398,10 +398,10 @@ async fn oauth_callback(
                 quota_used,
                 quota_limit,
                 quota_reset,
-                claude_gpt_percent: detailed_quota.claude_gpt_percent,
-                claude_gpt_reset: detailed_quota.claude_gpt_reset,
-                claude_gpt_weekly_percent: detailed_quota.claude_gpt_weekly_percent,
-                claude_gpt_weekly_reset: detailed_quota.claude_gpt_weekly_reset,
+                claude_percent: detailed_quota.claude_percent,
+                claude_reset: detailed_quota.claude_reset,
+                claude_weekly_percent: detailed_quota.claude_weekly_percent,
+                claude_weekly_reset: detailed_quota.claude_weekly_reset,
                 gemini_percent: detailed_quota.gemini_percent,
                 gemini_reset: detailed_quota.gemini_reset,
                 gemini_weekly_percent: detailed_quota.gemini_weekly_percent,
@@ -554,6 +554,26 @@ async fn gemini_content(
 
     let requested_model = raw_model.trim_start_matches("models/").to_string();
 
+    if !state.config.read().is_model_enabled(&requested_model) {
+        let (lang, standardized) = {
+            let c = state.config.read();
+            (c.language.clone(), c.standardized_error_handling)
+        };
+        let raw = format!("Model '{}' is disabled by administrator in settings.", requested_model);
+        let msg = format_amr_error_message(&raw, StatusCode::FORBIDDEN, &lang, standardized);
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "error": {
+                    "code": 403,
+                    "message": msg,
+                    "status": "PERMISSION_DENIED"
+                }
+            })),
+        )
+            .into_response();
+    }
+
     let header_session = headers
         .get("x-session-id")
         .or_else(|| headers.get("session-id"))
@@ -584,12 +604,18 @@ async fn gemini_content(
             ).into_response();
         }
         Err(e) => {
+            let (lang, standardized) = {
+                let c = state.config.read();
+                (c.language.clone(), c.standardized_error_handling)
+            };
+            let raw = format!("{}", e);
+            let msg = format_amr_error_message(&raw, StatusCode::TOO_MANY_REQUESTS, &lang, standardized);
             return (
                 StatusCode::TOO_MANY_REQUESTS,
                 Json(json!({
                     "error": {
                         "code": 429,
-                        "message": format!("{}", e),
+                        "message": msg,
                         "status": "RESOURCE_EXHAUSTED"
                     }
                 })),
@@ -817,6 +843,26 @@ async fn chat_completions(
     let start_time = Instant::now();
     let requested_model = payload.model.clone();
 
+    if !state.config.read().is_model_enabled(&requested_model) {
+        let (lang, standardized) = {
+            let c = state.config.read();
+            (c.language.clone(), c.standardized_error_handling)
+        };
+        let raw = format!("Model '{}' is disabled by administrator in settings.", requested_model);
+        let msg = format_amr_error_message(&raw, StatusCode::FORBIDDEN, &lang, standardized);
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "error": {
+                    "message": msg,
+                    "type": "model_disabled",
+                    "code": 403
+                }
+            })),
+        )
+            .into_response();
+    }
+
     let header_session = headers
         .get("x-session-id")
         .or_else(|| headers.get("session-id"))
@@ -863,11 +909,17 @@ async fn chat_completions(
                 0,
                 lat,
             );
+            let (lang, standardized) = {
+                let c = state.config.read();
+                (c.language.clone(), c.standardized_error_handling)
+            };
+            let raw = format!("{}", e);
+            let msg = format_amr_error_message(&raw, status, &lang, standardized);
             return (
                 status,
                 Json(json!({
                     "error": {
-                        "message": format!("{}", e),
+                        "message": msg,
                         "type": "routing_error",
                         "code": match e {
                             crate::proxy::balancer::RoutingError::ClaudeQuotaExhausted { .. } => "claude_quota_exhausted",
@@ -1940,6 +1992,26 @@ async fn claude_messages(
         format!("ctx-{:016x}", hasher.finish())
     };
 
+    if !state.config.read().is_model_enabled(&model) {
+        let (lang, standardized) = {
+            let c = state.config.read();
+            (c.language.clone(), c.standardized_error_handling)
+        };
+        let raw = format!("Model '{}' is disabled by administrator in settings.", model);
+        let msg = format_amr_error_message(&raw, StatusCode::FORBIDDEN, &lang, standardized);
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({
+                "type": "error",
+                "error": {
+                    "type": "model_disabled",
+                    "message": msg
+                }
+            })),
+        )
+            .into_response();
+    }
+
     let selected_account = {
         let cfg = state.config.read();
         state
@@ -1960,13 +2032,19 @@ async fn claude_messages(
                 crate::proxy::balancer::RoutingError::NoAccounts => StatusCode::SERVICE_UNAVAILABLE,
                 _ => StatusCode::TOO_MANY_REQUESTS,
             };
+            let (lang, standardized) = {
+                let c = state.config.read();
+                (c.language.clone(), c.standardized_error_handling)
+            };
+            let raw = format!("{}", e);
+            let msg = format_amr_error_message(&raw, status, &lang, standardized);
             return (
                 status,
                 Json(json!({
                     "type": "error",
                     "error": {
                         "type": "rate_limit_error",
-                        "message": format!("{}", e)
+                        "message": msg
                     }
                 })),
             )
@@ -2643,5 +2721,175 @@ async fn execute_claude_request(
             );
             ((status, text).into_response(), is_429)
         }
+    }
+}
+
+pub fn format_amr_error_message(raw: &str, status: StatusCode, lang: &str, standardized: bool) -> String {
+    if !standardized {
+        return raw.to_string();
+    }
+    let prefix = match lang.to_lowercase().as_str() {
+        "ru" => "AMR: Ошибка спуфинга — ",
+        "zh" => "AMR: 伪装错误 — ",
+        _ => "AMR: Spoof error — ",
+    };
+    let detail = match status {
+        StatusCode::TOO_MANY_REQUESTS => match lang.to_lowercase().as_str() {
+            "ru" => "Все подключенные аккаунты исчерпали квоту запросов (HTTP 429). Повторите запрос позже.",
+            "zh" => "所有已连接账号的配额均已耗尽 (HTTP 429)，请稍后再试。",
+            _ => "All connected accounts exhausted quota (HTTP 429). Please retry later.",
+        },
+        StatusCode::SERVICE_UNAVAILABLE => match lang.to_lowercase().as_str() {
+            "ru" => "Нет доступных активных аккаунтов в пуле AMR.",
+            "zh" => "AMR 账号池中没有可用的活跃账号。",
+            _ => "No active accounts available in AMR pool.",
+        },
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => match lang.to_lowercase().as_str() {
+            "ru" => "Ошибка авторизации Google OAuth или доступ запрещен.",
+            "zh" => "Google OAuth 认证失败或权限不足。",
+            _ => "Authentication failure or permission denied.",
+        },
+        _ => raw,
+    };
+    format!("{}{}", prefix, detail)
+}
+
+pub async fn test_proxy_connection(proxy_url: &str) -> Result<u64, String> {
+    let clean = proxy_url.trim();
+    if clean.is_empty() {
+        return Err("Proxy URL is empty".to_string());
+    }
+    let proxy = reqwest::Proxy::all(clean).map_err(|e| format!("Invalid proxy URL: {}", e))?;
+    let client = reqwest::Client::builder()
+        .proxy(proxy)
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| format!("Failed to build proxy client: {}", e))?;
+
+    let t0 = std::time::Instant::now();
+    let res = client
+        .get("https://cloudcode-pa.googleapis.com")
+        .send()
+        .await
+        .map_err(|e| format!("Connection failed: {}", e))?;
+
+    let _ = res.status();
+    Ok(t0.elapsed().as_millis() as u64)
+}
+
+pub async fn run_diagnostic_check(state: &AppState, model_id: &str) -> (u16, u64, String) {
+    let t0 = std::time::Instant::now();
+    let cfg = state.config.read().clone();
+    if !cfg.is_model_enabled(model_id) {
+        return (403, 0, "Model is disabled in settings".to_string());
+    }
+    let acc_res = state.balancer.select_account(&cfg, model_id, None);
+    let mut account = match acc_res {
+        Ok(a) => a,
+        Err(e) => return (429, t0.elapsed().as_millis() as u64, format!("Routing failed: {}", e)),
+    };
+
+    let (target_model, _) = crate::proxy::router::resolve_model_with_effort(model_id, &account, None);
+
+    let client_id = account
+        .device_profile
+        .as_ref()
+        .map(|p| p.dev_device_id.clone())
+        .unwrap_or_else(|| "device-id-fallback".to_string());
+    let machine_id = account
+        .device_profile
+        .as_ref()
+        .map(|p| p.machine_id.clone())
+        .unwrap_or_else(|| "machine-id-fallback".to_string());
+
+    let platform = cfg.resolved_platform();
+    let ide_ver = cfg.spoof_ide_version.clone();
+    let spoof_arch = cfg.spoof_arch.clone();
+    let spoof_channel = cfg.spoof_channel.clone();
+    let spoof_go = cfg.spoof_go_sdk;
+    let inject_meta = cfg.inject_ide_metadata;
+
+    let headers = build_upstream_headers_json(
+        &account.api_key,
+        &client_id,
+        &machine_id,
+        platform,
+        &ide_ver,
+        &spoof_arch,
+        &spoof_channel,
+        spoof_go,
+        inject_meta,
+        &target_model,
+    );
+
+    let url = format!(
+        "https://cloudcode-pa.googleapis.com/v1internal:generateContent?model={}",
+        target_model
+    );
+
+    let test_body = serde_json::json!({
+        "contents": [{
+            "role": "user",
+            "parts": [{"text": "Hello, diagnostic test."}]
+        }],
+        "generationConfig": {
+            "maxOutputTokens": 10,
+            "temperature": 0.2
+        }
+    });
+
+    let client = state.http_client.clone();
+    match client.post(&url).headers(headers).json(&test_body).send().await {
+        Ok(resp) => {
+            let status = resp.status().as_u16();
+            let latency = t0.elapsed().as_millis() as u64;
+            if resp.status().is_success() {
+                (status, latency, "OK: Model is responsive and healthy".to_string())
+            } else if (status == 401 || status == 403) && account.refresh_token.is_some() {
+                if let Some(ref rt) = account.refresh_token {
+                    if let Ok(tok_res) = crate::proxy::antigravity::refresh_token(&client, rt).await {
+                        let fresh_token = tok_res.access_token;
+                        {
+                            let mut cfg_w = state.config.write();
+                            if let Some(acc) = cfg_w.accounts.iter_mut().find(|a| a.id == account.id) {
+                                acc.api_key = fresh_token.clone();
+                                if tok_res.refresh_token.is_some() {
+                                    acc.refresh_token = tok_res.refresh_token.clone();
+                                }
+                            }
+                            let _ = cfg_w.save();
+                        }
+                        account.api_key = fresh_token;
+                        let retry_headers = build_upstream_headers_json(
+                            &account.api_key,
+                            &client_id,
+                            &machine_id,
+                            platform,
+                            &ide_ver,
+                            &spoof_arch,
+                            &spoof_channel,
+                            spoof_go,
+                            inject_meta,
+                            &target_model,
+                        );
+                        if let Ok(retry_resp) = client.post(&url).headers(retry_headers).json(&test_body).send().await {
+                            let retry_status = retry_resp.status().as_u16();
+                            let retry_lat = t0.elapsed().as_millis() as u64;
+                            if retry_resp.status().is_success() {
+                                return (retry_status, retry_lat, "OK: Model is responsive and healthy (token auto-refreshed)".to_string());
+                            } else {
+                                let err_text = retry_resp.text().await.unwrap_or_default();
+                                return (retry_status, retry_lat, format!("Upstream HTTP {}: {}", retry_status, err_text));
+                            }
+                        }
+                    }
+                }
+                (status, latency, format!("Upstream HTTP {}: Authentication failed", status))
+            } else {
+                let err_text = resp.text().await.unwrap_or_default();
+                (status, latency, format!("Upstream HTTP {}: {}", status, err_text))
+            }
+        }
+        Err(e) => (502, t0.elapsed().as_millis() as u64, format!("Network error: {}", e)),
     }
 }
