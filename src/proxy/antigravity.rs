@@ -543,7 +543,7 @@ pub async fn fetch_project_and_tier(
 
     // Double check via quota summary: any account with Claude quota is definitely PRO
     let quota_summary = fetch_user_quota_summary(client, access_token).await;
-    if quota_summary.claude_gpt_percent > 0 {
+    if quota_summary.claude_percent > 0 {
         tier = "PRO".to_string();
     }
 
@@ -583,10 +583,10 @@ struct QuotaSummaryBucket {
 
 #[derive(Debug, Clone)]
 pub struct DetailedQuotaInfo {
-    pub claude_gpt_percent: i32,
-    pub claude_gpt_reset: String,
-    pub claude_gpt_weekly_percent: i32,
-    pub claude_gpt_weekly_reset: String,
+    pub claude_percent: i32,
+    pub claude_reset: String,
+    pub claude_weekly_percent: i32,
+    pub claude_weekly_reset: String,
     pub gemini_percent: i32,
     pub gemini_reset: String,
     pub gemini_weekly_percent: i32,
@@ -682,11 +682,13 @@ pub async fn fetch_user_quota_summary(
                         }
                     }
 
+                    let c_pct = (claude_5h_frac * 100.0).round() as i32;
+                    let c_week_pct = (claude_week_frac * 100.0).round() as i32;
                     return DetailedQuotaInfo {
-                        claude_gpt_percent: (claude_5h_frac * 100.0).round() as i32,
-                        claude_gpt_reset: claude_5h_reset,
-                        claude_gpt_weekly_percent: (claude_week_frac * 100.0).round() as i32,
-                        claude_gpt_weekly_reset: claude_week_reset,
+                        claude_percent: c_pct,
+                        claude_reset: claude_5h_reset,
+                        claude_weekly_percent: c_week_pct,
+                        claude_weekly_reset: claude_week_reset,
                         gemini_percent: (gemini_5h_frac * 100.0).round() as i32,
                         gemini_reset: gemini_5h_reset,
                         gemini_weekly_percent: (gemini_week_frac * 100.0).round() as i32,
@@ -698,10 +700,10 @@ pub async fn fetch_user_quota_summary(
     }
 
     DetailedQuotaInfo {
-        claude_gpt_percent: 100,
-        claude_gpt_reset: "in 4h 00m".to_string(),
-        claude_gpt_weekly_percent: 100,
-        claude_gpt_weekly_reset: "in 7d 00h".to_string(),
+        claude_percent: 100,
+        claude_reset: "in 4h 00m".to_string(),
+        claude_weekly_percent: 100,
+        claude_weekly_reset: "in 7d 00h".to_string(),
         gemini_percent: 100,
         gemini_reset: "in 4h 00m".to_string(),
         gemini_weekly_percent: 100,
@@ -789,14 +791,20 @@ pub async fn fetch_account_models_and_quota(
                             continue;
                         }
 
+                        let (clean_id, was_disabled_in_id) = if let Some(base) = id.strip_suffix("-disabled") {
+                            (base.to_string(), true)
+                        } else {
+                            (id.clone(), false)
+                        };
+
                         let provider = match entry.model_provider.as_deref() {
                             Some("MODEL_PROVIDER_ANTHROPIC") => "anthropic".to_string(),
                             Some("MODEL_PROVIDER_OPENAI") => "openai".to_string(),
                             Some("MODEL_PROVIDER_GOOGLE") => "gemini".to_string(),
                             _ => {
-                                if id.contains("claude") {
+                                if clean_id.contains("claude") {
                                     "anthropic".to_string()
-                                } else if id.contains("gemini") {
+                                } else if clean_id.contains("gemini") {
                                     "gemini".to_string()
                                 } else {
                                     "openai".to_string()
@@ -804,7 +812,7 @@ pub async fn fetch_account_models_and_quota(
                             }
                         };
 
-                        let disabled = entry.disabled.unwrap_or(false);
+                        let disabled = entry.disabled.unwrap_or(false) || was_disabled_in_id;
                         let frac = entry
                             .quota_info
                             .as_ref()
@@ -831,11 +839,11 @@ pub async fn fetch_account_models_and_quota(
                             .filter(|s| !s.is_empty())
                             .or_else(|| entry.tag_description.filter(|s| !s.is_empty()));
 
-                        let is_image_gen = image_gen_set.contains(id.as_str())
-                            || id.to_lowercase().contains("image");
+                        let is_image_gen = image_gen_set.contains(clean_id.as_str())
+                            || clean_id.to_lowercase().contains("image");
                         let modality = if is_image_gen {
                             "image".to_string()
-                        } else if web_search_set.contains(id.as_str()) {
+                        } else if web_search_set.contains(clean_id.as_str()) {
                             "search".to_string()
                         } else {
                             "chat".to_string()
@@ -845,12 +853,20 @@ pub async fn fetch_account_models_and_quota(
                             .supports_thinking
                             .unwrap_or(!is_image_gen);
 
-                        let sort_order = recommended_order.get(&id).copied().unwrap_or(usize::MAX);
-                        let is_recommended_agent = recommended_order.contains_key(&id);
+                        let sort_order = recommended_order.get(&id).or_else(|| recommended_order.get(&clean_id)).copied().unwrap_or(usize::MAX);
+                        let is_recommended_agent = recommended_order.contains_key(&id) || recommended_order.contains_key(&clean_id);
+
+                        let raw_display = entry.display_name.unwrap_or_else(|| clean_id.clone());
+                        let clean_display = raw_display
+                            .strip_suffix(" (Disabled)")
+                            .or_else(|| raw_display.strip_suffix(" (disabled)"))
+                            .or_else(|| raw_display.strip_suffix("-disabled"))
+                            .unwrap_or(&raw_display)
+                            .to_string();
 
                         account_models.push(AccountModelStatus {
-                            id: id.clone(),
-                            display_name: entry.display_name.unwrap_or_else(|| id.clone()),
+                            id: clean_id,
+                            display_name: clean_display,
                             provider,
                             disabled,
                             remaining_fraction: frac,
