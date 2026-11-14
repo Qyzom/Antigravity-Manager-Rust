@@ -29,13 +29,44 @@ pub struct JsonRpcResponse {
     pub error: Option<Value>,
 }
 
+use std::sync::atomic::Ordering;
+
 /// Standalone Model Context Protocol (MCP) HTTP Endpoint handler (`/mcp` / `/v1/mcp`).
 /// Fully compliant with standard Anthropic / Cursor / Windsurf / Cline MCP specification.
+pub async fn execute_mcp_tool_direct(state: &AppState, tool_name: &str, argument: &str) -> String {
+    match tool_name {
+        "google_web_search" => {
+            let req = json!({ "query": argument });
+            execute_mcp_web_search(state, &req).await
+        }
+        "fetch_web_page" => {
+            execute_mcp_fetch_url(state, argument).await
+        }
+        _ => format!("Unknown MCP tool: {}", tool_name),
+    }
+}
+
 pub async fn mcp_handler(
     State(state): State<AppState>,
     Json(req): Json<JsonRpcRequest>,
 ) -> Response {
     let req_id = req.id.clone();
+
+    if !state.config.read().mcp_enabled {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(JsonRpcResponse {
+                jsonrpc: "2.0",
+                id: req_id,
+                result: None,
+                error: Some(json!({
+                    "code": -32603,
+                    "message": "AMR: MCP server is disabled in settings"
+                })),
+            }),
+        )
+            .into_response();
+    }
 
     match req.method.as_str() {
         "initialize" => {
@@ -108,6 +139,7 @@ pub async fn mcp_handler(
         }
 
         "tools/call" => {
+            state.stats.mcp_total_calls.fetch_add(1, Ordering::Relaxed);
             let params = req.params.unwrap_or_default();
             let tool_name = params
                 .get("name")
@@ -117,6 +149,7 @@ pub async fn mcp_handler(
 
             match tool_name {
                 "google_web_search" => {
+                    state.stats.mcp_search_calls.fetch_add(1, Ordering::Relaxed);
                     let query = arguments
                         .get("query")
                         .and_then(|q| q.as_str())
@@ -124,6 +157,7 @@ pub async fn mcp_handler(
                         .trim();
 
                     if query.is_empty() {
+                        state.stats.mcp_error_calls.fetch_add(1, Ordering::Relaxed);
                         return Json(JsonRpcResponse {
                             jsonrpc: "2.0",
                             id: req_id,
@@ -155,6 +189,7 @@ pub async fn mcp_handler(
                 }
 
                 "fetch_web_page" => {
+                    state.stats.mcp_fetch_calls.fetch_add(1, Ordering::Relaxed);
                     let url_str = arguments
                         .get("url")
                         .and_then(|u| u.as_str())
