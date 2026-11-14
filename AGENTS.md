@@ -4,7 +4,18 @@
 Below is the definitive record of changes and protocol advancements implemented across all versions:
 
 ### Version Changelog (English)
-- **v0.1.5 (Latest)**:
+- **v0.1.6 (Latest)**:
+  - **Models & MCP Master Control**: Unified Models tab with MCP Master Card, live status indicator, client configuration exporter, and interactive MCP tool testing modal (`google_web_search`, `fetch_web_page`).
+  - **Model Status & Diagnostics Modal**: Replaced legacy test playground with instant diagnostic dialog displaying model metadata, per-account availability breakdown, last error, and a single "Run Diagnostics" button.
+  - **Clean Model IDs & Hard Proxy Blocking**: Stripped `-disabled` suffix from model identifiers and enforced hard HTTP 403 proxy-level blocking for disabled models across all endpoints (`/v1/chat/completions`, `/v1/messages`, `/v1beta/*`, `/v1/audio/*`, `/v1/images/*`, `/v1/search`).
+  - **Default Thinking Grouping**: Enabled base model grouping by default with inverted toggle (*«Разгруппировать модели по уровню мышления»* / Ungroup thinking models), routing reasoning effort parameters exclusively to base models.
+  - **Decomposed Architecture Settings**: Completely removed separate About tab, embedding AMR system info card into Settings. Distinct modular sections: Proxy Layer, Spoofing, and Settings.
+  - **Standardized Error Normalizer**: Dynamic error handler with localized explanations (RU/EN/ZH) prefixed with `AMR: Spoof error — ...` / `AMR: Ошибка спуфинга — ...`.
+  - **Pure Claude & Gemini Quotas**: Eliminated confusing OpenAI/GPT quota labels, focusing strictly on Claude and Gemini quotas with active models count summary.
+  - **Account Editor Enhancements**: Fixed subpixel rendering blur (`round(...) / 2px * 1px`), added live proxy connection test button with latency display.
+  - **Emoji-Free Action Notifications**: Stripped all checkmark and cross emojis from user-facing action states, preserving clean localized text.
+
+- **v0.1.5**:
   - **Triple Protocol Gateway**: Native unified support for OpenAI API (`/v1/*`), Anthropic Claude API (`/v1/messages`), and Google Gemini Native API (`/v1beta/models/*:generateContent` / `streamGenerateContent`).
   - **Embedded Model Context Protocol (MCP) Server**: Built-in `/mcp` & `/v1/mcp` HTTP endpoint providing `google_web_search` and `fetch_web_page` tools for Claude Code, Cursor, Cline, Windsurf, and AI agents.
   - **Claude Streaming Thinking Auto-Heal**: Automatic `signature_delta` and synthetic thinking signature injection preventing Claude Code CLI and Anthropic clients from failing on empty thought signatures or out-of-order blocks.
@@ -12,7 +23,6 @@ Below is the definitive record of changes and protocol advancements implemented 
   - **Antigravity 2.29.1 Client Emulation**: Updated upstream hub version and CL metadata (`antigravity/hub/2.29.1`, `CL 1015941558`) to match latest Antigravity desktop release (`44.5.1`).
   - **Upstream Image, STT, & TTS Protocol Fixes**: Switched `/v1/images/generations`, `/v1/audio/transcriptions`, and `/v1/audio/speech` to non-streaming `v1internal:generateContent` (`Accept: application/json`) with automatic OAuth token refresh, aspect ratio support, PCM-to-WAV wrapping, and authentic voice mapping.
   - **Web Search (`POST /v1/search` & `googleSearch` Grounding)**: Reverse-engineered Antigravity `GetWebSearchResults` (`requestType: "web_search"`, `googleSearch` tool, `groundingMetadata` sources) and exposed `POST /v1/search`, the `web-search` catalog model, and OpenAI `web_search` tool mapping in `/v1/chat/completions`.
-  - **Personalized UI Test Modals & Modality Badges**: Added distinct model badges (`Image Gen`, `Audio STT`, `Audio TTS`, `Web Search`) and tailored interactive Test Dialogs for image preview/saving, STT audio file browsing/transcription, TTS voice synthesis/playback, and manual web search with sources.
   - **Metadata-Driven Version Placeholders & Packaging**: Synchronized `Cargo.toml` (`0.1.5`), Slint UI version, metainfo XML/desktop stamping in `build_appimage.sh` / `build_deb.sh` / `build_rpm.sh`, `README.md` placeholders, and dynamic changelog extraction in `.github/workflows/release.yml`.
 
 - **v0.1.4**:
@@ -61,6 +71,7 @@ src/
 └── proxy/
     ├── server.rs    # Axum HTTP proxy router (/v1/chat/completions, /v1/messages, /v1/models)
     ├── audio.rs     # Audio STT (/v1/audio/transcriptions), TTS (/v1/audio/speech), Images (/v1/images/generations)
+    ├── mcp.rs       # Model Context Protocol (MCP) server & direct tool execution (search & fetch)
     ├── balancer.rs  # Quota-aware load balancing, session stickiness & KV cache retention
     ├── router.rs    # Suffix table & native reasoning effort parser, model name translation
     ├── antigravity.rs # Upstream OAuth token refresh, Cloud Code Pa API mapping, device profiles

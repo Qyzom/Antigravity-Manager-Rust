@@ -58,12 +58,20 @@
 
 ### Key Features
 
-- **Multi-Protocol Translation:** Bidirectional conversion between OpenAI and Anthropic Claude protocols with full thinking/reasoning preservation (with upstream Google Cloud Code Pa API mapping).
-- **Dual-Mode Reasoning Configuration:** Handles both suffix naming conventions (`-low`, `-medium`, `-high`, `(low)`) and native protocol parameters (`reasoning_effort`, `thinking`).
+- **Triple Protocol Gateway:** Native unified support for OpenAI API (`/v1/*`), Anthropic Claude API (`/v1/messages`), and Google Gemini Native API (`/v1beta/models/*:generateContent` / `streamGenerateContent`).
+- **Embedded MCP Server & Tooling:** Built-in `/mcp` HTTP endpoint providing `google_web_search` and `fetch_web_page` tools for Claude Code, Cursor, Cline, Windsurf, with interactive testing in the UI.
+- **Models & MCP Management:** Unified Models tab with MCP Master Control card, instant status indicators, client configuration JSON generator, and real-time model diagnostics.
+- **Model Status & Diagnostics:** Instant diagnostic dialog showing model metadata, provider, per-account availability breakdown, last failure reason, and a single "Run Diagnostics" button.
+- **Hard Proxy Blocking on Disabled Models:** Strips `-disabled` from model identifiers; disabled models return strict HTTP 403 on all proxy routes.
+- **Default Thinking Grouping:** Base models grouped by default with inverted toggle (*«Разгруппировать модели по уровню мышления»* / Ungroup thinking models), allowing reasoning effort parameter mapping.
+- **Decomposed Modular Tabs:** Clean separation between Proxy Layer (ports, timeouts, pacing, normalizers), Spoofing (stealth channels, jitter, device profiles), and Settings (themes, i18n, autostart, system info).
+- **Standardized Error Normalizer:** Transparent and actionable error explanations prefixed with `AMR: Spoof error — ...` / `AMR: Ошибка спуфинга — ...`.
+- **Pure Claude & Gemini Quotas:** Transparent quota calculus focusing strictly on Claude and Gemini quotas with healthy models counts.
+- **Account Editor & Live Proxy Testing:** Pixel-perfect editor dialog without blur, offering one-click proxy connection validation with latency display.
 - **Quota-Aware Load Balancing:** Dynamic quota accounting with automatic 429 failover, sticky session affinity, and configurable emergency reserve thresholds.
-- **Hardware Isolation Profiles:** Distinct device IDs and machine GUIDs per upstream account, with optional randomized jitter (+-15%) for network cadence smoothing.
+- **Hardware Isolation Profiles:** Distinct device IDs and machine GUIDs per upstream account, with optional randomized jitter (±15%) for network cadence smoothing.
 - **Request Inspector & Disk Logging:** Searchable HTTP traffic log with per-request latency, token counts (Prompt, Completion, Thinking), status codes, and payload inspector.
-- **Internationalization (i18n):** Complete localization in English, Russian, and Chinese across all UI tabs, tray menus, and system notifications.
+- **Internationalization (i18n):** Complete localization in English, Russian, and Chinese across all UI tabs, tray menus, and system notifications without emoji clutter.
 
 ---
 
@@ -90,7 +98,7 @@
 
 ### Downloads
 
-Pre-built standalone binaries and distribution packages for the latest AMR release are available on the [**Releases**](https://github.com/Qyzom/Antigravity-Manager-Rust/releases/latest) page (replace `<VERSION>` with the downloaded release tag, e.g. `0.1.5`):
+Pre-built standalone binaries and distribution packages for the latest AMR release are available on the [**Releases**](https://github.com/Qyzom/Antigravity-Manager-Rust/releases/latest) page (replace `<VERSION>` with the downloaded release tag, e.g. `0.1.6`):
 
 #### 🐧 Linux — Intel & AMD 64-bit (`x86_64`)
 | Format / Distro | Package File | Description |
