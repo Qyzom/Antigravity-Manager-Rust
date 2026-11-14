@@ -451,11 +451,11 @@ impl LoadBalancer {
             .iter()
             .filter(|a| match family {
                 ModelFamily::ClaudeOrGpt => {
-                    a.claude_gpt_percent > 0 && a.claude_gpt_weekly_percent > 0
+                    a.claude_percent > 0 && a.claude_weekly_percent > 0
                 }
                 ModelFamily::Gemini => {
                     (a.gemini_percent > 0 && a.gemini_weekly_percent > 0)
-                        || (a.claude_gpt_percent > 0 && a.claude_gpt_weekly_percent > 0)
+                        || (a.claude_percent > 0 && a.claude_weekly_percent > 0)
                 }
             })
             .cloned()
@@ -466,7 +466,7 @@ impl LoadBalancer {
                 ModelFamily::ClaudeOrGpt => {
                     let reset = active_accounts
                         .iter()
-                        .map(|a| a.claude_gpt_reset.as_str())
+                        .map(|a| a.claude_reset.as_str())
                         .next()
                         .unwrap_or("in 4h 00m");
                     Err(RoutingError::ClaudeQuotaExhausted {
@@ -563,7 +563,7 @@ impl LoadBalancer {
             .iter()
             .filter(|a| match family {
                 ModelFamily::ClaudeOrGpt => {
-                    a.claude_gpt_percent > threshold && a.claude_gpt_weekly_percent > threshold
+                    a.claude_percent > threshold && a.claude_weekly_percent > threshold
                 }
                 ModelFamily::Gemini => {
                     a.gemini_percent > threshold && a.gemini_weekly_percent > threshold
@@ -609,7 +609,7 @@ impl LoadBalancer {
                     if let Some(bound_acc) = healthy_accounts.iter().find(|a| a.id == bound_id) {
                         // Account is alive and eligible. Now check mode rules:
                         let bound_rem = match family {
-                            ModelFamily::ClaudeOrGpt => bound_acc.claude_gpt_percent as u64,
+                            ModelFamily::ClaudeOrGpt => bound_acc.claude_percent as u64,
                             ModelFamily::Gemini => bound_acc.gemini_percent as u64,
                         };
 
@@ -629,7 +629,7 @@ impl LoadBalancer {
                                     .iter()
                                     .filter(|a| a.id != bound_id)
                                     .map(|a| match family {
-                                        ModelFamily::ClaudeOrGpt => a.claude_gpt_percent as u64,
+                                        ModelFamily::ClaudeOrGpt => a.claude_percent as u64,
                                         ModelFamily::Gemini => a.gemini_percent as u64,
                                     })
                                     .max()
@@ -667,7 +667,7 @@ impl LoadBalancer {
                 pool.into_iter()
                     .max_by_key(|a| match family {
                         ModelFamily::ClaudeOrGpt => {
-                            a.claude_gpt_percent.min(a.claude_gpt_weekly_percent)
+                            a.claude_percent.min(a.claude_weekly_percent)
                         }
                         ModelFamily::Gemini => a.gemini_percent.min(a.gemini_weekly_percent),
                     })
