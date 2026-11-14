@@ -190,14 +190,14 @@ pub struct UpstreamAccount {
     pub quota_limit: u64,
     #[serde(default = "default_quota_reset")]
     pub quota_reset: String, // e.g. "in 3h 12m"
-    #[serde(default = "default_pct_100")]
-    pub claude_gpt_percent: i32,
-    #[serde(default = "default_quota_reset")]
-    pub claude_gpt_reset: String,
-    #[serde(default = "default_pct_100")]
-    pub claude_gpt_weekly_percent: i32,
-    #[serde(default = "default_weekly_reset")]
-    pub claude_gpt_weekly_reset: String,
+    #[serde(default = "default_pct_100", alias = "claude_gpt_percent")]
+    pub claude_percent: i32,
+    #[serde(default = "default_quota_reset", alias = "claude_gpt_reset")]
+    pub claude_reset: String,
+    #[serde(default = "default_pct_100", alias = "claude_gpt_weekly_percent")]
+    pub claude_weekly_percent: i32,
+    #[serde(default = "default_weekly_reset", alias = "claude_gpt_weekly_reset")]
+    pub claude_weekly_reset: String,
     #[serde(default = "default_pct_100")]
     pub gemini_percent: i32,
     #[serde(default = "default_quota_reset")]
@@ -263,10 +263,10 @@ impl Default for UpstreamAccount {
             quota_used: 0,
             quota_limit: 100_000,
             quota_reset: "in 4h 00m".to_string(),
-            claude_gpt_percent: 100,
-            claude_gpt_reset: "in 4h 00m".to_string(),
-            claude_gpt_weekly_percent: 100,
-            claude_gpt_weekly_reset: "in 7d 00h".to_string(),
+            claude_percent: 100,
+            claude_reset: "in 4h 00m".to_string(),
+            claude_weekly_percent: 100,
+            claude_weekly_reset: "in 7d 00h".to_string(),
             gemini_percent: 100,
             gemini_reset: "in 4h 00m".to_string(),
             gemini_weekly_percent: 100,
@@ -378,6 +378,10 @@ pub struct AppConfig {
     pub default_fingerprint: String,
     #[serde(default = "default_protection_threshold")]
     pub quota_protection_threshold: u8,
+    #[serde(default = "default_true")]
+    pub mcp_enabled: bool,
+    #[serde(default = "default_true")]
+    pub standardized_error_handling: bool,
     #[serde(default = "default_true")]
     pub spoof_go_sdk: bool,
     #[serde(default = "default_true")]
@@ -526,6 +530,8 @@ impl Default for AppConfig {
             heartbeat_interval_secs: 12,
             default_fingerprint: "Claude Code 2.x".to_string(),
             quota_protection_threshold: 10,
+            mcp_enabled: true,
+            standardized_error_handling: true,
             spoof_go_sdk: true,
             inject_ide_metadata: true,
             lock_production_endpoints: true,
@@ -620,6 +626,7 @@ impl AppConfig {
 
     /// Strip known reasoning/effort suffixes algorithmically without hardcoding model names.
     pub fn strip_effort_suffix(raw_id: &str) -> (&str, Option<&'static str>) {
+        let clean = raw_id.strip_suffix("-disabled").unwrap_or(raw_id);
         for (suffix, eff) in [
             ("-thinking", "thinking"),
             ("-minimal", "minimal"),
@@ -629,13 +636,27 @@ impl AppConfig {
             ("-none", "none"),
             ("-off", "off"),
         ] {
-            if let Some(base) = raw_id.strip_suffix(suffix) {
+            if let Some(base) = clean.strip_suffix(suffix) {
                 if !base.is_empty() {
                     return (base, Some(eff));
                 }
             }
         }
-        (raw_id, None)
+        (clean, None)
+    }
+
+    /// Check if a model is currently enabled and allowed to answer incoming requests.
+    pub fn is_model_enabled(&self, id: &str) -> bool {
+        let (base, _) = Self::strip_effort_suffix(id);
+        let clean_base = base.strip_suffix("-disabled").unwrap_or(base);
+        if let Some(m) = self.models.iter().find(|m| {
+            m.id.eq_ignore_ascii_case(id)
+                || m.id.eq_ignore_ascii_case(base)
+                || m.id.eq_ignore_ascii_case(clean_base)
+        }) {
+            return m.is_enabled;
+        }
+        true
     }
 
     /// Normalize an upstream model ID into a clean base ID when grouping is enabled.
@@ -716,7 +737,8 @@ impl AppConfig {
                     continue;
                 }
 
-                let (base, eff) = Self::strip_effort_suffix(&am.id);
+                let clean_am_id = am.id.strip_suffix("-disabled").unwrap_or(&am.id);
+                let (base, eff) = Self::strip_effort_suffix(clean_am_id);
                 let should_group = self.group_reasoning_clones
                     && (eff == Some("thinking")
                         || base_variants.get(base).is_some_and(|s| s.len() > 1));
@@ -724,7 +746,7 @@ impl AppConfig {
                 let cid = if should_group {
                     base.to_string()
                 } else {
-                    am.id.clone()
+                    clean_am_id.to_string()
                 };
 
                 let clean_display = if should_group {
@@ -733,7 +755,7 @@ impl AppConfig {
                     } else {
                         am.display_name.clone()
                     };
-                    for tag in [" (High)", " (Medium)", " (Low)", " (Minimal)", " (Thinking)"] {
+                    for tag in [" (High)", " (Medium)", " (Low)", " (Minimal)", " (Thinking)", " (Disabled)", " (disabled)", "-disabled"] {
                         if let Some(stripped) = d.strip_suffix(tag) {
                             d = stripped.to_string();
                             break;
@@ -743,7 +765,14 @@ impl AppConfig {
                 } else if am.display_name.is_empty() {
                     cid.clone()
                 } else {
-                    am.display_name.clone()
+                    let mut d = am.display_name.clone();
+                    for tag in [" (Disabled)", " (disabled)", "-disabled"] {
+                        if let Some(stripped) = d.strip_suffix(tag) {
+                            d = stripped.to_string();
+                            break;
+                        }
+                    }
+                    d
                 };
 
                 let pct = (am.remaining_fraction * 100.0).round().clamp(0.0, 100.0) as i32;
@@ -878,7 +907,7 @@ impl AppConfig {
                         {
                             acc.added_at = Some(now_ts);
                         }
-                        if acc.claude_gpt_percent > 0 || acc.tier.to_lowercase() == "pro" {
+                        if acc.claude_percent > 0 || acc.tier.to_lowercase() == "pro" {
                             acc.tier = "PRO".to_string();
                         }
                         if acc.device_profile.is_none() {
@@ -1009,7 +1038,7 @@ impl AppConfig {
     }
 
     pub fn format_claude_quota(&self) -> String {
-        self.format_quota_label(self.aggregate_claude_gpt_percent())
+        self.format_quota_label(self.aggregate_claude_percent())
     }
 
     pub fn format_gemini_quota(&self) -> String {
@@ -1017,29 +1046,37 @@ impl AppConfig {
     }
 
     pub fn format_claude_weekly_quota(&self) -> String {
-        self.format_quota_label(self.aggregate_claude_gpt_weekly_percent())
+        self.format_quota_label(self.aggregate_claude_weekly_percent())
     }
 
     pub fn format_gemini_weekly_quota(&self) -> String {
         self.format_quota_label(self.aggregate_gemini_weekly_percent())
     }
 
-    pub fn aggregate_claude_gpt_percent(&self) -> i32 {
+    pub fn aggregate_claude_percent(&self) -> i32 {
         let active: Vec<_> = self.accounts.iter().filter(|a| a.is_active).collect();
         if active.is_empty() {
             return 0;
         }
-        let sum: i32 = active.iter().map(|a| a.claude_gpt_percent).sum();
+        let sum: i32 = active.iter().map(|a| a.claude_percent).sum();
         sum / active.len() as i32
     }
 
-    pub fn aggregate_claude_gpt_weekly_percent(&self) -> i32 {
+    pub fn aggregate_claude_weekly_percent(&self) -> i32 {
         let active: Vec<_> = self.accounts.iter().filter(|a| a.is_active).collect();
         if active.is_empty() {
             return 0;
         }
-        let sum: i32 = active.iter().map(|a| a.claude_gpt_weekly_percent).sum();
+        let sum: i32 = active.iter().map(|a| a.claude_weekly_percent).sum();
         sum / active.len() as i32
+    }
+
+    pub fn aggregate_claude_gpt_percent(&self) -> i32 {
+        self.aggregate_claude_percent()
+    }
+
+    pub fn aggregate_claude_gpt_weekly_percent(&self) -> i32 {
+        self.aggregate_claude_weekly_percent()
     }
 
     pub fn aggregate_gemini_percent(&self) -> i32 {
@@ -1066,7 +1103,7 @@ impl AppConfig {
         self.accounts
             .iter()
             .filter(|a| a.is_active)
-            .map(|a| Self::localize_reset_str(&a.claude_gpt_reset, is_ru, is_zh))
+            .map(|a| Self::localize_reset_str(&a.claude_reset, is_ru, is_zh))
             .next()
             .unwrap_or_else(|| "—".to_string())
     }
@@ -1077,7 +1114,7 @@ impl AppConfig {
         self.accounts
             .iter()
             .filter(|a| a.is_active)
-            .map(|a| Self::localize_reset_str(&a.claude_gpt_weekly_reset, is_ru, is_zh))
+            .map(|a| Self::localize_reset_str(&a.claude_weekly_reset, is_ru, is_zh))
             .next()
             .unwrap_or_else(|| "—".to_string())
     }
@@ -1121,7 +1158,7 @@ impl AppConfig {
                 self.accounts
                     .iter()
                     .filter(|a| a.is_active && a.status == "Active")
-                    .max_by_key(|a| a.claude_gpt_percent.max(a.gemini_percent))
+                    .max_by_key(|a| a.claude_percent.max(a.gemini_percent))
                     .or_else(|| self.accounts.iter().find(|a| a.is_active))
             }
             RoutingStrategy::Failover | RoutingStrategy::RoundRobin => {
