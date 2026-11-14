@@ -5,6 +5,10 @@ Below is the definitive record of changes and protocol advancements implemented 
 
 ### Version Changelog (English)
 - **v0.1.5 (Latest)**:
+  - **Triple Protocol Gateway**: Native unified support for OpenAI API (`/v1/*`), Anthropic Claude API (`/v1/messages`), and Google Gemini Native API (`/v1beta/models/*:generateContent` / `streamGenerateContent`).
+  - **Embedded Model Context Protocol (MCP) Server**: Built-in `/mcp` & `/v1/mcp` HTTP endpoint providing `google_web_search` and `fetch_web_page` tools for Claude Code, Cursor, Cline, Windsurf, and AI agents.
+  - **Claude Streaming Thinking Auto-Heal**: Automatic `signature_delta` and synthetic thinking signature injection preventing Claude Code CLI and Anthropic clients from failing on empty thought signatures or out-of-order blocks.
+  - **Zero-Hardcode Dynamic Model Discovery**: Removed legacy static `gemini-2.5-*` models; AMR now dynamically discovers and loads active recommended models (`agentModelSorts`) and multimodal capabilities directly from upstream accounts.
   - **Antigravity 2.29.1 Client Emulation**: Updated upstream hub version and CL metadata (`antigravity/hub/2.29.1`, `CL 1015941558`) to match latest Antigravity desktop release (`44.5.1`).
   - **Upstream Image, STT, & TTS Protocol Fixes**: Switched `/v1/images/generations`, `/v1/audio/transcriptions`, and `/v1/audio/speech` to non-streaming `v1internal:generateContent` (`Accept: application/json`) with automatic OAuth token refresh, aspect ratio support, PCM-to-WAV wrapping, and authentic voice mapping.
   - **Web Search (`POST /v1/search` & `googleSearch` Grounding)**: Reverse-engineered Antigravity `GetWebSearchResults` (`requestType: "web_search"`, `googleSearch` tool, `groundingMetadata` sources) and exposed `POST /v1/search`, the `web-search` catalog model, and OpenAI `web_search` tool mapping in `/v1/chat/completions`.
@@ -89,11 +93,19 @@ src/
    - All 15+ router, mapper, balancer, and model tests must pass at all times (`cargo test`).
 
 ## Release Packaging & Artifacts
-The release workflow (`.github/workflows/release.yml`) builds standalone release packages in 4 architecture pairs (x86_64 & arm64):
-- **Linux AppImage:** `AMR-*-x86_64.AppImage` & `AMR-*-aarch64.AppImage`
-- **Debian / Ubuntu DEB:** `AMR_*_amd64.deb` & `AMR_*_arm64.deb`
-- **Fedora / RHEL RPM:** `AMR-*-1.x86_64.rpm` & `AMR-*-1.aarch64.rpm`
-- **Windows Portable EXE:** `AMR-*-x86_64.exe` & `AMR-*-arm64.exe`
+The release workflow (`.github/workflows/release.yml`) builds standalone release packages for both Intel/AMD 64-bit (`x86_64`) and ARM 64-bit (`ARM64` / `aarch64`):
+- **Linux — Intel/AMD 64-bit (x86_64):**
+  - AppImage: `AMR-*-x86_64.AppImage` (Universal portable binary)
+  - DEB: `AMR_*_amd64.deb` (Ubuntu / Debian / Mint)
+  - RPM: `AMR-*-1.x86_64.rpm` (Fedora / RHEL / openSUSE)
+- **Linux — ARM 64-bit (ARM64 / aarch64):**
+  - AppImage: `AMR-*-aarch64.AppImage` (ARM64 portable binary for Raspberry Pi / Apple Silicon VMs)
+  - DEB: `AMR_*_arm64.deb` (Ubuntu / Debian ARM64)
+  - RPM: `AMR-*-1.aarch64.rpm` (Fedora / RHEL ARM64)
+- **Windows — Intel/AMD 64-bit (x86_64):**
+  - Portable EXE: `AMR-*-x86_64.exe` (Standalone single-file GUI binary)
+- **Windows — ARM 64-bit (ARM64):**
+  - Portable EXE: `AMR-*-arm64.exe` (Native ARM64 binary for Snapdragon X Elite / Surface Pro)
 
 Do not add unnecessary packaging formats or complex installer wrappers.
 

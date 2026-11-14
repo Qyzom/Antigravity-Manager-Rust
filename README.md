@@ -38,7 +38,7 @@
 
 ### Overview & Philosophy
 
-**AMR (Antigravity Manager Rust)** is a cross-platform local AI protocol proxy and load balancer written in pure Rust. It transforms multiple upstream accounts into unified local endpoints compatible with **OpenAI** (`/v1/chat/completions`, `/v1/models`) and **Anthropic Claude** (`/v1/messages`), supporting modern AI coding tools and agents including **Roo Code**, **Claude Code**, **Cline**, **Cursor**, **Codex**, **OpenCode**, and **Continue.dev**.
+**AMR (Antigravity Manager Rust)** is a cross-platform local AI protocol proxy and load balancer written in pure Rust. It transforms multiple upstream accounts into unified local endpoints compatible with **OpenAI** (`/v1/*`), **Anthropic Claude** (`/v1/messages`), **Google Gemini Native** (`/v1beta/models/*`), and **Model Context Protocol (MCP)** (`/mcp`), supporting modern AI coding tools and agents including **Roo Code**, **Claude Code**, **Cline**, **Cursor**, **Windsurf**, **Codex**, **OpenCode**, and **Continue.dev**.
 
 > [!NOTE]
 > **Focused Scope vs All-in-One "Combines":**  
@@ -90,15 +90,31 @@
 
 ### Downloads
 
-Pre-built binaries and distribution packages for the latest AMR release (x86_64 and native ARM64) are available on the [**Releases**](https://github.com/Qyzom/Antigravity-Manager-Rust/releases/latest) page (replace `<VERSION>` with the downloaded release tag, e.g. `0.1.5`):
+Pre-built standalone binaries and distribution packages for the latest AMR release are available on the [**Releases**](https://github.com/Qyzom/Antigravity-Manager-Rust/releases/latest) page (replace `<VERSION>` with the downloaded release tag, e.g. `0.1.5`):
 
-| OS / Format | Architecture | Package File | Description |
-| :--- | :---: | :--- | :--- |
-| **Linux (AppImage)** | `x86_64` / `aarch64` | `AMR-<VERSION>-x86_64.AppImage`<br/>`AMR-<VERSION>-aarch64.AppImage` | Portable executable (runs on any modern Linux) |
-| **Linux (Debian / Ubuntu)** | `x86_64` / `arm64` | `AMR_<VERSION>_amd64.deb`<br/>`AMR_<VERSION>_arm64.deb` | Standard `.deb` package with system desktop & menu integration |
-| **Linux (Fedora / RHEL)** | `x86_64` / `aarch64` | `AMR-<VERSION>-1.x86_64.rpm`<br/>`AMR-<VERSION>-1.aarch64.rpm` | Standard `.rpm` package with system desktop & menu integration |
-| **Windows 10 / 11** | `x86_64` | `AMR-<VERSION>-x86_64.exe` | Native GUI executable (no console window) with system tray |
-| **Windows on ARM** | `arm64` | `AMR-<VERSION>-arm64.exe` | Native ARM64 executable for Snapdragon X Elite / Surface Pro |
+#### 🐧 Linux — Intel & AMD 64-bit (`x86_64`)
+| Format / Distro | Package File | Description |
+| :--- | :--- | :--- |
+| **AppImage (Portable)** | `AMR-<VERSION>-x86_64.AppImage` | Portable binary (runs on any Linux distribution without installation) |
+| **DEB (Ubuntu / Debian)** | `AMR_<VERSION>_amd64.deb` | Standard package for Ubuntu, Debian, Linux Mint, Pop!_OS with desktop menu integration |
+| **RPM (Fedora / RHEL)** | `AMR-<VERSION>-1.x86_64.rpm` | Standard package for Fedora, RHEL, openSUSE, AlmaLinux, Rocky Linux |
+
+#### 🐧 Linux — ARM 64-bit (`ARM64` / `aarch64`)
+| Format / Distro | Package File | Description |
+| :--- | :--- | :--- |
+| **AppImage (Portable ARM64)** | `AMR-<VERSION>-aarch64.AppImage` | Portable ARM64 binary for Raspberry Pi 4/5, Apple Silicon Linux VMs, ARM servers |
+| **DEB (Ubuntu / Debian ARM64)**| `AMR_<VERSION>_arm64.deb` | Standard package for Ubuntu & Debian on 64-bit ARM architectures |
+| **RPM (Fedora / RHEL ARM64)** | `AMR-<VERSION>-1.aarch64.rpm` | Standard package for Fedora & RHEL on 64-bit ARM architectures |
+
+#### 🪟 Windows — Intel & AMD 64-bit (`x86_64`)
+| Format | Package File | Description |
+| :--- | :--- | :--- |
+| **Portable EXE** | `AMR-<VERSION>-x86_64.exe` | Native standalone GUI executable (no console window) with system tray |
+
+#### 🪟 Windows — ARM 64-bit (`ARM64`)
+| Format | Package File | Description |
+| :--- | :--- | :--- |
+| **Portable EXE (ARM64)** | `AMR-<VERSION>-arm64.exe` | Native ARM64 executable for Snapdragon X Elite, Surface Pro & ARM64 laptops |
 
 ---
 
@@ -198,12 +214,12 @@ claude
 - **API Provider:** `OpenAI Compatible`
 - **Base URL:** `http://127.0.0.1:8045/v1`
 - **API Key:** `sk-amr-local-proxy`
-- **Model ID:** `claude-3-7-sonnet`, `gemini-2.5-pro`, or `claude-3-5-sonnet`
+- **Model ID:** `claude-3-7-sonnet`, `gemini-2.0-flash`, or `claude-3-5-sonnet`
 
 #### 3. Cursor IDE
 - **Settings** -> **Models** -> **OpenAI API Key**: `sk-amr-local-proxy`
 - **Override OpenAI Base URL**: `http://127.0.0.1:8045/v1`
-- Supported models: `claude-3-7-sonnet`, `claude-3-7-sonnet-high`, `gemini-2.5-pro`, `gemini-2.5-flash`
+- Supported models: `claude-3-7-sonnet`, `claude-3-7-sonnet-high`, `gemini-2.0-flash`, `gemini-1.5-pro`
 
 #### 4. Continue.dev
 ```json
@@ -243,6 +259,35 @@ for chunk in response:
     content = chunk.choices[0].delta.content or ""
     print(content, end="", flush=True)
 ```
+
+#### 7. Google Gemini Native SDK (Python)
+```python
+import google.generativeai as genai
+
+genai.configure(
+    api_key="sk-amr-local-proxy",
+    client_options={"api_endpoint": "http://127.0.0.1:8045"}
+)
+
+model = genai.GenerativeModel("gemini-2.0-flash")
+response = model.generate_content("Explain quantum computing in three sentences.")
+print(response.text)
+```
+
+#### 8. Model Context Protocol (MCP) Server
+Add to your client MCP configuration (`claude_desktop_config.json`, Cline, or Cursor):
+```json
+{
+  "mcpServers": {
+    "amr": {
+      "url": "http://127.0.0.1:8045/mcp"
+    }
+  }
+}
+```
+Available tools:
+- `google_web_search(query)`: Grounded Google Search with source citations.
+- `fetch_web_page(url)`: Real-time clean markdown web page fetching for agents.
 
 ---
 
