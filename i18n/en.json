@@ -413,5 +413,7 @@
     "lbl_stat_mcp_fetch": "Web Fetches",
     "lbl_stat_catalog_title": "Model Catalog Engine",
     "lbl_stat_catalog_refreshes": "Catalog Refreshes",
-    "lbl_status_diag_button": "Diagnostics"
+    "lbl_status_diag_button": "Diagnostics",
+    "lbl_hide_unavailable_models": "Hide Unavailable Models from API",
+    "lbl_hide_unavailable_models_desc": "Omit exhausted and disabled models from /v1/models and /v1beta/models broadcast"
 }

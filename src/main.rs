@@ -636,6 +636,8 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_stat_catalog_title: t.lbl_stat_catalog_title.into(),
         lbl_stat_catalog_refreshes: t.lbl_stat_catalog_refreshes.into(),
         lbl_status_diag_button: t.lbl_status_diag_button.into(),
+        lbl_hide_unavailable_models: t.lbl_hide_unavailable_models.into(),
+        lbl_hide_unavailable_models_desc: t.lbl_hide_unavailable_models_desc.into(),
     };
     ui.set_github_update_status(t.btn_check_updates.clone().into());
     ui.set_test_prompt(t.lbl_test_default_prompt.clone().into());
@@ -1641,6 +1643,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_show_stats_tab(cfg.show_stats_tab);
         main_window.set_mcp_enabled(cfg.mcp_enabled);
         main_window.set_standardized_error_handling(cfg.standardized_error_handling);
+        main_window.set_hide_unavailable_models(cfg.hide_unavailable_models);
         main_window.set_enable_billing_emulation(cfg.enable_billing_emulation);
         main_window.set_cadence_jitter_percent(cfg.cadence_jitter_percent as i32);
         main_window.set_setting_check_updates(cfg.check_updates_startup);
@@ -2898,6 +2901,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         if let Some(h) = h_err_norm.upgrade() {
             h.set_standardized_error_handling(next_val);
+        }
+    });
+
+    let c_hide_unavail = Arc::clone(&config_arc);
+    let h_hide_unavail = window_handle.clone();
+    main_window.on_toggle_hide_unavailable_models(move || {
+        let next_val = {
+            let mut cfg = c_hide_unavail.write();
+            cfg.hide_unavailable_models = !cfg.hide_unavailable_models;
+            let _ = cfg.save();
+            cfg.hide_unavailable_models
+        };
+        if let Some(h) = h_hide_unavail.upgrade() {
+            h.set_hide_unavailable_models(next_val);
         }
     });
 

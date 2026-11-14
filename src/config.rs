@@ -428,6 +428,8 @@ pub struct AppConfig {
     pub check_updates_startup: bool,
     #[serde(default)]
     pub clear_logs_on_exit: bool,
+    #[serde(default)]
+    pub hide_unavailable_models: bool,
     #[serde(default = "default_master_api_key")]
     pub master_api_key: String,
     pub accounts: Vec<UpstreamAccount>,
@@ -555,6 +557,7 @@ impl Default for AppConfig {
             enable_billing_emulation: true,
             check_updates_startup: true,
             clear_logs_on_exit: false,
+            hide_unavailable_models: false,
             master_api_key: "sk-amr-v1-master-key".to_string(),
             accounts: Vec::new(),
             active_account_id: None,
@@ -654,7 +657,16 @@ impl AppConfig {
                 || m.id.eq_ignore_ascii_case(base)
                 || m.id.eq_ignore_ascii_case(clean_base)
         }) {
-            return m.is_enabled;
+            if !m.is_enabled || m.availability_status == "disabled" {
+                return false;
+            }
+            if self.hide_unavailable_models
+                && (m.availability_status == "exhausted"
+                    || (m.quota_percent <= 0 && m.available_accounts_count == 0))
+            {
+                return false;
+            }
+            return true;
         }
         true
     }
@@ -1196,6 +1208,12 @@ impl AppConfig {
 
         for m in &self.models {
             if !m.is_enabled || m.availability_status == "disabled" {
+                continue;
+            }
+            if self.hide_unavailable_models
+                && (m.availability_status == "exhausted"
+                    || (m.quota_percent <= 0 && m.available_accounts_count == 0))
+            {
                 continue;
             }
             let (base_id, _) = if self.group_reasoning_clones {

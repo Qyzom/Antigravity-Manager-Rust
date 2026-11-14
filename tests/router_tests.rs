@@ -1808,7 +1808,7 @@ mod tests {
         assert_eq!(resolve_model("web-search", &acc), "web-search");
 
         // Verify native Google Gemini model list builder and payload
-        let gemini_models = amr::proxy::mappers::gemini::build_gemini_models_list(&cfg.models);
+        let gemini_models = amr::proxy::mappers::gemini::build_gemini_models_list(&cfg.models, false);
         assert!(gemini_models["models"].as_array().unwrap().iter().any(|m| m["name"] == "models/gemini-3.8-flash"));
         let gem_req = serde_json::json!({
             "contents": [{"role": "user", "parts": [{"text": "Hello Gemini"}]}],
@@ -1995,7 +1995,7 @@ mod tests {
             },
         ];
 
-        let models_list = build_gemini_models_list(&catalog);
+        let models_list = build_gemini_models_list(&catalog, false);
         let list_arr = models_list["models"].as_array().unwrap();
         assert_eq!(list_arr.len(), 1);
         assert_eq!(list_arr[0]["name"], "models/gemini-3.8-flash");
@@ -2014,5 +2014,98 @@ mod tests {
         balancer.cleanup_expired_sessions(3600);
         let (_, _, _, _, active_pins_after) = balancer.get_metrics();
         assert_eq!(active_pins_after, 0);
+    }
+
+    #[test]
+    fn test_hide_unavailable_models_setting() {
+        use amr::config::{AppConfig, ModelCatalogItem};
+        use amr::proxy::mappers::gemini::build_gemini_models_list;
+
+        let mut cfg = AppConfig::default();
+        cfg.models = vec![
+            ModelCatalogItem {
+                id: "gemini-3.8-flash".into(),
+                display_name: "Gemini 3.8 Flash".into(),
+                provider: "gemini".into(),
+                is_enabled: true,
+                availability_status: "available".into(),
+                quota_percent: 100,
+                available_accounts_count: 2,
+                ..Default::default()
+            },
+            ModelCatalogItem {
+                id: "claude-3-7-sonnet".into(),
+                display_name: "Claude 3.7 Sonnet".into(),
+                provider: "anthropic".into(),
+                is_enabled: true,
+                availability_status: "exhausted".into(),
+                quota_percent: 0,
+                available_accounts_count: 0,
+                ..Default::default()
+            },
+            ModelCatalogItem {
+                id: "disabled-model".into(),
+                display_name: "Disabled Model".into(),
+                provider: "gemini".into(),
+                is_enabled: false,
+                availability_status: "disabled".into(),
+                quota_percent: 0,
+                available_accounts_count: 0,
+                ..Default::default()
+            },
+        ];
+
+        // 1. By default hide_unavailable_models is false: exhausted model is broadcast
+        cfg.hide_unavailable_models = false;
+        let broadcast_false = cfg.get_broadcast_models();
+        let ids_false: Vec<&str> = broadcast_false.iter().filter_map(|m| m.get("id").and_then(|id| id.as_str())).collect();
+        assert!(ids_false.contains(&"gemini-3.8-flash"));
+        assert!(ids_false.contains(&"claude-3-7-sonnet"));
+        assert!(!ids_false.contains(&"disabled-model"));
+
+        let gemini_false = build_gemini_models_list(&cfg.models, false);
+        assert_eq!(gemini_false["models"].as_array().unwrap().len(), 2);
+
+        // 2. When hide_unavailable_models is true: exhausted model is omitted
+        cfg.hide_unavailable_models = true;
+        let broadcast_true = cfg.get_broadcast_models();
+        let ids_true: Vec<&str> = broadcast_true.iter().filter_map(|m| m.get("id").and_then(|id| id.as_str())).collect();
+        assert_eq!(ids_true, vec!["gemini-3.8-flash"]);
+
+        let gemini_true = build_gemini_models_list(&cfg.models, true);
+        assert_eq!(gemini_true["models"].as_array().unwrap().len(), 1);
+        assert_eq!(gemini_true["models"][0]["name"], "models/gemini-3.8-flash");
+
+        // 3. is_model_enabled behavior
+        assert!(cfg.is_model_enabled("gemini-3.8-flash"));
+        assert!(!cfg.is_model_enabled("claude-3-7-sonnet")); // unavailable & exhausted -> false
+        assert!(!cfg.is_model_enabled("disabled-model"));
+    }
+
+    #[test]
+    fn test_format_amr_error_message_comprehensive() {
+        use amr::proxy::server::format_amr_error_message;
+        use reqwest::StatusCode;
+
+        // 404 Not Found
+        let err_404_ru = format_amr_error_message("", StatusCode::NOT_FOUND, "ru", true);
+        assert!(err_404_ru.contains("Запрошенная модель или ресурс не найден"));
+        assert!(err_404_ru.starts_with("AMR: Ошибка спуфинга — "));
+
+        let err_404_en = format_amr_error_message("", StatusCode::NOT_FOUND, "en", true);
+        assert!(err_404_en.contains("requested model or resource was not found"));
+
+        // 502 Bad Gateway
+        let err_502_ru = format_amr_error_message("", StatusCode::BAD_GATEWAY, "ru", true);
+        assert!(err_502_ru.contains("Вышестоящий сервис Google Antigravity"));
+
+        // 403 Forbidden with custom disabled model message
+        let disabled_msg = "Model 'gemini-3.8-flash' is disabled by administrator in settings.";
+        let err_403 = format_amr_error_message(disabled_msg, StatusCode::FORBIDDEN, "ru", true);
+        assert!(err_403.contains("Model 'gemini-3.8-flash' is disabled by administrator"));
+
+        // Non-standardized raw pass-through
+        let raw_pass = format_amr_error_message("raw text error", StatusCode::BAD_REQUEST, "en", false);
+        assert_eq!(raw_pass, "raw text error");
     }
 }

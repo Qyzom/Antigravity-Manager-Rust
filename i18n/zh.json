@@ -413,5 +413,7 @@
     "lbl_stat_mcp_fetch": "网页抓取",
     "lbl_stat_catalog_title": "模型目录引擎",
     "lbl_stat_catalog_refreshes": "目录刷新次数",
-    "lbl_status_diag_button": "诊断"
+    "lbl_status_diag_button": "诊断",
+    "lbl_hide_unavailable_models": "在 API 中隐藏不可用模型",
+    "lbl_hide_unavailable_models_desc": "从 /v1/models 和 /v1beta/models 列表中排除配额耗尽和不可用的模型"
 }

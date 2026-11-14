@@ -463,6 +463,8 @@ pub struct TranslationBundle {
     pub lbl_stat_catalog_title: String,
     pub lbl_stat_catalog_refreshes: String,
     pub lbl_status_diag_button: String,
+    pub lbl_hide_unavailable_models: String,
+    pub lbl_hide_unavailable_models_desc: String,
 }
 
 pub fn get_translations(lang: Language) -> TranslationBundle {

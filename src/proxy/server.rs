@@ -530,7 +530,7 @@ async fn list_models(State(state): State<AppState>) -> impl IntoResponse {
 
 async fn list_gemini_models(State(state): State<AppState>) -> impl IntoResponse {
     let cfg = state.config.read();
-    let gemini_list = crate::proxy::mappers::gemini::build_gemini_models_list(&cfg.models);
+    let gemini_list = crate::proxy::mappers::gemini::build_gemini_models_list(&cfg.models, cfg.hide_unavailable_models);
     Json(gemini_list)
 }
 
@@ -2733,29 +2733,49 @@ pub fn format_amr_error_message(raw: &str, status: StatusCode, lang: &str, stand
         "zh" => "AMR: 伪装错误 — ",
         _ => "AMR: Spoof error — ",
     };
+    if raw.starts_with(prefix) {
+        return raw.to_string();
+    }
+    let lower_raw = raw.to_lowercase();
     let detail = match status {
-        StatusCode::TOO_MANY_REQUESTS => match lang.to_lowercase().as_str() {
-            "ru" => "Все подключенные аккаунты исчерпали квоту запросов (HTTP 429). Повторите запрос позже.",
-            "zh" => "所有已连接账号的配额均已耗尽 (HTTP 429)，请稍后再试。",
-            _ => "All connected accounts exhausted quota (HTTP 429). Please retry later.",
-        },
-        StatusCode::SERVICE_UNAVAILABLE => match lang.to_lowercase().as_str() {
-            "ru" => "Нет доступных активных аккаунтов в пуле AMR.",
-            "zh" => "AMR 账号池中没有可用的活跃账号。",
-            _ => "No active accounts available in AMR pool.",
-        },
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
-            if raw.to_lowercase().contains("disabled") {
-                raw
+        StatusCode::TOO_MANY_REQUESTS => {
+            if lower_raw.contains("reset in") || lower_raw.contains("сброс через") {
+                raw.to_string()
             } else {
                 match lang.to_lowercase().as_str() {
-                    "ru" => "Ошибка авторизации Google OAuth или доступ запрещен.",
-                    "zh" => "Google OAuth 认证失败或权限不足。",
-                    _ => "Authentication failure or permission denied.",
+                    "ru" => "Все подключенные аккаунты исчерпали квоту запросов (HTTP 429). Повторите запрос позже.".to_string(),
+                    "zh" => "所有已连接账号的配额均已耗尽 (HTTP 429)，请稍后再试。".to_string(),
+                    _ => "All connected accounts exhausted quota (HTTP 429). Please retry later.".to_string(),
                 }
             }
         }
-        _ => raw,
+        StatusCode::SERVICE_UNAVAILABLE => match lang.to_lowercase().as_str() {
+            "ru" => "Нет доступных активных аккаунтов в пуле AMR.".to_string(),
+            "zh" => "AMR 账号池中没有可用的活跃账号。".to_string(),
+            _ => "No active accounts available in AMR pool.".to_string(),
+        },
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+            if lower_raw.contains("disabled") || lower_raw.contains("unavailable") || lower_raw.contains("отключен") {
+                raw.to_string()
+            } else {
+                match lang.to_lowercase().as_str() {
+                    "ru" => "Ошибка авторизации Google OAuth или доступ запрещен.".to_string(),
+                    "zh" => "Google OAuth 认证失败或权限不足。".to_string(),
+                    _ => "Authentication failure or permission denied.".to_string(),
+                }
+            }
+        }
+        StatusCode::NOT_FOUND => match lang.to_lowercase().as_str() {
+            "ru" => "Запрошенная модель или ресурс не найден (HTTP 404). Проверьте ID модели в настройках.".to_string(),
+            "zh" => "请求的模型或资源未找到 (HTTP 404)，请检查设置中的模型 ID。".to_string(),
+            _ => "The requested model or resource was not found (HTTP 404). Please verify model ID in settings.".to_string(),
+        },
+        StatusCode::BAD_GATEWAY => match lang.to_lowercase().as_str() {
+            "ru" => "Вышестоящий сервис Google Antigravity вернул ошибку шлюза (HTTP 502).".to_string(),
+            "zh" => "上游 Google Antigravity 服务网关异常 (HTTP 502)。".to_string(),
+            _ => "Upstream Google Antigravity gateway error (HTTP 502).".to_string(),
+        },
+        _ => raw.to_string(),
     };
     format!("{}{}", prefix, detail)
 }

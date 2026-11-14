@@ -74,10 +74,24 @@ pub fn build_antigravity_from_gemini(
 }
 
 /// Convert Gemini models list from AMR internal models
-pub fn build_gemini_models_list(models: &[crate::config::ModelCatalogItem]) -> Value {
+pub fn build_gemini_models_list(
+    models: &[crate::config::ModelCatalogItem],
+    hide_unavailable: bool,
+) -> Value {
     let list: Vec<Value> = models
         .iter()
-        .filter(|m| m.is_enabled && m.availability_status != "disabled")
+        .filter(|m| {
+            if !m.is_enabled || m.availability_status == "disabled" {
+                return false;
+            }
+            if hide_unavailable
+                && (m.availability_status == "exhausted"
+                    || (m.quota_percent <= 0 && m.available_accounts_count == 0))
+            {
+                return false;
+            }
+            true
+        })
         .map(|m| {
             let model_name = format!("models/{}", m.id);
             json!({

@@ -480,6 +480,8 @@ export struct I18nData {
     lbl_stat_catalog_title: string,
     lbl_stat_catalog_refreshes: string,
     lbl_status_diag_button: string,
+    lbl_hide_unavailable_models: string,
+    lbl_hide_unavailable_models_desc: string,
 }
 
 component NavItem inherits Rectangle {
@@ -894,6 +896,7 @@ export component MainWindow inherits Window {
 
     // Standardized Error Normalizer
     in-out property <bool> standardized_error_handling: true;
+    in-out property <bool> hide_unavailable_models: false;
 
     // Detailed Stats for MCP & Catalog
     in-out property <string> stat_mcp_total: "0";
@@ -942,6 +945,7 @@ export component MainWindow inherits Window {
     callback run_mcp_tool(string, string);
     callback test_account_proxy(string);
     callback toggle_standardized_error_handling();
+    callback toggle_hide_unavailable_models();
     callback toggle_failover_429();
     callback set_quota_protection_threshold(int);
     callback toggle_stealth_spoof_go();
@@ -2325,6 +2329,35 @@ export component MainWindow inherits Window {
                                             ToggleSwitch {
                                                 checked: root.standardized_error_handling;
                                                 toggled => { root.toggle_standardized_error_handling(); }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Hide Unavailable Models Card
+                            Rectangle {
+                                background: #18181b;
+                                border-radius: 8px;
+                                border-width: 1px;
+                                border-color: #27272a;
+
+                                VerticalLayout {
+                                    padding: 10px;
+                                    spacing: 6px;
+
+                                    HorizontalLayout {
+                                        alignment: space-between;
+                                        VerticalLayout {
+                                            spacing: 2px;
+                                            Text { text: root.i18n.lbl_hide_unavailable_models; font-size: 11px; font-weight: 700; color: #ffffff; }
+                                            Text { text: root.i18n.lbl_hide_unavailable_models_desc; font-size: 10px; color: #71717a; }
+                                        }
+                                        VerticalLayout {
+                                            alignment: center;
+                                            ToggleSwitch {
+                                                checked: root.hide_unavailable_models;
+                                                toggled => { root.toggle_hide_unavailable_models(); }
                                             }
                                         }
                                     }
