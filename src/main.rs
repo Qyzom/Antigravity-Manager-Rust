@@ -600,6 +600,42 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_test_search_default_prompt: t.lbl_test_search_default_prompt.into(),
         btn_save_output: t.btn_save_output.into(),
         btn_play_audio: t.btn_play_audio.into(),
+        lbl_mcp_title: t.lbl_mcp_title.into(),
+        lbl_mcp_desc: t.lbl_mcp_desc.into(),
+        btn_mcp_test: t.btn_mcp_test.into(),
+        btn_mcp_config: t.btn_mcp_config.into(),
+        lbl_mcp_active: t.lbl_mcp_active.into(),
+        lbl_mcp_disabled: t.lbl_mcp_disabled.into(),
+        mcp_dialog_title: t.mcp_dialog_title.into(),
+        lbl_mcp_tool_select: t.lbl_mcp_tool_select.into(),
+        lbl_mcp_arg_label: t.lbl_mcp_arg_label.into(),
+        btn_run_mcp: t.btn_run_mcp.into(),
+        lbl_mcp_config_title: t.lbl_mcp_config_title.into(),
+        lbl_mcp_config_desc: t.lbl_mcp_config_desc.into(),
+        diag_dialog_title: t.diag_dialog_title.into(),
+        btn_run_diagnostic: t.btn_run_diagnostic.into(),
+        lbl_diag_testing: t.lbl_diag_testing.into(),
+        lbl_diag_success: t.lbl_diag_success.into(),
+        lbl_diag_error: t.lbl_diag_error.into(),
+        lbl_model_desc_header: t.lbl_model_desc_header.into(),
+        lbl_account_breakdown_header: t.lbl_account_breakdown_header.into(),
+        btn_test_proxy: t.btn_test_proxy.into(),
+        lbl_testing_proxy: t.lbl_testing_proxy.into(),
+        lbl_proxy_ok: t.lbl_proxy_ok.into(),
+        lbl_proxy_failed: t.lbl_proxy_failed.into(),
+        lbl_account_models_header: t.lbl_account_models_header.into(),
+        sec_error_spoofing: t.sec_error_spoofing.into(),
+        sec_error_spoofing_desc: t.sec_error_spoofing_desc.into(),
+        lbl_quota_view_both: t.lbl_quota_view_both.into(),
+        lbl_quota_view_gemini: t.lbl_quota_view_gemini.into(),
+        lbl_quota_view_claude: t.lbl_quota_view_claude.into(),
+        lbl_stat_mcp_title: t.lbl_stat_mcp_title.into(),
+        lbl_stat_mcp_total: t.lbl_stat_mcp_total.into(),
+        lbl_stat_mcp_search: t.lbl_stat_mcp_search.into(),
+        lbl_stat_mcp_fetch: t.lbl_stat_mcp_fetch.into(),
+        lbl_stat_catalog_title: t.lbl_stat_catalog_title.into(),
+        lbl_stat_catalog_refreshes: t.lbl_stat_catalog_refreshes.into(),
+        lbl_status_diag_button: t.lbl_status_diag_button.into(),
     };
     ui.set_github_update_status(t.btn_check_updates.clone().into());
     ui.set_test_prompt(t.lbl_test_default_prompt.clone().into());
@@ -766,10 +802,10 @@ fn capture_and_save_screenshots(target_dir: &str) -> Result<(), Box<dyn std::err
             quota_limit: 100000,
             quota_percent: 82,
             quota_reset: "in 4h 08m".into(),
-            claude_gpt_percent: 100,
-            claude_gpt_reset: "in 2h 44m".into(),
-            claude_gpt_weekly_percent: 100,
-            claude_gpt_weekly_reset: "in 4d 21h".into(),
+            claude_percent: 100,
+            claude_reset: "in 2h 44m".into(),
+            claude_weekly_percent: 100,
+            claude_weekly_reset: "in 4d 21h".into(),
             gemini_percent: 82,
             gemini_reset: "in 4h 08m".into(),
             gemini_weekly_percent: 48,
@@ -794,10 +830,10 @@ fn capture_and_save_screenshots(target_dir: &str) -> Result<(), Box<dyn std::err
             quota_limit: 100000,
             quota_percent: 8,
             quota_reset: "in 49h 50m".into(),
-            claude_gpt_percent: 100,
-            claude_gpt_reset: "in 4h 00m".into(),
-            claude_gpt_weekly_percent: 62,
-            claude_gpt_weekly_reset: "in 1d 02h".into(),
+            claude_percent: 100,
+            claude_reset: "in 4h 00m".into(),
+            claude_weekly_percent: 62,
+            claude_weekly_reset: "in 1d 02h".into(),
             gemini_percent: 100,
             gemini_reset: "in 4h 00m".into(),
             gemini_weekly_percent: 8,
@@ -977,32 +1013,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let proxy_running = Arc::new(AtomicBool::new(false));
 
+    // Shared AppState for server and direct UI actions (diagnostics, MCP, proxy testing)
+    let shared_http_client = reqwest::Client::builder()
+        .tcp_nodelay(true)
+        .tcp_keepalive(Some(Duration::from_secs(30)))
+        .pool_idle_timeout(Some(Duration::from_secs(90)))
+        .pool_max_idle_per_host(32)
+        .timeout(Duration::from_secs(120))
+        .build()
+        .unwrap_or_default();
+
+    let shared_app_state = Arc::new(AppState {
+        config: Arc::clone(&config_arc),
+        stats: Arc::clone(&stats_arc),
+        balancer: Arc::clone(&balancer_arc),
+        http_client: shared_http_client,
+        cfg_version: Arc::clone(&cfg_version),
+        proxy_clients: Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new())),
+    });
+
     // Spawn proxy server in background
     let s_cfg = Arc::clone(&config_arc);
-    let s_stats = Arc::clone(&stats_arc);
-    let s_balancer = Arc::clone(&balancer_arc);
-    let s_ver = Arc::clone(&cfg_version);
     let mut s_stop_rx = stop_receiver.clone();
     let p_running_srv = Arc::clone(&proxy_running);
+    let s_state = (*shared_app_state).clone();
 
     tokio::spawn(async move {
-        let client = reqwest::Client::builder()
-            .tcp_nodelay(true)
-            .tcp_keepalive(Some(Duration::from_secs(30)))
-            .pool_idle_timeout(Some(Duration::from_secs(90)))
-            .pool_max_idle_per_host(32)
-            .timeout(Duration::from_secs(120))
-            .build()
-            .unwrap_or_default();
-
-        let state = AppState {
-            config: s_cfg.clone(),
-            stats: s_stats,
-            balancer: s_balancer,
-            http_client: client,
-            cfg_version: s_ver,
-            proxy_clients: Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new())),
-        };
+        let state = s_state;
 
         loop {
             if *s_stop_rx.borrow() {
@@ -1194,12 +1231,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     acc.quota_used = used;
                                     acc.quota_limit = limit;
                                     acc.quota_reset = reset;
-                                    acc.claude_gpt_percent = detailed_quota.claude_gpt_percent;
-                                    acc.claude_gpt_reset = detailed_quota.claude_gpt_reset;
-                                    acc.claude_gpt_weekly_percent =
-                                        detailed_quota.claude_gpt_weekly_percent;
-                                    acc.claude_gpt_weekly_reset =
-                                        detailed_quota.claude_gpt_weekly_reset;
+                                    acc.claude_percent = detailed_quota.claude_percent;
+                                    acc.claude_reset = detailed_quota.claude_reset;
+                                    acc.claude_weekly_percent =
+                                        detailed_quota.claude_weekly_percent;
+                                    acc.claude_weekly_reset =
+                                        detailed_quota.claude_weekly_reset;
                                     acc.gemini_percent = detailed_quota.gemini_percent;
                                     acc.gemini_reset = detailed_quota.gemini_reset;
                                     acc.gemini_weekly_percent =
@@ -1207,7 +1244,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
                                     acc.error_message = None;
                                     acc.status = "ACTIVE".to_string();
-                                    if detailed_quota.claude_gpt_percent > 0 {
+                                    if detailed_quota.claude_percent > 0 {
                                         acc.tier = "PRO".to_string();
                                     }
                                 }
@@ -1309,12 +1346,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     acc.quota_used = used;
                                     acc.quota_limit = limit;
                                     acc.quota_reset = reset;
-                                    acc.claude_gpt_percent = detailed_quota.claude_gpt_percent;
-                                    acc.claude_gpt_reset = detailed_quota.claude_gpt_reset;
-                                    acc.claude_gpt_weekly_percent =
-                                        detailed_quota.claude_gpt_weekly_percent;
-                                    acc.claude_gpt_weekly_reset =
-                                        detailed_quota.claude_gpt_weekly_reset;
+                                    acc.claude_percent = detailed_quota.claude_percent;
+                                    acc.claude_reset = detailed_quota.claude_reset;
+                                    acc.claude_weekly_percent =
+                                        detailed_quota.claude_weekly_percent;
+                                    acc.claude_weekly_reset =
+                                        detailed_quota.claude_weekly_reset;
                                     acc.gemini_percent = detailed_quota.gemini_percent;
                                     acc.gemini_reset = detailed_quota.gemini_reset;
                                     acc.gemini_weekly_percent =
@@ -1322,7 +1359,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
                                     acc.error_message = None;
                                     acc.status = "ACTIVE".to_string();
-                                    if detailed_quota.claude_gpt_percent > 0 {
+                                    if detailed_quota.claude_percent > 0 {
                                         acc.tier = "PRO".to_string();
                                     }
                                 }
@@ -1436,10 +1473,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     acc.quota_used = used;
                     acc.quota_limit = limit;
                     acc.quota_reset = reset;
-                    acc.claude_gpt_percent = detailed_quota.claude_gpt_percent;
-                    acc.claude_gpt_reset = detailed_quota.claude_gpt_reset;
-                    acc.claude_gpt_weekly_percent = detailed_quota.claude_gpt_weekly_percent;
-                    acc.claude_gpt_weekly_reset = detailed_quota.claude_gpt_weekly_reset;
+                    acc.claude_percent = detailed_quota.claude_percent;
+                    acc.claude_reset = detailed_quota.claude_reset;
+                    acc.claude_weekly_percent = detailed_quota.claude_weekly_percent;
+                    acc.claude_weekly_reset = detailed_quota.claude_weekly_reset;
                     acc.gemini_percent = detailed_quota.gemini_percent;
                     acc.gemini_reset = detailed_quota.gemini_reset;
                     acc.gemini_weekly_percent = detailed_quota.gemini_weekly_percent;
@@ -1599,7 +1636,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_hide_sidebar_brand(cfg.hide_sidebar_brand);
         main_window.set_show_logs_tab(cfg.show_logs_tab);
         main_window.set_show_stats_tab(cfg.show_stats_tab);
-        main_window.set_show_about_tab(cfg.show_about_tab);
+        main_window.set_mcp_enabled(cfg.mcp_enabled);
+        main_window.set_standardized_error_handling(cfg.standardized_error_handling);
         main_window.set_enable_billing_emulation(cfg.enable_billing_emulation);
         main_window.set_cadence_jitter_percent(cfg.cadence_jitter_percent as i32);
         main_window.set_setting_check_updates(cfg.check_updates_startup);
@@ -1664,19 +1702,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 tier: acc.tier.clone().into(),
                 quota_used: acc.quota_used as i32,
                 quota_limit: acc.quota_limit as i32,
-                quota_percent: acc.claude_gpt_percent,
-                quota_reset: AppConfig::localize_reset_str(&acc.claude_gpt_reset, is_ru, is_zh)
+                quota_percent: acc.claude_percent,
+                quota_reset: AppConfig::localize_reset_str(&acc.claude_reset, is_ru, is_zh)
                     .into(),
-                claude_gpt_percent: acc.claude_gpt_percent,
-                claude_gpt_reset: AppConfig::localize_reset_str(
-                    &acc.claude_gpt_reset,
+                claude_percent: acc.claude_percent,
+                claude_reset: AppConfig::localize_reset_str(
+                    &acc.claude_reset,
                     is_ru,
                     is_zh,
                 )
                 .into(),
-                claude_gpt_weekly_percent: acc.claude_gpt_weekly_percent,
-                claude_gpt_weekly_reset: AppConfig::localize_reset_str(
-                    &acc.claude_gpt_weekly_reset,
+                claude_weekly_percent: acc.claude_weekly_percent,
+                claude_weekly_reset: AppConfig::localize_reset_str(
+                    &acc.claude_weekly_reset,
                     is_ru,
                     is_zh,
                 )
@@ -1708,10 +1746,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             models_model.push(m);
         }
 
-        main_window.set_global_claude_percent(cfg.aggregate_claude_gpt_percent());
+        main_window.set_global_claude_percent(cfg.aggregate_claude_percent());
         main_window.set_global_claude_label(cfg.format_claude_quota().into());
         main_window.set_global_claude_reset(cfg.nearest_claude_reset().into());
-        main_window.set_global_claude_weekly_percent(cfg.aggregate_claude_gpt_weekly_percent());
+        main_window.set_global_claude_weekly_percent(cfg.aggregate_claude_weekly_percent());
         main_window.set_global_claude_weekly_label(cfg.format_claude_weekly_quota().into());
         main_window.set_global_claude_weekly_reset(cfg.nearest_claude_weekly_reset().into());
         main_window.set_global_gemini_percent(cfg.aggregate_gemini_percent());
@@ -1900,10 +1938,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     quota_used,
                     quota_limit,
                     quota_reset,
-                    claude_gpt_percent: detailed_quota.claude_gpt_percent,
-                    claude_gpt_reset: detailed_quota.claude_gpt_reset,
-                    claude_gpt_weekly_percent: detailed_quota.claude_gpt_weekly_percent,
-                    claude_gpt_weekly_reset: detailed_quota.claude_gpt_weekly_reset,
+                    claude_percent: detailed_quota.claude_percent,
+                    claude_reset: detailed_quota.claude_reset,
+                    claude_weekly_percent: detailed_quota.claude_weekly_percent,
+                    claude_weekly_reset: detailed_quota.claude_weekly_reset,
                     gemini_percent: detailed_quota.gemini_percent,
                     gemini_reset: detailed_quota.gemini_reset,
                     gemini_weekly_percent: detailed_quota.gemini_weekly_percent,
@@ -2063,15 +2101,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             acc.quota_used = used;
                             acc.quota_limit = limit;
                             acc.quota_reset = reset;
-                            acc.claude_gpt_percent = detailed_quota.claude_gpt_percent;
-                            acc.claude_gpt_reset = detailed_quota.claude_gpt_reset;
-                            acc.claude_gpt_weekly_percent = detailed_quota.claude_gpt_weekly_percent;
-                            acc.claude_gpt_weekly_reset = detailed_quota.claude_gpt_weekly_reset;
+                            acc.claude_percent = detailed_quota.claude_percent;
+                            acc.claude_reset = detailed_quota.claude_reset;
+                            acc.claude_weekly_percent = detailed_quota.claude_weekly_percent;
+                            acc.claude_weekly_reset = detailed_quota.claude_weekly_reset;
                             acc.gemini_percent = detailed_quota.gemini_percent;
                             acc.gemini_reset = detailed_quota.gemini_reset;
                             acc.gemini_weekly_percent = detailed_quota.gemini_weekly_percent;
                             acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
-                            if detailed_quota.claude_gpt_percent > 0 {
+                            if detailed_quota.claude_percent > 0 {
                                 acc.tier = "PRO".to_string();
                             }
                         }
@@ -2096,15 +2134,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let current_lang = Language::from_str_code(&c_clone.read().language);
             let result_str = if success {
                 match current_lang {
-                    Language::Ru => "Обновлено ✓",
-                    Language::Zh => "已刷新 ✓",
-                    Language::En => "Updated ✓",
+                    Language::Ru => "Обновлено",
+                    Language::Zh => "已刷新",
+                    Language::En => "Updated",
                 }
             } else {
                 match current_lang {
-                    Language::Ru => "Ошибка ✕",
-                    Language::Zh => "失败 ✕",
-                    Language::En => "Failed ✕",
+                    Language::Ru => "Ошибка",
+                    Language::Zh => "失败",
+                    Language::En => "Failed",
                 }
             };
 
@@ -2138,10 +2176,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 h.set_info_account_name(acc.name.clone().into());
                 h.set_info_account_tier(acc.tier.clone().into());
                 h.set_info_account_status(acc.status.clone().into());
-                h.set_info_account_claude_5h_pct(acc.claude_gpt_percent);
-                h.set_info_account_claude_5h_reset(acc.claude_gpt_reset.clone().into());
-                h.set_info_account_claude_week_pct(acc.claude_gpt_weekly_percent);
-                h.set_info_account_claude_week_reset(acc.claude_gpt_weekly_reset.clone().into());
+                h.set_info_account_claude_5h_pct(acc.claude_percent);
+                h.set_info_account_claude_5h_reset(acc.claude_reset.clone().into());
+                h.set_info_account_claude_week_pct(acc.claude_weekly_percent);
+                h.set_info_account_claude_week_reset(acc.claude_weekly_reset.clone().into());
                 h.set_info_account_gemini_5h_pct(acc.gemini_percent);
                 h.set_info_account_gemini_5h_reset(acc.gemini_reset.clone().into());
                 h.set_info_account_gemini_week_pct(acc.gemini_weekly_percent);
@@ -2197,6 +2235,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
 
+                let active_models_count = acc
+                    .available_models
+                    .iter()
+                    .filter(|m| !m.disabled && m.remaining_fraction > 0.0)
+                    .count();
+                let total_models_count = acc.available_models.len();
+                h.set_info_account_models_summary(
+                    format!("{} / {} models active & healthy", active_models_count, total_models_count).into(),
+                );
+                h.set_proxy_test_status("".into());
+                h.set_proxy_test_is_running(false);
+
                 h.set_show_account_info(true);
             }
         }
@@ -2236,6 +2286,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = cfg.save();
         }
         v_save_proxy.fetch_add(1, Ordering::SeqCst);
+    });
+
+    // Test account proxy connection callback
+    let h_test_proxy = window_handle.clone();
+    main_window.on_test_account_proxy(move |proxy_url_slint| {
+        let proxy_url = proxy_url_slint.to_string();
+        if let Some(h) = h_test_proxy.upgrade() {
+            h.set_proxy_test_is_running(true);
+            h.set_proxy_test_status("Testing connection...".into());
+        }
+        let h_inner = h_test_proxy.clone();
+        tokio::spawn(async move {
+            let res = amr::proxy::server::test_proxy_connection(&proxy_url).await;
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(h) = h_inner.upgrade() {
+                    h.set_proxy_test_is_running(false);
+                    match res {
+                        Ok(ms) => h.set_proxy_test_status(format!("Online ({} ms)", ms).into()),
+                        Err(e) => h.set_proxy_test_status(format!("Failed: {}", e).into()),
+                    }
+                }
+            });
+        });
     });
 
     // Regenerate account device fingerprint (isolation on par with Antigravity-Manager)
@@ -2393,744 +2466,131 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         v_del.fetch_add(1, Ordering::SeqCst);
     });
 
-    // Open Test Model Dialog callback
-    let h_test_dlg = window_handle.clone();
-    let c_test_dlg = Arc::clone(&config_arc);
-    main_window.on_open_test_dialog(move |model_id_slint| {
-        if let Some(h) = h_test_dlg.upgrade() {
-            let modality = detect_model_modality(&model_id_slint);
-            let lang = Language::from_str_code(&c_test_dlg.read().language);
+    // Open Model Diagnostics Dialog callback
+    let h_diag_dlg = window_handle.clone();
+    let c_diag_dlg = Arc::clone(&config_arc);
+    main_window.on_open_diagnostic_dialog(move |model_id_slint| {
+        let model_id = model_id_slint.to_string();
+        if let Some(h) = h_diag_dlg.upgrade() {
+            let cfg = c_diag_dlg.read();
+            let lang = Language::from_str_code(&cfg.language);
             let t = get_translations(lang);
-            h.set_test_model_id(model_id_slint);
-            h.set_test_modality(modality.into());
-            h.set_test_status(t.test_status_ready.into());
-            h.set_test_latency("0 ms".into());
-            h.set_test_tokens("0".into());
-            h.set_test_response("".into());
-            h.set_test_has_preview_image(false);
-            h.set_test_preview_image(slint::Image::default());
-            h.set_test_has_audio_output(false);
-            h.set_test_audio_output_path("".into());
-            h.set_test_reasoning_effort_index(0);
 
-            match modality {
-                "image" => {
-                    h.set_test_stream(false);
-                    h.set_test_prompt(t.lbl_test_image_prompt.into());
+            let (model_name, provider, thinking) = if let Some(m) = cfg.models.iter().find(|m| m.id == model_id) {
+                (m.display_name.clone(), m.provider.clone(), m.supports_thinking)
+            } else {
+                (model_id.clone(), "google".to_string(), false)
+            };
+            let modality = detect_model_modality(&model_id);
+
+            // Accounts breakdown
+            let mut breakdown_lines = Vec::new();
+            for acc in &cfg.accounts {
+                let acc_label = if !acc.name.is_empty() { &acc.name } else { &acc.id };
+                if !acc.is_active {
+                    breakdown_lines.push(format!("{}: {}", acc_label, t.lbl_stage_quarantine));
+                    continue;
                 }
-                "stt" => {
-                    h.set_test_stream(false);
-                    h.set_test_prompt(t.lbl_test_stt_default_prompt.into());
-                }
-                "tts" => {
-                    h.set_test_stream(false);
-                    h.set_test_prompt(t.lbl_test_tts_default_prompt.into());
-                }
-                "search" => {
-                    h.set_test_stream(false);
-                    h.set_test_prompt(t.lbl_test_search_default_prompt.into());
-                }
-                _ => {
-                    h.set_test_prompt(t.lbl_test_default_prompt.into());
+                if let Some(m) = acc.available_models.iter().find(|m| m.id == model_id || model_id.starts_with(&m.id)) {
+                    if m.disabled {
+                        breakdown_lines.push(format!("{}: {}", acc_label, t.lbl_model_disabled));
+                    } else {
+                        let pct = (m.remaining_fraction * 100.0).round() as i32;
+                        breakdown_lines.push(format!("{}: {}% quota", acc_label, pct));
+                    }
+                } else {
+                    breakdown_lines.push(format!("{}: Not in catalog", acc_label));
                 }
             }
-            h.set_show_test_dialog(true);
+            let breakdown_text = if breakdown_lines.is_empty() {
+                "No accounts configured".to_string()
+            } else {
+                breakdown_lines.join("\n")
+            };
+
+            h.set_diag_model_id(model_id.into());
+            h.set_diag_model_name(model_name.into());
+            h.set_diag_model_provider(provider.into());
+            h.set_diag_model_modality(modality.into());
+            h.set_diag_model_thinking(thinking);
+            h.set_diag_accounts_breakdown(breakdown_text.into());
+            h.set_diag_status_text("".into());
+            h.set_diag_latency_text("—".into());
+            h.set_diag_last_error("".into());
+            h.set_diag_is_running(false);
+
+            h.set_show_diagnostic_dialog(true);
         }
     });
 
-    // Test execution cancellation flag
-    let test_cancelled = Arc::new(AtomicBool::new(false));
-
-    // Browse local audio file for STT test dialog
-    let h_browse = window_handle.clone();
-    main_window.on_browse_test_audio_file(move || {
-        let h_async = h_browse.clone();
+    // Run Model Diagnostic Check callback
+    let h_run_diag = window_handle.clone();
+    let state_diag = Arc::clone(&shared_app_state);
+    main_window.on_run_model_diagnostic(move |model_id_slint| {
+        let model_id = model_id_slint.to_string();
+        if let Some(h) = h_run_diag.upgrade() {
+            h.set_diag_is_running(true);
+            h.set_diag_status_text("Running diagnostic check...".into());
+            h.set_diag_latency_text("—".into());
+            h.set_diag_last_error("".into());
+        }
+        let h_inner = h_run_diag.clone();
+        let st = Arc::clone(&state_diag);
         tokio::spawn(async move {
-            #[cfg(target_os = "linux")]
-            let selected = {
-                let mut chosen: Option<String> = None;
-                if let Ok(out) = tokio::process::Command::new("zenity")
-                    .args([
-                        "--file-selection",
-                        "--title=Select Audio File",
-                        "--file-filter=Audio | *.mp3 *.wav *.ogg *.opus *.m4a *.aac *.flac *.webm",
-                    ])
-                    .output()
-                    .await
-                {
-                    if out.status.success() {
-                        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                        if !s.is_empty() {
-                            chosen = Some(s);
-                        }
+            let (status, latency_ms, msg) = amr::proxy::server::run_diagnostic_check(&st, &model_id).await;
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(h) = h_inner.upgrade() {
+                    h.set_diag_is_running(false);
+                    h.set_diag_latency_text(format!("{} ms", latency_ms).into());
+                    if status == 200 {
+                        h.set_diag_status_text("Success (200 OK)".into());
+                        h.set_diag_last_error("".into());
+                    } else {
+                        h.set_diag_status_text(format!("Failed (HTTP {})", status).into());
+                        h.set_diag_last_error(msg.into());
                     }
                 }
-                if chosen.is_none() {
-                    if let Ok(out) = tokio::process::Command::new("kdialog")
-                        .args(["--getopenfilename", ".", "*.mp3 *.wav *.ogg *.opus *.m4a *.aac *.flac *.webm"])
-                        .output()
-                        .await
-                    {
-                        if out.status.success() {
-                            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                            if !s.is_empty() {
-                                chosen = Some(s);
-                            }
-                        }
-                    }
-                }
-                chosen
-            };
-            #[cfg(target_os = "windows")]
-            let selected = {
-                use std::os::windows::process::CommandExt;
-                let script = "Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Filter = 'Audio Files|*.mp3;*.wav;*.ogg;*.opus;*.m4a;*.aac;*.flac;*.webm|All Files|*.*'; if($f.ShowDialog() -eq 'OK'){ $f.FileName }";
-                tokio::process::Command::new("powershell")
-                    .args(["-NoProfile", "-Command", script])
-                    .creation_flags(0x08000000)
-                    .output()
-                    .await
-                    .ok()
-                    .and_then(|o| {
-                        let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                        if s.is_empty() { None } else { Some(s) }
-                    })
-            };
-            #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-            let selected: Option<String> = None;
-
-            if let Some(path) = selected {
-                let _ = slint::invoke_from_event_loop(move || {
-                    if let Some(ui) = h_async.upgrade() {
-                        ui.set_test_audio_file_path(path.into());
-                    }
-                });
-            }
+            });
         });
     });
 
-    // Play generated TTS audio via native player
-    let h_play = window_handle.clone();
-    main_window.on_play_test_audio(move || {
-        if let Some(h) = h_play.upgrade() {
-            let path = h.get_test_audio_output_path().to_string();
-            if path.trim().is_empty() {
-                return;
-            }
-            tokio::spawn(async move {
-                #[cfg(target_os = "linux")]
-                {
-                    let players = ["pw-play", "paplay", "aplay", "mpv", "ffplay"];
-                    for player in players {
-                        let mut cmd = tokio::process::Command::new(player);
-                        if player == "mpv" {
-                            cmd.arg("--no-video").arg(&path);
-                        } else if player == "ffplay" {
-                            cmd.args(["-nodisp", "-autoexit", "-loglevel", "quiet"]).arg(&path);
-                        } else {
-                            cmd.arg(&path);
-                        }
-                        if let Ok(mut child) = cmd.spawn() {
-                            let _ = child.wait().await;
-                            return;
-                        }
-                    }
-                }
-                #[cfg(target_os = "windows")]
-                {
-                    use std::os::windows::process::CommandExt;
-                    let safe_path = path.replace('\'', "''");
-                    let ps = format!("(New-Object Media.SoundPlayer '{}').PlaySync()", safe_path);
-                    let _ = tokio::process::Command::new("powershell")
-                        .args(["-NoProfile", "-Command", &ps])
-                        .creation_flags(0x08000000)
-                        .output()
-                        .await;
+    // Open MCP Test Dialog callback
+    let h_mcp_dlg = window_handle.clone();
+    main_window.on_open_mcp_dialog(move || {
+        if let Some(h) = h_mcp_dlg.upgrade() {
+            h.set_show_mcp_dialog(true);
+        }
+    });
+
+    // Open MCP Configuration Dialog callback
+    let h_mcp_cfg_dlg = window_handle.clone();
+    main_window.on_open_mcp_config_dialog(move || {
+        if let Some(h) = h_mcp_cfg_dlg.upgrade() {
+            h.set_show_mcp_config_dialog(true);
+        }
+    });
+
+    // Run MCP Tool Direct callback
+    let h_run_mcp = window_handle.clone();
+    let state_mcp = Arc::clone(&shared_app_state);
+    main_window.on_run_mcp_tool(move |tool_name_slint, arg_slint| {
+        let tool_name = tool_name_slint.to_string();
+        let arg = arg_slint.to_string();
+        if let Some(h) = h_run_mcp.upgrade() {
+            h.set_mcp_is_running(true);
+            h.set_mcp_tool_output("Executing tool...".into());
+        }
+        let h_inner = h_run_mcp.clone();
+        let st = Arc::clone(&state_mcp);
+        tokio::spawn(async move {
+            let output = amr::proxy::mcp::execute_mcp_tool_direct(&st, &tool_name, &arg).await;
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(h) = h_inner.upgrade() {
+                    h.set_mcp_is_running(false);
+                    h.set_mcp_tool_output(output.into());
                 }
             });
-        }
-    });
-
-    // Save generated Image or TTS Audio to Downloads
-    let h_save_out = window_handle.clone();
-    main_window.on_save_test_output(move || {
-        if let Some(h) = h_save_out.upgrade() {
-            let modality = h.get_test_modality().to_string();
-            let src_path = if modality == "tts" {
-                h.get_test_audio_output_path().to_string()
-            } else {
-                std::env::temp_dir()
-                    .join("amr_generated_preview.png")
-                    .to_string_lossy()
-                    .to_string()
-            };
-            if src_path.is_empty() || !std::path::Path::new(&src_path).exists() {
-                return;
-            }
-            let ts = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-            let ext = if modality == "tts" { "wav" } else { "png" };
-            let prefix = if modality == "tts" { "amr_speech" } else { "amr_image" };
-            let dest_dir = dirs::download_dir().unwrap_or_else(std::env::temp_dir);
-            let dest_path = dest_dir.join(format!("{}_{}.{}", prefix, ts, ext));
-            if std::fs::copy(&src_path, &dest_path).is_ok() {
-                let prev = h.get_test_response().to_string();
-                h.set_test_response(format!("{}\n\n[Saved to {}]", prev, dest_path.display()).into());
-            }
-        }
-    });
-
-    // Cancel test callback
-    let cancel_flag = Arc::clone(&test_cancelled);
-    let h_cancel = window_handle.clone();
-    let c_cancel = Arc::clone(&config_arc);
-    main_window.on_cancel_test_request(move || {
-        cancel_flag.store(true, Ordering::SeqCst);
-        if let Some(h) = h_cancel.upgrade() {
-            let lang = Language::from_str_code(&c_cancel.read().language);
-            let t = get_translations(lang);
-            h.set_test_status(t.test_status_cancelled.into());
-            h.set_test_running(false);
-        }
-    });
-
-    // Execute test request callback
-    let h_test_exec = window_handle.clone();
-    let port_test = config_arc.read().port;
-    let c_test_exec = Arc::clone(&config_arc);
-    let cancel_exec = Arc::clone(&test_cancelled);
-    main_window.on_execute_test_request(move || {
-        if let Some(h) = h_test_exec.upgrade() {
-            let lang = Language::from_str_code(&c_test_exec.read().language);
-            let t = get_translations(lang);
-            cancel_exec.store(false, Ordering::SeqCst);
-            h.set_test_running(true);
-            h.set_test_status(t.test_status_dispatching.into());
-            h.set_test_response(t.test_status_waiting_token.into());
-
-            let prompt = h.get_test_prompt().to_string();
-            let model = h.get_test_model_id().to_string();
-            let modality = h.get_test_modality().to_string();
-            let timeout_val: u64 = h.get_test_timeout_secs().to_string().parse().unwrap_or(60);
-            let max_tok: u64 = h.get_test_max_tokens().to_string().parse().unwrap_or(2048);
-            let temp: f64 = h.get_test_temperature().to_string().parse().unwrap_or(0.7);
-            let is_stream = h.get_test_stream();
-            let aspect_ratio = h.get_test_image_aspect_ratio().to_string();
-            let audio_path = h.get_test_audio_file_path().to_string();
-            let stt_lang = h.get_test_stt_language().to_string();
-            let tts_voice = h.get_test_tts_voice().to_string();
-            let tts_speed: f32 = h.get_test_tts_speed().to_string().parse().unwrap_or(1.0);
-            let search_domain = h.get_test_search_domain().to_string();
-            let effort_idx = h.get_test_reasoning_effort_index();
-            let reasoning_effort = match effort_idx {
-                1 => Some("none"),
-                2 => Some("low"),
-                3 => Some("medium"),
-                4 => Some("high"),
-                _ => None,
-            };
-
-            let h_async = h_test_exec.clone();
-            let cancel_ref = Arc::clone(&cancel_exec);
-            let c_async_err = Arc::clone(&c_test_exec);
-
-            tokio::spawn(async move {
-                let start = std::time::Instant::now();
-                let client = reqwest::Client::builder()
-                    .tcp_nodelay(true)
-                    .timeout(Duration::from_secs(timeout_val))
-                    .build()
-                    .unwrap_or_default();
-
-                // Personalized endpoint dispatch by modality
-                if modality == "image" {
-                    let url = format!("http://127.0.0.1:{}/v1/images/generations", port_test);
-                    let req_payload = serde_json::json!({
-                        "model": model,
-                        "prompt": prompt,
-                        "aspect_ratio": aspect_ratio,
-                        "response_format": "b64_json"
-                    });
-                    match client.post(&url).json(&req_payload).send().await {
-                        Ok(resp) => {
-                            let status_code = resp.status();
-                            let lat = start.elapsed().as_millis();
-                            let body_text = resp.text().await.unwrap_or_default();
-                            if !status_code.is_success() {
-                                let clean_err = antigravity::extract_clean_error_message(&body_text);
-                                let _ = slint::invoke_from_event_loop(move || {
-                                    if let Some(ui) = h_async.upgrade() {
-                                        ui.set_test_status(format!("{} Error", status_code.as_u16()).into());
-                                        ui.set_test_latency(format!("{} ms", lat).into());
-                                        ui.set_test_response(format!("Error ({}): {}", status_code.as_u16(), clean_err).into());
-                                        ui.set_test_running(false);
-                                    }
-                                });
-                                return;
-                            }
-                            let parsed: serde_json::Value = serde_json::from_str(&body_text).unwrap_or_default();
-                            let b64 = parsed.pointer("/data/0/b64_json").and_then(|v| v.as_str()).unwrap_or("");
-                            let revised = parsed.pointer("/data/0/revised_prompt").and_then(|v| v.as_str()).unwrap_or(&prompt);
-                            let mime = parsed.pointer("/data/0/mime_type").and_then(|v| v.as_str()).unwrap_or("image/png");
-                            use base64::Engine as _;
-                            if let Ok(raw_bytes) = base64::engine::general_purpose::STANDARD.decode(b64.trim()) {
-                                let preview_path = std::env::temp_dir().join("amr_generated_preview.png");
-                                if let Ok(dyn_img) = image::load_from_memory(&raw_bytes) {
-                                    let _ = dyn_img.save(&preview_path);
-                                    let rgba = dyn_img.to_rgba8();
-                                    let (w, h_px) = (rgba.width(), rgba.height());
-                                    let raw_rgba = rgba.into_raw();
-                                    let info = format!(
-                                        "Image generated cleanly\nModel: {}\nAspect Ratio: {}\nResolution: {}x{}\nFormat: {}\nSize: {} bytes\nRevised Prompt: {}",
-                                        model, aspect_ratio, w, h_px, mime, raw_bytes.len(), revised
-                                    );
-                                    let _ = slint::invoke_from_event_loop(move || {
-                                        if let Some(ui) = h_async.upgrade() {
-                                            let pix = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(&raw_rgba, w, h_px);
-                                            ui.set_test_preview_image(slint::Image::from_rgba8(pix));
-                                            ui.set_test_has_preview_image(true);
-                                            ui.set_test_status(format!("{} OK", status_code.as_u16()).into());
-                                            ui.set_test_latency(format!("{} ms", lat).into());
-                                            ui.set_test_tokens(format!("{}x{}", w, h_px).into());
-                                            ui.set_test_response(info.into());
-                                            ui.set_test_running(false);
-                                        }
-                                    });
-                                    return;
-                                }
-                            }
-                            let _ = slint::invoke_from_event_loop(move || {
-                                if let Some(ui) = h_async.upgrade() {
-                                    ui.set_test_status("200 OK (Decode Error)".into());
-                                    ui.set_test_latency(format!("{} ms", lat).into());
-                                    ui.set_test_response(body_text.into());
-                                    ui.set_test_running(false);
-                                }
-                            });
-                        }
-                        Err(e) => {
-                            let _ = slint::invoke_from_event_loop(move || {
-                                if let Some(ui) = h_async.upgrade() {
-                                    let lang = Language::from_str_code(&c_async_err.read().language);
-                                    let t = get_translations(lang);
-                                    ui.set_test_status(t.test_status_error.into());
-                                    ui.set_test_response(format!("{}{}", t.test_err_request_prefix, e).into());
-                                    ui.set_test_running(false);
-                                }
-                            });
-                        }
-                    }
-                    return;
-                }
-
-                if modality == "stt" {
-                    let trimmed_path = audio_path.trim().to_string();
-                    let file_bytes = match tokio::fs::read(&trimmed_path).await {
-                        Ok(b) if !b.is_empty() => b,
-                        Ok(_) => {
-                            let _ = slint::invoke_from_event_loop(move || {
-                                if let Some(ui) = h_async.upgrade() {
-                                    ui.set_test_status("Error (Empty File)".into());
-                                    ui.set_test_response(format!("Audio file is empty: {}", trimmed_path).into());
-                                    ui.set_test_running(false);
-                                }
-                            });
-                            return;
-                        }
-                        Err(e) => {
-                            let _ = slint::invoke_from_event_loop(move || {
-                                if let Some(ui) = h_async.upgrade() {
-                                    ui.set_test_status("Missing Audio File".into());
-                                    ui.set_test_response(format!("Select or enter a valid audio file path (.mp3, .wav, .ogg, .m4a, .flac).\nRead error: {}", e).into());
-                                    ui.set_test_running(false);
-                                }
-                            });
-                            return;
-                        }
-                    };
-                    let fname = std::path::Path::new(&trimmed_path)
-                        .file_name()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("audio.mp3")
-                        .to_string();
-                    let part = reqwest::multipart::Part::bytes(file_bytes).file_name(fname);
-                    let mut form = reqwest::multipart::Form::new()
-                        .part("file", part)
-                        .text("model", model.clone())
-                        .text("response_format", "verbose_json");
-                    if !prompt.trim().is_empty() {
-                        form = form.text("prompt", prompt.clone());
-                    }
-                    if !stt_lang.trim().is_empty() {
-                        form = form.text("language", stt_lang.trim().to_string());
-                    }
-                    let url = format!("http://127.0.0.1:{}/v1/audio/transcriptions", port_test);
-                    match client.post(&url).multipart(form).send().await {
-                        Ok(resp) => {
-                            let status_code = resp.status();
-                            let lat = start.elapsed().as_millis();
-                            let body_text = resp.text().await.unwrap_or_default();
-                            let display_text = if status_code.is_success() {
-                                serde_json::from_str::<serde_json::Value>(&body_text)
-                                    .ok()
-                                    .and_then(|v| v.get("text").and_then(|t| t.as_str()).map(|s| s.to_string()))
-                                    .unwrap_or(body_text)
-                            } else {
-                                format!("Error ({}): {}", status_code.as_u16(), antigravity::extract_clean_error_message(&body_text))
-                            };
-                            let chars = display_text.chars().count();
-                            let _ = slint::invoke_from_event_loop(move || {
-                                if let Some(ui) = h_async.upgrade() {
-                                    ui.set_test_status(if status_code.is_success() { format!("{} OK", status_code.as_u16()).into() } else { format!("{} Error", status_code.as_u16()).into() });
-                                    ui.set_test_latency(format!("{} ms", lat).into());
-                                    ui.set_test_tokens(format!("{} chars", chars).into());
-                                    ui.set_test_response(display_text.into());
-                                    ui.set_test_running(false);
-                                }
-                            });
-                        }
-                        Err(e) => {
-                            let _ = slint::invoke_from_event_loop(move || {
-                                if let Some(ui) = h_async.upgrade() {
-                                    let lang = Language::from_str_code(&c_async_err.read().language);
-                                    let t = get_translations(lang);
-                                    ui.set_test_status(t.test_status_error.into());
-                                    ui.set_test_response(format!("{}{}", t.test_err_request_prefix, e).into());
-                                    ui.set_test_running(false);
-                                }
-                            });
-                        }
-                    }
-                    return;
-                }
-
-                if modality == "tts" {
-                    let url = format!("http://127.0.0.1:{}/v1/audio/speech", port_test);
-                    let req_payload = serde_json::json!({
-                        "model": model,
-                        "input": prompt,
-                        "voice": tts_voice,
-                        "speed": tts_speed,
-                        "response_format": "wav"
-                    });
-                    match client.post(&url).json(&req_payload).send().await {
-                        Ok(resp) => {
-                            let status_code = resp.status();
-                            let lat = start.elapsed().as_millis();
-                            let ct = resp
-                                .headers()
-                                .get(reqwest::header::CONTENT_TYPE)
-                                .and_then(|v| v.to_str().ok())
-                                .unwrap_or("audio/wav")
-                                .to_string();
-                            let bytes = resp.bytes().await.unwrap_or_default();
-                            if !status_code.is_success() {
-                                let body_str = String::from_utf8_lossy(&bytes);
-                                let clean_err = antigravity::extract_clean_error_message(&body_str);
-                                let _ = slint::invoke_from_event_loop(move || {
-                                    if let Some(ui) = h_async.upgrade() {
-                                        ui.set_test_status(format!("{} Error", status_code.as_u16()).into());
-                                        ui.set_test_latency(format!("{} ms", lat).into());
-                                        ui.set_test_response(format!("Error ({}): {}", status_code.as_u16(), clean_err).into());
-                                        ui.set_test_running(false);
-                                    }
-                                });
-                                return;
-                            }
-                            let ext = if ct.contains("mpeg") || ct.contains("mp3") { "mp3" } else { "wav" };
-                            let out_path = std::env::temp_dir().join(format!("amr_tts_output.{}", ext));
-                            let write_ok = tokio::fs::write(&out_path, &bytes).await.is_ok();
-                            let byte_len = bytes.len();
-                            let path_str = out_path.to_string_lossy().to_string();
-                            let msg = format!(
-                                "Audio synthesized cleanly\nVoice: {}\nSpeed: {:.2}x\nContent-Type: {}\nBytes: {}\nTemp File: {}\nWrite OK: {}",
-                                tts_voice, tts_speed, ct, byte_len, path_str, write_ok
-                            );
-                            let _ = slint::invoke_from_event_loop(move || {
-                                if let Some(ui) = h_async.upgrade() {
-                                    ui.set_test_audio_output_path(path_str.into());
-                                    ui.set_test_has_audio_output(write_ok && byte_len > 0);
-                                    ui.set_test_status(format!("{} OK", status_code.as_u16()).into());
-                                    ui.set_test_latency(format!("{} ms", lat).into());
-                                    ui.set_test_tokens(format!("{} B", byte_len).into());
-                                    ui.set_test_response(msg.into());
-                                    ui.set_test_running(false);
-                                }
-                            });
-                        }
-                        Err(e) => {
-                            let _ = slint::invoke_from_event_loop(move || {
-                                if let Some(ui) = h_async.upgrade() {
-                                    let lang = Language::from_str_code(&c_async_err.read().language);
-                                    let t = get_translations(lang);
-                                    ui.set_test_status(t.test_status_error.into());
-                                    ui.set_test_response(format!("{}{}", t.test_err_request_prefix, e).into());
-                                    ui.set_test_running(false);
-                                }
-                            });
-                        }
-                    }
-                    return;
-                }
-
-                if modality == "search" {
-                    let url = format!("http://127.0.0.1:{}/v1/search", port_test);
-                    let mut req_payload = serde_json::json!({
-                        "query": prompt
-                    });
-                    if !search_domain.trim().is_empty() {
-                        req_payload["domain"] = serde_json::json!(search_domain.trim());
-                    }
-                    match client.post(&url).json(&req_payload).send().await {
-                        Ok(resp) => {
-                            let status_code = resp.status();
-                            let lat = start.elapsed().as_millis();
-                            let body_text = resp.text().await.unwrap_or_default();
-                            if !status_code.is_success() {
-                                let clean_err = antigravity::extract_clean_error_message(&body_text);
-                                let _ = slint::invoke_from_event_loop(move || {
-                                    if let Some(ui) = h_async.upgrade() {
-                                        ui.set_test_status(format!("{} Error", status_code.as_u16()).into());
-                                        ui.set_test_latency(format!("{} ms", lat).into());
-                                        ui.set_test_response(format!("Error ({}): {}", status_code.as_u16(), clean_err).into());
-                                        ui.set_test_running(false);
-                                    }
-                                });
-                                return;
-                            }
-                            let parsed: serde_json::Value = serde_json::from_str(&body_text).unwrap_or_default();
-                            let answer = parsed.get("answer").and_then(|v| v.as_str()).unwrap_or("");
-                            let queries = parsed
-                                .get("search_queries")
-                                .and_then(|q| q.as_array())
-                                .map(|arr| {
-                                    arr.iter()
-                                        .filter_map(|x| x.as_str())
-                                        .collect::<Vec<_>>()
-                                        .join(" | ")
-                                })
-                                .unwrap_or_default();
-                            let results = parsed.get("results").and_then(|r| r.as_array()).cloned().unwrap_or_default();
-                            let mut formatted = String::new();
-                            if !answer.is_empty() {
-                                formatted.push_str(answer);
-                            }
-                            if !queries.is_empty() {
-                                formatted.push_str(&format!("\n\nSearch Queries: {}", queries));
-                            }
-                            if !results.is_empty() {
-                                formatted.push_str("\n\nSources:");
-                                for item in &results {
-                                    let idx = item.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
-                                    let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("Source");
-                                    let r_url = item.get("url").and_then(|v| v.as_str()).unwrap_or("");
-                                    let snip = item.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
-                                    formatted.push_str(&format!("\n[{}] {}\n    {}", idx, title, r_url));
-                                    if !snip.is_empty() {
-                                        formatted.push_str(&format!("\n    \"{}\"", snip));
-                                    }
-                                }
-                            }
-                            if formatted.is_empty() {
-                                formatted = body_text;
-                            }
-                            let src_count = results.len();
-                            let _ = slint::invoke_from_event_loop(move || {
-                                if let Some(ui) = h_async.upgrade() {
-                                    ui.set_test_status(format!("{} OK", status_code.as_u16()).into());
-                                    ui.set_test_latency(format!("{} ms", lat).into());
-                                    ui.set_test_tokens(format!("{} sources", src_count).into());
-                                    ui.set_test_response(formatted.into());
-                                    ui.set_test_running(false);
-                                }
-                            });
-                        }
-                        Err(e) => {
-                            let _ = slint::invoke_from_event_loop(move || {
-                                if let Some(ui) = h_async.upgrade() {
-                                    let lang = Language::from_str_code(&c_async_err.read().language);
-                                    let t = get_translations(lang);
-                                    ui.set_test_status(t.test_status_error.into());
-                                    ui.set_test_response(format!("{}{}", t.test_err_request_prefix, e).into());
-                                    ui.set_test_running(false);
-                                }
-                            });
-                        }
-                    }
-                    return;
-                }
-
-                let test_url = format!("http://127.0.0.1:{}/v1/chat/completions", port_test);
-                let mut req_payload = serde_json::json!({
-                    "model": model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": temp,
-                    "max_tokens": max_tok,
-                    "stream": is_stream
-                });
-                if let Some(effort) = reasoning_effort {
-                    req_payload["reasoning_effort"] = serde_json::json!(effort);
-                }
-
-                if cancel_ref.load(Ordering::SeqCst) {
-                    return;
-                }
-
-                match client.post(&test_url).json(&req_payload).send().await {
-                    Ok(resp) => {
-                        let status_code = resp.status();
-                        let lat = start.elapsed().as_millis();
-
-                        if cancel_ref.load(Ordering::SeqCst) {
-                            return;
-                        }
-
-                        if !status_code.is_success() {
-                            let body_text = resp.text().await.unwrap_or_default();
-                            let clean_err = antigravity::extract_clean_error_message(&body_text);
-                            let err_msg =
-                                format!("Error ({}): {}", status_code.as_u16(), clean_err);
-                            let _ = slint::invoke_from_event_loop(move || {
-                                if let Some(ui) = h_async.upgrade() {
-                                    let reason = status_code.canonical_reason().unwrap_or("Error");
-                                    ui.set_test_status(
-                                        format!("{} {}", status_code.as_u16(), reason).into(),
-                                    );
-                                    ui.set_test_latency(format!("{} ms", lat).into());
-                                    ui.set_test_tokens("0".into());
-                                    ui.set_test_response(err_msg.into());
-                                    ui.set_test_running(false);
-                                }
-                            });
-                            return;
-                        }
-
-                        if is_stream {
-                            use futures_util::StreamExt;
-                            let mut stream = resp.bytes_stream();
-                            let mut full_text = String::new();
-                            let mut buffer = String::new();
-                            let mut total_tok: u64 = 0;
-
-                            while let Some(chunk_res) = stream.next().await {
-                                if cancel_ref.load(Ordering::SeqCst) {
-                                    return;
-                                }
-                                if let Ok(chunk_bytes) = chunk_res {
-                                    if let Ok(s) = std::str::from_utf8(&chunk_bytes) {
-                                        buffer.push_str(s);
-                                        while let Some(pos) = buffer.find("\n\n") {
-                                            let event = buffer[..pos].to_string();
-                                            buffer = buffer[pos + 2..].to_string();
-                                            for line in event.lines() {
-                                                if let Some(data) = line.strip_prefix("data:") {
-                                                    let trimmed = data.trim();
-                                                    if trimmed == "[DONE]" {
-                                                        break;
-                                                    }
-                                                    if let Ok(val) =
-                                                        serde_json::from_str::<serde_json::Value>(
-                                                            trimmed,
-                                                        )
-                                                    {
-                                                        if let Some(delta) = val
-                                                            .pointer("/choices/0/delta/content")
-                                                            .and_then(|c| c.as_str())
-                                                        {
-                                                            full_text.push_str(delta);
-                                                            let current_text = full_text.clone();
-                                                            let h_delta = h_async.clone();
-                                                            let _ = slint::invoke_from_event_loop(
-                                                                move || {
-                                                                    if let Some(ui) =
-                                                                        h_delta.upgrade()
-                                                                    {
-                                                                        ui.set_test_response(
-                                                                            current_text.into(),
-                                                                        );
-                                                                    }
-                                                                },
-                                                            );
-                                                        }
-                                                        if let Some(usage_tok) = val
-                                                            .pointer("/usage/total_tokens")
-                                                            .and_then(|t| t.as_u64())
-                                                        {
-                                                            total_tok = usage_tok;
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            if total_tok == 0 {
-                                total_tok = (full_text.split_whitespace().count() as u64).max(1);
-                            }
-                            let final_lat = start.elapsed().as_millis();
-                            let final_text = if full_text.is_empty() {
-                                "(stream completed with no text delta)".to_string()
-                            } else {
-                                full_text
-                            };
-
-                            let _ = slint::invoke_from_event_loop(move || {
-                                if let Some(ui) = h_async.upgrade() {
-                                    ui.set_test_status(
-                                        format!("{} OK", status_code.as_u16()).into(),
-                                    );
-                                    ui.set_test_latency(format!("{} ms", final_lat).into());
-                                    ui.set_test_tokens(total_tok.to_string().into());
-                                    ui.set_test_response(final_text.into());
-                                    ui.set_test_running(false);
-                                }
-                            });
-                        } else {
-                            let body_text = resp.text().await.unwrap_or_default();
-                            let final_lat = start.elapsed().as_millis();
-                            let (content_text, tokens) = if let Ok(parsed) =
-                                serde_json::from_str::<serde_json::Value>(&body_text)
-                            {
-                                let text = parsed["choices"][0]["message"]["content"]
-                                    .as_str()
-                                    .unwrap_or(&body_text)
-                                    .to_string();
-                                let tok = parsed["usage"]["total_tokens"].as_u64().unwrap_or(45);
-                                (text, tok)
-                            } else {
-                                (body_text, 0)
-                            };
-
-                            let _ = slint::invoke_from_event_loop(move || {
-                                if let Some(ui) = h_async.upgrade() {
-                                    ui.set_test_status(
-                                        format!("{} OK", status_code.as_u16()).into(),
-                                    );
-                                    ui.set_test_latency(format!("{} ms", final_lat).into());
-                                    ui.set_test_tokens(tokens.to_string().into());
-                                    ui.set_test_response(content_text.into());
-                                    ui.set_test_running(false);
-                                }
-                            });
-                        }
-                    }
-                    Err(e) => {
-                        let _ = slint::invoke_from_event_loop(move || {
-                            if let Some(ui) = h_async.upgrade() {
-                                let lang = Language::from_str_code(&c_async_err.read().language);
-                                let t = get_translations(lang);
-                                ui.set_test_status(t.test_status_error.into());
-                                ui.set_test_response(
-                                    format!("{}{}", t.test_err_request_prefix, e).into(),
-                                );
-                                ui.set_test_running(false);
-                            }
-                        });
-                    }
-                }
-            });
-        }
+        });
     });
 
     // Open Log Details Modal callback
@@ -3410,17 +2870,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let c_abt = Arc::clone(&config_arc);
-    let h_abt = window_handle.clone();
-    main_window.on_toggle_show_about_tab(move || {
+    let c_mcp = Arc::clone(&config_arc);
+    let h_mcp = window_handle.clone();
+    main_window.on_toggle_mcp_enabled(move || {
         let next_val = {
-            let mut cfg = c_abt.write();
-            cfg.show_about_tab = !cfg.show_about_tab;
+            let mut cfg = c_mcp.write();
+            cfg.mcp_enabled = !cfg.mcp_enabled;
             let _ = cfg.save();
-            cfg.show_about_tab
+            cfg.mcp_enabled
         };
-        if let Some(h) = h_abt.upgrade() {
-            h.set_show_about_tab(next_val);
+        if let Some(h) = h_mcp.upgrade() {
+            h.set_mcp_enabled(next_val);
+        }
+    });
+
+    let c_err_norm = Arc::clone(&config_arc);
+    let h_err_norm = window_handle.clone();
+    main_window.on_toggle_standardized_error_handling(move || {
+        let next_val = {
+            let mut cfg = c_err_norm.write();
+            cfg.standardized_error_handling = !cfg.standardized_error_handling;
+            let _ = cfg.save();
+            cfg.standardized_error_handling
+        };
+        if let Some(h) = h_err_norm.upgrade() {
+            h.set_standardized_error_handling(next_val);
         }
     });
 
@@ -3962,6 +3436,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 w.set_stat_p95_latency(format!("{} ms", p95).into());
                 w.set_stat_p99_latency(format!("{} ms", p99).into());
 
+                // MCP & Dynamic Catalog Metrics
+                w.set_stat_mcp_total(s_timer.mcp_total_calls.load(Ordering::Relaxed).to_string().into());
+                w.set_stat_mcp_search(s_timer.mcp_search_calls.load(Ordering::Relaxed).to_string().into());
+                w.set_stat_mcp_fetch(s_timer.mcp_fetch_calls.load(Ordering::Relaxed).to_string().into());
+                w.set_stat_catalog_refreshes(s_timer.catalog_refreshes.load(Ordering::Relaxed).to_string().into());
+
                 // Sync accounts & models if changed
                 let current_version = v_timer.load(Ordering::Relaxed);
                 let accounts_len = c_timer.read().accounts.len();
@@ -3991,23 +3471,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             tier: acc.tier.clone().into(),
                             quota_used: acc.quota_used as i32,
                             quota_limit: acc.quota_limit as i32,
-                            quota_percent: acc.claude_gpt_percent,
+                            quota_percent: acc.claude_percent,
                             quota_reset: AppConfig::localize_reset_str(
-                                &acc.claude_gpt_reset,
+                                &acc.claude_reset,
                                 is_ru,
                                 is_zh,
                             )
                             .into(),
-                            claude_gpt_percent: acc.claude_gpt_percent,
-                            claude_gpt_reset: AppConfig::localize_reset_str(
-                                &acc.claude_gpt_reset,
+                            claude_percent: acc.claude_percent,
+                            claude_reset: AppConfig::localize_reset_str(
+                                &acc.claude_reset,
                                 is_ru,
                                 is_zh,
                             )
                             .into(),
-                            claude_gpt_weekly_percent: acc.claude_gpt_weekly_percent,
-                            claude_gpt_weekly_reset: AppConfig::localize_reset_str(
-                                &acc.claude_gpt_weekly_reset,
+                            claude_weekly_percent: acc.claude_weekly_percent,
+                            claude_weekly_reset: AppConfig::localize_reset_str(
+                                &acc.claude_weekly_reset,
                                 is_ru,
                                 is_zh,
                             )
@@ -4068,10 +3548,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     models_model.set_vec(get_display_models(&cfg));
 
-                    w.set_global_claude_percent(cfg.aggregate_claude_gpt_percent());
+                    w.set_global_claude_percent(cfg.aggregate_claude_percent());
                     w.set_global_claude_label(cfg.format_claude_quota().into());
                     w.set_global_claude_reset(cfg.nearest_claude_reset().into());
-                    w.set_global_claude_weekly_percent(cfg.aggregate_claude_gpt_weekly_percent());
+                    w.set_global_claude_weekly_percent(cfg.aggregate_claude_weekly_percent());
                     w.set_global_claude_weekly_label(cfg.format_claude_weekly_quota().into());
                     w.set_global_claude_weekly_reset(cfg.nearest_claude_weekly_reset().into());
                     w.set_global_gemini_percent(cfg.aggregate_gemini_percent());
