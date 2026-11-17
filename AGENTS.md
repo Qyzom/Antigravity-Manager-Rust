@@ -4,7 +4,14 @@
 Below is the definitive record of changes and protocol advancements implemented across all versions:
 
 ### Version Changelog (English)
-- **v0.1.6 (Latest)**:
+- **v0.1.7 (Latest)**:
+  - **Instant Proxy Port & Host Hot-Reload**: Rebinds Axum HTTP listener immediately on port or host change without stopping or manually restarting the proxy daemon.
+  - **Comprehensive 429 & Dispatcher Logging**: Structured pre-dispatch logging across OpenAI (`/v1/chat/completions`), Claude (`/v1/messages`), and Google Gemini (`/v1beta/models/*`) recording exact error messages, request payloads, and remaining cooldown seconds (`retry in Xs`).
+  - **MCP Search Results Limit & Enhanced Web Tools**: Added customizable search results limit selector (`mcp_search_max_results`: 3, 5, 10, 15) for `google_web_search`, intelligent URL auto-prefixing (`https://`), and friendly query validation for `fetch_web_page`.
+  - **Streamlined MCP & Settings UI**: Stripped fake logo, active badge, tools label, and test button from the MCP card; fixed horizontal layout stretching and viewport cut-offs in Settings preferences.
+  - **Interactive GitHub Update Dispatcher**: Persistent update notification button that directly opens the latest GitHub release in the default browser, with optional automatic startup check.
+
+- **v0.1.6**:
   - **Models & MCP Master Control**: Unified Models tab with MCP Master Card, live status indicator, client configuration exporter, and interactive MCP tool testing modal (`google_web_search`, `fetch_web_page`).
   - **Model Status & Diagnostics Modal**: Replaced legacy test playground with instant diagnostic dialog displaying model metadata, per-account availability breakdown, last error, and a single "Run Diagnostics" button.
   - **Clean Model IDs & Hard Proxy Blocking**: Stripped `-disabled` suffix from model identifiers and enforced hard HTTP 403 proxy-level blocking for disabled models across all endpoints (`/v1/chat/completions`, `/v1/messages`, `/v1beta/*`, `/v1/audio/*`, `/v1/images/*`, `/v1/search`).
