@@ -2108,4 +2108,23 @@ mod tests {
         let raw_pass = format_amr_error_message("raw text error", StatusCode::BAD_REQUEST, "en", false);
         assert_eq!(raw_pass, "raw text error");
     }
+
+    #[test]
+    fn test_all_cooling_down_error_display_and_mcp_config() {
+        use amr::proxy::balancer::RoutingError;
+        use amr::config::AppConfig;
+
+        let err_cd = RoutingError::AllCoolingDown { retry_after_secs: 42 };
+        let err_str = format!("{}", err_cd);
+        assert!(err_str.contains("retry in 42s"));
+
+        let err_cd_zero = RoutingError::AllCoolingDown { retry_after_secs: 0 };
+        let err_str_zero = format!("{}", err_cd_zero);
+        assert!(!err_str_zero.contains("retry in"));
+        assert!(err_str_zero.contains("cooling down"));
+
+        let cfg = AppConfig::default();
+        assert_eq!(cfg.mcp_search_max_results, 5);
+        assert!(cfg.check_updates_startup);
+    }
 }

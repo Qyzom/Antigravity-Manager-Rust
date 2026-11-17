@@ -448,6 +448,9 @@ export struct I18nData {
     lbl_mcp_desc: string,
     btn_mcp_test: string,
     btn_mcp_config: string,
+    btn_download_update: string,
+    lbl_mcp_search_results: string,
+    lbl_mcp_search_results_desc: string,
     lbl_mcp_active: string,
     lbl_mcp_disabled: string,
     mcp_dialog_title: string,
@@ -869,12 +872,8 @@ export component MainWindow inherits Window {
 
     // MCP Control & Modals
     in-out property <bool> mcp_enabled: true;
-    in-out property <bool> show_mcp_dialog: false;
+    in-out property <int> mcp_search_max_results: 5;
     in-out property <bool> show_mcp_config_dialog: false;
-    in-out property <string> mcp_tool_name: "google_web_search";
-    in-out property <string> mcp_tool_arg: "Rust latest release";
-    in-out property <string> mcp_tool_output: "";
-    in-out property <bool> mcp_is_running: false;
 
     // Model Status & Diagnostics
     in-out property <bool> show_diagnostic_dialog: false;
@@ -940,9 +939,8 @@ export component MainWindow inherits Window {
     callback open_diagnostic_dialog(string);
     callback run_model_diagnostic(string);
     callback toggle_mcp_enabled();
-    callback open_mcp_dialog();
+    callback set_mcp_search_max_results(int);
     callback open_mcp_config_dialog();
-    callback run_mcp_tool(string, string);
     callback test_account_proxy(string);
     callback toggle_standardized_error_handling();
     callback toggle_hide_unavailable_models();
@@ -1677,42 +1675,13 @@ export component MainWindow inherits Window {
                                 spacing: 12px;
 
                                 HorizontalLayout {
-                                    spacing: 12px;
                                     alignment: space-between;
 
-                                    HorizontalLayout {
-                                        spacing: 12px;
-                                        alignment: start;
-                                        Rectangle {
-                                            width: 40px;
-                                            height: 40px;
-                                            border-radius: 8px;
-                                            background: #27272a;
-                                            Text {
-                                                text: "MCP";
-                                                font-family: "Unbounded";
-                                                font-size: 11px;
-                                                font-weight: 800;
-                                                color: root.mcp_enabled ? #10b981 : #71717a;
-                                                vertical-alignment: center;
-                                                horizontal-alignment: center;
-                                            }
-                                        }
-
-                                        VerticalLayout {
-                                            spacing: 2px;
-                                            alignment: center;
-                                            HorizontalLayout {
-                                                spacing: 8px;
-                                                Text { text: root.i18n.lbl_mcp_title; font-size: 13px; font-weight: 700; color: #ffffff; }
-                                                Badge {
-                                                    text: root.mcp_enabled ? root.i18n.lbl_mcp_active : root.i18n.lbl_mcp_disabled;
-                                                    is_green: root.mcp_enabled;
-                                                    is_danger: !root.mcp_enabled;
-                                                }
-                                            }
-                                            Text { text: root.i18n.lbl_mcp_desc; font-size: 11px; color: #71717a; }
-                                        }
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        alignment: center;
+                                        Text { text: root.i18n.lbl_mcp_title; font-size: 13px; font-weight: 700; color: #ffffff; }
+                                        Text { text: root.i18n.lbl_mcp_desc; font-size: 11px; color: #71717a; }
                                     }
 
                                     VerticalLayout {
@@ -1728,27 +1697,57 @@ export component MainWindow inherits Window {
 
                                 HorizontalLayout {
                                     alignment: space-between;
-                                    HorizontalLayout {
-                                        spacing: 16px;
-                                        Text { text: "URL: http://" + root.proxy_host + ":" + root.proxy_port + "/mcp"; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
-                                        Text { text: "• Tools: google_web_search, fetch_web_page"; font-size: 11px; color: #71717a; vertical-alignment: center; }
+                                    Text { text: "URL: http://" + root.proxy_host + ":" + root.proxy_port + "/mcp"; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
+
+                                    ActionButton {
+                                        text: root.i18n.btn_mcp_config;
+                                        is_primary: false;
+                                        custom_height: 28px;
+                                        clicked => { root.open_mcp_config_dialog(); }
+                                    }
+                                }
+
+                                Rectangle { height: 1px; background: #27272a; }
+
+                                // Web Search Results Limit
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        alignment: center;
+                                        Text { text: root.i18n.lbl_mcp_search_results; font-size: 12px; font-weight: 600; color: #e4e4e7; }
+                                        Text { text: root.i18n.lbl_mcp_search_results_desc; font-size: 11px; color: #71717a; }
                                     }
 
                                     HorizontalLayout {
-                                        spacing: 8px;
+                                        spacing: 6px;
                                         ActionButton {
-                                            text: root.i18n.btn_mcp_test;
-                                            is_primary: true;
-                                            is_accent: true;
-                                            custom_height: 28px;
-                                            is_disabled: !root.mcp_enabled;
-                                            clicked => { root.open_mcp_dialog(); }
+                                            text: "3";
+                                            is_primary: root.mcp_search_max_results == 3;
+                                            is_accent: root.mcp_search_max_results == 3;
+                                            custom_height: 26px;
+                                            clicked => { root.set_mcp_search_max_results(3); }
                                         }
                                         ActionButton {
-                                            text: root.i18n.btn_mcp_config;
-                                            is_primary: false;
-                                            custom_height: 28px;
-                                            clicked => { root.open_mcp_config_dialog(); }
+                                            text: "5";
+                                            is_primary: root.mcp_search_max_results == 5;
+                                            is_accent: root.mcp_search_max_results == 5;
+                                            custom_height: 26px;
+                                            clicked => { root.set_mcp_search_max_results(5); }
+                                        }
+                                        ActionButton {
+                                            text: "10";
+                                            is_primary: root.mcp_search_max_results == 10;
+                                            is_accent: root.mcp_search_max_results == 10;
+                                            custom_height: 26px;
+                                            clicked => { root.set_mcp_search_max_results(10); }
+                                        }
+                                        ActionButton {
+                                            text: "15";
+                                            is_primary: root.mcp_search_max_results == 15;
+                                            is_accent: root.mcp_search_max_results == 15;
+                                            custom_height: 26px;
+                                            clicked => { root.set_mcp_search_max_results(15); }
                                         }
                                     }
                                 }
@@ -3293,14 +3292,19 @@ export component MainWindow inherits Window {
 
                                 HorizontalLayout {
                                     alignment: space-between;
-                                    HorizontalLayout {
-                                        spacing: 16px;
-                                        Text { text: root.i18n.about_spec_runtime + ": " + root.i18n.about_spec_runtime_val; font-size: 11px; color: #a1a1aa; }
-                                        Text { text: "• " + root.i18n.about_spec_transport + ": " + root.i18n.about_spec_transport_val; font-size: 11px; color: #a1a1aa; }
-                                        Text { text: "• " + root.i18n.about_spec_gui + ": " + root.i18n.about_spec_gui_val; font-size: 11px; color: #a1a1aa; }
+                                    spacing: 12px;
+
+                                    VerticalLayout {
+                                        spacing: 3px;
+                                        horizontal-stretch: 1;
+                                        alignment: center;
+                                        Text { text: root.i18n.about_spec_runtime + ": " + root.i18n.about_spec_runtime_val + " • " + root.i18n.about_spec_transport + ": " + root.i18n.about_spec_transport_val; font-size: 11px; color: #a1a1aa; wrap: word-wrap; }
+                                        Text { text: root.i18n.about_spec_gui + ": " + root.i18n.about_spec_gui_val; font-size: 11px; color: #71717a; wrap: word-wrap; }
                                     }
+
                                     HorizontalLayout {
                                         spacing: 8px;
+                                        alignment: end;
                                         ActionButton {
                                             text: root.github_update_status;
                                             is_primary: true;
@@ -3619,6 +3623,9 @@ export component MainWindow inherits Window {
                                 }
                             }
                         }
+
+                        // Bottom spacer padding so lowest settings are comfortably visible
+                        Rectangle { height: 28px; }
                     }
 
                     // ==========================================
@@ -4165,101 +4172,6 @@ export component MainWindow inherits Window {
                                 is_disabled: root.diag_is_running;
                                 custom_height: 32px;
                                 clicked => { root.run_model_diagnostic(root.diag_model_id); }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // ============================================================
-    // MODAL 3: MCP TOOL TEST DIALOG
-    // ============================================================
-    Rectangle {
-        visible: root.show_mcp_dialog || self.opacity > 0.01;
-        opacity: root.show_mcp_dialog ? 1.0 : 0.0;
-        background: #000000aa;
-        animate opacity { duration: 200ms; easing: ease-in-out; }
-
-        TouchArea { clicked => { root.show_mcp_dialog = false; } }
-
-        modal_card_mcp := Rectangle {
-            width: 700px;
-            height: modal_inner_mcp.min-height;
-            background: #141416;
-            border-radius: 12px;
-            border-width: 1px;
-            border-color: #27272a;
-            clip: true;
-            y: root.show_mcp_dialog ? round((parent.height - self.height) / 2px) * 1px : (round((parent.height - self.height) / 2px) + 20) * 1px;
-            animate y { duration: 200ms; easing: ease-in-out; }
-
-            TouchArea { clicked => { } }
-
-            modal_inner_mcp := VerticalLayout {
-                padding: 18px;
-                spacing: 12px;
-
-                HorizontalLayout {
-                    alignment: space-between;
-                    Text { text: root.i18n.mcp_dialog_title; font-size: 14px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
-                    ActionButton { text: root.i18n.btn_close; is_primary: false; clicked => { root.show_mcp_dialog = false; } }
-                }
-
-                Rectangle { height: 1px; background: #27272a; }
-
-                HorizontalLayout {
-                    spacing: 8px;
-                    Text { text: root.i18n.lbl_mcp_tool_select + ":"; font-size: 11px; font-weight: 700; color: #a1a1aa; vertical-alignment: center; }
-                    ActionButton {
-                        text: "google_web_search";
-                        is_primary: root.mcp_tool_name == "google_web_search";
-                        is_accent: root.mcp_tool_name == "google_web_search";
-                        custom_height: 26px;
-                        clicked => { root.mcp_tool_name = "google_web_search"; }
-                    }
-                    ActionButton {
-                        text: "fetch_web_page";
-                        is_primary: root.mcp_tool_name == "fetch_web_page";
-                        is_accent: root.mcp_tool_name == "fetch_web_page";
-                        custom_height: 26px;
-                        clicked => { root.mcp_tool_name = "fetch_web_page"; }
-                    }
-                }
-
-                HorizontalLayout {
-                    spacing: 8px;
-                    LineEdit {
-                        text <=> root.mcp_tool_arg;
-                        placeholder-text: root.mcp_tool_name == "google_web_search" ? "Search query (e.g. Rust 1.85 features)" : "https://example.com/article";
-                        horizontal-stretch: 1;
-                    }
-                    ActionButton {
-                        text: root.mcp_is_running ? "Running..." : root.i18n.btn_run_mcp;
-                        is_accent: true;
-                        is_disabled: root.mcp_is_running;
-                        custom_height: 32px;
-                        clicked => { root.run_mcp_tool(root.mcp_tool_name, root.mcp_tool_arg); }
-                    }
-                }
-
-                Rectangle {
-                    height: 240px;
-                    border-radius: 8px;
-                    background: #0d0d0f;
-                    border-width: 1px;
-                    border-color: #27272a;
-                    ScrollView {
-                        VerticalLayout {
-                            padding: 10px;
-                            alignment: start;
-                            Text {
-                                text: root.mcp_tool_output != "" ? root.mcp_tool_output : "Tool response will appear here...";
-                                font-family: "monospace";
-                                font-size: 11px;
-                                color: root.mcp_tool_output != "" ? #f4f4f5 : #52525b;
-                                wrap: word-wrap;
                             }
                         }
                     }

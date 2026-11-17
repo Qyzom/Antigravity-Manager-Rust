@@ -380,6 +380,8 @@ pub struct AppConfig {
     pub quota_protection_threshold: u8,
     #[serde(default = "default_true")]
     pub mcp_enabled: bool,
+    #[serde(default = "default_mcp_search_max_results")]
+    pub mcp_search_max_results: u32,
     #[serde(default = "default_true")]
     pub standardized_error_handling: bool,
     #[serde(default = "default_true")]
@@ -486,6 +488,10 @@ fn default_protection_threshold() -> u8 {
     10
 }
 
+fn default_mcp_search_max_results() -> u32 {
+    5
+}
+
 fn default_active_refresh_mins() -> u32 {
     2
 }
@@ -533,6 +539,7 @@ impl Default for AppConfig {
             default_fingerprint: "Claude Code 2.x".to_string(),
             quota_protection_threshold: 10,
             mcp_enabled: true,
+            mcp_search_max_results: 5,
             standardized_error_handling: true,
             spoof_go_sdk: true,
             inject_ide_metadata: true,

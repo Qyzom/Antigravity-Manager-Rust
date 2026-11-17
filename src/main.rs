@@ -604,6 +604,9 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_mcp_desc: t.lbl_mcp_desc.into(),
         btn_mcp_test: t.btn_mcp_test.into(),
         btn_mcp_config: t.btn_mcp_config.into(),
+        btn_download_update: t.btn_download_update.into(),
+        lbl_mcp_search_results: t.lbl_mcp_search_results.into(),
+        lbl_mcp_search_results_desc: t.lbl_mcp_search_results_desc.into(),
         lbl_mcp_active: t.lbl_mcp_active.into(),
         lbl_mcp_disabled: t.lbl_mcp_disabled.into(),
         mcp_dialog_title: t.mcp_dialog_title.into(),
@@ -1012,6 +1015,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cfg_version = Arc::new(AtomicU64::new(1));
     let (stop_sender, stop_receiver) = watch::channel(false);
     let (proxy_enable_tx, mut proxy_enable_rx) = watch::channel(true);
+    let (proxy_reload_tx, mut proxy_reload_rx) = watch::channel(0u64);
 
     let proxy_running = Arc::new(AtomicBool::new(false));
 
@@ -1117,6 +1121,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 _ = proxy_enable_rx.changed() => {
                     log::info!("AMR server shutting down listener per user toggle.");
+                }
+                _ = proxy_reload_rx.changed() => {
+                    log::info!("AMR server reloading listener with new network config.");
                 }
                 _ = s_stop_rx.changed() => {
                     log::info!("AMR server received application shutdown signal.");
@@ -1642,6 +1649,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_show_logs_tab(cfg.show_logs_tab);
         main_window.set_show_stats_tab(cfg.show_stats_tab);
         main_window.set_mcp_enabled(cfg.mcp_enabled);
+        main_window.set_mcp_search_max_results(cfg.mcp_search_max_results as i32);
         main_window.set_standardized_error_handling(cfg.standardized_error_handling);
         main_window.set_hide_unavailable_models(cfg.hide_unavailable_models);
         main_window.set_enable_billing_emulation(cfg.enable_billing_emulation);
@@ -2394,7 +2402,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // GitHub Update Check Callback
     let h_gh = window_handle.clone();
     let c_gh_lang = Arc::clone(&config_arc);
+    let latest_update_tag: Arc<parking_lot::RwLock<Option<String>>> =
+        Arc::new(parking_lot::RwLock::new(None));
+    let latest_tag_for_click = Arc::clone(&latest_update_tag);
+    let latest_tag_for_startup = Arc::clone(&latest_update_tag);
+    let h_gh_startup = window_handle.clone();
+    let c_gh_startup = Arc::clone(&config_arc);
+
     main_window.on_check_github_updates(move || {
+        if latest_tag_for_click.read().is_some() {
+            open_in_system("https://github.com/Qyzom/Antigravity-Manager-Rust/releases/latest");
+            return;
+        }
+
         let lang_code = c_gh_lang.read().language.clone();
         let t_init = amr::i18n::get_translations(amr::i18n::Language::from_str_code(&lang_code));
         if let Some(h) = h_gh.upgrade() {
@@ -2404,6 +2424,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let h_res = h_gh.clone();
         let h_gh_reset = h_gh.clone();
         let lang_for_async = lang_code.clone();
+        let latest_tag_async = Arc::clone(&latest_tag_for_click);
         tokio::spawn(async move {
             let client = reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(5))
@@ -2418,6 +2439,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let t =
                 amr::i18n::get_translations(amr::i18n::Language::from_str_code(&lang_for_async));
             let current_ver = concat!("v", env!("CARGO_PKG_VERSION"));
+            let mut has_update = false;
             let status_str = match res {
                 Ok(resp) if resp.status().is_success() => {
                     if let Ok(json) = resp.json::<serde_json::Value>().await {
@@ -2427,7 +2449,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             {
                                 format!("{} ({})", current_ver, t.lbl_latest_version)
                             } else {
-                                format!("{} ({})", t.lbl_update_available, tag)
+                                has_update = true;
+                                *latest_tag_async.write() = Some(tag.to_string());
+                                format!("{} {}", t.btn_download_update, tag)
                             }
                         } else {
                             format!("{} ({})", current_ver, t.lbl_latest_version)
@@ -2446,18 +2470,63 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             });
 
-            // Automatically revert button text after 3 seconds
-            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-            let _ = slint::invoke_from_event_loop(move || {
-                if let Some(h) = h_gh_reset.upgrade() {
-                    let t_rev = amr::i18n::get_translations(amr::i18n::Language::from_str_code(
-                        &lang_for_async,
-                    ));
-                    h.set_github_update_status(t_rev.btn_check_updates.into());
-                }
-            });
+            // Automatically revert button text only if no update was found
+            if !has_update {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(h) = h_gh_reset.upgrade() {
+                        let t_rev = amr::i18n::get_translations(amr::i18n::Language::from_str_code(
+                            &lang_for_async,
+                        ));
+                        h.set_github_update_status(t_rev.btn_check_updates.into());
+                    }
+                });
+            }
         });
     });
+
+    // Check for updates on startup if enabled
+    if config_arc.read().check_updates_startup {
+        let h_startup = h_gh_startup.clone();
+        let c_startup = c_gh_startup.clone();
+        let latest_tag_startup = Arc::clone(&latest_tag_for_startup);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap_or_default();
+            if let Ok(resp) = client
+                .get("https://api.github.com/repos/Qyzom/Antigravity-Manager-Rust/releases/latest")
+                .header("User-Agent", "AMR-Client")
+                .send()
+                .await
+            {
+                if resp.status().is_success() {
+                    if let Ok(json) = resp.json::<serde_json::Value>().await {
+                        if let Some(tag) = json.get("tag_name").and_then(|v| v.as_str()) {
+                            let current_ver = concat!("v", env!("CARGO_PKG_VERSION"));
+                            if tag != current_ver
+                                && tag.trim_start_matches('v') != env!("CARGO_PKG_VERSION")
+                            {
+                                *latest_tag_startup.write() = Some(tag.to_string());
+                                let lang_code = c_startup.read().language.clone();
+                                let t = amr::i18n::get_translations(
+                                    amr::i18n::Language::from_str_code(&lang_code),
+                                );
+                                let status_str = format!("{} {}", t.btn_download_update, tag);
+                                let _ = slint::invoke_from_event_loop(move || {
+                                    if let Some(h) = h_startup.upgrade() {
+                                        h.set_github_update_status(status_str.into());
+                                    }
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
 
     // Delete account callback
     let c_del = Arc::clone(&config_arc);
@@ -2560,14 +2629,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     });
 
-    // Open MCP Test Dialog callback
-    let h_mcp_dlg = window_handle.clone();
-    main_window.on_open_mcp_dialog(move || {
-        if let Some(h) = h_mcp_dlg.upgrade() {
-            h.set_show_mcp_dialog(true);
-        }
-    });
-
     // Open MCP Configuration Dialog callback
     let h_mcp_cfg_dlg = window_handle.clone();
     main_window.on_open_mcp_config_dialog(move || {
@@ -2576,27 +2637,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // Run MCP Tool Direct callback
-    let h_run_mcp = window_handle.clone();
-    let state_mcp = Arc::clone(&shared_app_state);
-    main_window.on_run_mcp_tool(move |tool_name_slint, arg_slint| {
-        let tool_name = tool_name_slint.to_string();
-        let arg = arg_slint.to_string();
-        if let Some(h) = h_run_mcp.upgrade() {
-            h.set_mcp_is_running(true);
-            h.set_mcp_tool_output("Executing tool...".into());
+    // MCP Search Max Results callback
+    let c_mcp_limit = Arc::clone(&config_arc);
+    let h_mcp_limit = window_handle.clone();
+    main_window.on_set_mcp_search_max_results(move |val| {
+        let limit = (val as u32).clamp(1, 25);
+        {
+            let mut cfg = c_mcp_limit.write();
+            cfg.mcp_search_max_results = limit;
+            let _ = cfg.save();
         }
-        let h_inner = h_run_mcp.clone();
-        let st = Arc::clone(&state_mcp);
-        tokio::spawn(async move {
-            let output = amr::proxy::mcp::execute_mcp_tool_direct(&st, &tool_name, &arg).await;
-            let _ = slint::invoke_from_event_loop(move || {
-                if let Some(h) = h_inner.upgrade() {
-                    h.set_mcp_is_running(false);
-                    h.set_mcp_tool_output(output.into());
-                }
-            });
-        });
+        if let Some(h) = h_mcp_limit.upgrade() {
+            h.set_mcp_search_max_results(limit as i32);
+        }
     });
 
     // Open Log Details Modal callback
@@ -3031,6 +3084,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let c_pport = Arc::clone(&config_arc);
     let h_pport = window_handle.clone();
+    let p_reload_port = proxy_reload_tx.clone();
     main_window.on_set_proxy_port_str(move |s| {
         if let Ok(p) = s.to_string().trim().parse::<u16>() {
             let mut cfg = c_pport.write();
@@ -3039,11 +3093,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(h) = h_pport.upgrade() {
                 h.set_proxy_port(p as i32);
             }
+            p_reload_port.send_modify(|v| *v += 1);
         }
     });
 
     let c_phost = Arc::clone(&config_arc);
     let h_phost = window_handle.clone();
+    let p_reload_host = proxy_reload_tx.clone();
     main_window.on_set_proxy_host_str(move |s| {
         let host_str = s.to_string().trim().to_string();
         if !host_str.is_empty() {
@@ -3053,6 +3109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(h) = h_phost.upgrade() {
                 h.set_proxy_host(host_str.into());
             }
+            p_reload_host.send_modify(|v| *v += 1);
         }
     });
 

@@ -30,7 +30,7 @@ pub enum RoutingError {
     NoAccounts,
     ClaudeQuotaExhausted { reset: String },
     GeminiQuotaExhausted { reset: String },
-    AllCoolingDown,
+    AllCoolingDown { retry_after_secs: u64 },
 }
 
 impl std::fmt::Display for RoutingError {
@@ -47,10 +47,20 @@ impl std::fmt::Display for RoutingError {
                 "Gemini quota exhausted across all connected accounts (resets {})",
                 reset
             ),
-            Self::AllCoolingDown => write!(
-                f,
-                "All upstream accounts are currently cooling down after rate limits"
-            ),
+            Self::AllCoolingDown { retry_after_secs } => {
+                if *retry_after_secs > 0 {
+                    write!(
+                        f,
+                        "All upstream accounts are currently cooling down after rate limits (retry in {}s)",
+                        retry_after_secs
+                    )
+                } else {
+                    write!(
+                        f,
+                        "All upstream accounts are currently cooling down after rate limits"
+                    )
+                }
+            }
         }
     }
 }
@@ -518,11 +528,12 @@ impl LoadBalancer {
         };
 
         // 2. Evaluate Account Health & Probing Eligibility
-        let (healthy_zero_fail, probing_accounts) = {
+        let (healthy_zero_fail, probing_accounts, min_cd_secs) = {
             let health_map = self.account_health.read();
             let cds = self.account_cooldowns.read();
             let mut zero_fail = Vec::new();
             let mut probing = Vec::new();
+            let mut min_wait: Option<u64> = None;
 
             for acc in model_eligible {
                 if !acc.is_active {
@@ -531,6 +542,8 @@ impl LoadBalancer {
                 // Check if account is currently cooling down in ladder
                 if let Some(exp) = cds.get(&acc.id) {
                     if *exp > now {
+                        let rem = (*exp - now).as_secs();
+                        min_wait = Some(min_wait.map_or(rem, |w| w.min(rem)));
                         continue; // Active backoff ladder cooldown: skip to protect account!
                     }
                 }
@@ -543,7 +556,7 @@ impl LoadBalancer {
                 }
                 zero_fail.push(acc);
             }
-            (zero_fail, probing)
+            (zero_fail, probing, min_wait.unwrap_or(0))
         };
 
         // Prefer clean healthy accounts first. If none available, dispatch to probing account for trial recovery.
@@ -553,7 +566,9 @@ impl LoadBalancer {
             log::info!("[LoadBalancer] All active accounts have prior failures; dispatching to trial probing account to test auto-heal");
             probing_accounts
         } else {
-            return Err(RoutingError::AllCoolingDown);
+            return Err(RoutingError::AllCoolingDown {
+                retry_after_secs: min_cd_secs,
+            });
         };
 
         // Apply Quota Protection Threshold:

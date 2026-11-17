@@ -258,6 +258,7 @@ async fn execute_mcp_web_search(state: &AppState, payload: &Value) -> String {
         return "Search query is empty.".to_string();
     }
 
+    let max_results = state.config.read().mcp_search_max_results.clamp(1, 25) as usize;
     let target_model = crate::proxy::audio::pick_dynamic_gemini_model(state, "search", None);
     let res = crate::proxy::audio::execute_generate_content(state, &target_model, &target_model, |acc| {
         crate::proxy::antigravity::build_web_search_payload(query, None, &target_model, acc.project_id.as_deref())
@@ -282,9 +283,19 @@ async fn execute_mcp_web_search(state: &AppState, payload: &Value) -> String {
                     }
                 }
             }
-            let (_, _, sources) = crate::proxy::antigravity::extract_grounding_info(actual);
-            if !sources.is_empty() {
-                text.push_str(&sources);
+            let (_queries, results, _sources_md) = crate::proxy::antigravity::extract_grounding_info(actual);
+            if !results.is_empty() {
+                text.push_str("\n\n### Sources\n");
+                for (i, item) in results.iter().take(max_results).enumerate() {
+                    let title = item.get("title").and_then(|t| t.as_str()).unwrap_or("");
+                    let url = item.get("url").and_then(|u| u.as_str()).unwrap_or("");
+                    let snippet = item.get("snippet").and_then(|s| s.as_str()).unwrap_or("");
+                    if !snippet.is_empty() {
+                        text.push_str(&format!("{}. [{}]({})\n   > {}\n", i + 1, title, url, snippet));
+                    } else {
+                        text.push_str(&format!("{}. [{}]({})\n", i + 1, title, url));
+                    }
+                }
             }
             if !text.is_empty() {
                 return text;
@@ -297,14 +308,35 @@ async fn execute_mcp_web_search(state: &AppState, payload: &Value) -> String {
 
 async fn execute_mcp_fetch_url(state: &AppState, url_str: &str) -> String {
     let clean_url = url_str.trim();
-    if !clean_url.starts_with("http://") && !clean_url.starts_with("https://") {
-        return format!("Invalid URL scheme for '{}'. Only http:// and https:// URLs are supported.", clean_url);
+    if clean_url.is_empty() {
+        return "Empty URL provided.".to_string();
     }
+
+    let target_url = if clean_url.starts_with("http://") || clean_url.starts_with("https://") {
+        clean_url.to_string()
+    } else if !clean_url.contains(' ') && clean_url.contains('.') {
+        format!("https://{}", clean_url)
+    } else {
+        return format!(
+            "Invalid URL: '{}'. fetch_web_page requires a full URL (e.g. https://example.com). For web search queries, please use the 'google_web_search' tool.",
+            clean_url
+        );
+    };
+
+    let parsed = match reqwest::Url::parse(&target_url) {
+        Ok(u) => u,
+        Err(_) => {
+            return format!(
+                "Invalid URL syntax for '{}'. Please provide a valid URL (e.g. https://example.com).",
+                target_url
+            );
+        }
+    };
 
     // Direct fetch using proxy client with natural user agent
     let client = &state.http_client;
     match client
-        .get(clean_url)
+        .get(parsed)
         .header(
             "User-Agent",
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
@@ -326,10 +358,10 @@ async fn execute_mcp_fetch_url(state: &AppState, url_str: &str) -> String {
                     clean
                 }
             } else {
-                format!("Failed to fetch URL {}: HTTP {}", clean_url, resp.status())
+                format!("Failed to fetch URL {}: HTTP {}", target_url, resp.status())
             }
         }
-        Err(e) => format!("Error connecting to URL {}: {}", clean_url, e),
+        Err(e) => format!("Error connecting to URL {}: {}", target_url, e),
     }
 }
 

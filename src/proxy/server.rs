@@ -561,6 +561,20 @@ async fn gemini_content(
         };
         let raw = format!("Model '{}' is disabled by administrator in settings.", requested_model);
         let msg = format_amr_error_message(&raw, StatusCode::FORBIDDEN, &lang, standardized);
+        state.stats.record_detailed_request(
+            "POST",
+            &format!("/v1beta/{}", clean_path),
+            &requested_model,
+            403,
+            0,
+            0,
+            "Dispatcher",
+            "",
+            "",
+            &payload.to_string(),
+            &msg,
+            Some(&msg),
+        );
         return (
             StatusCode::FORBIDDEN,
             Json(json!({
@@ -592,31 +606,64 @@ async fn gemini_content(
     let account = match selected_account {
         Ok(acc) if !acc.api_key.is_empty() => acc,
         Ok(_) => {
+            let err_msg = "Active upstream account has empty API token in AMR.";
+            state.stats.record_detailed_request(
+                "POST",
+                &format!("/v1beta/{}", clean_path),
+                &requested_model,
+                502,
+                0,
+                0,
+                "Dispatcher",
+                "",
+                "",
+                &payload.to_string(),
+                err_msg,
+                Some(err_msg),
+            );
             return (
                 StatusCode::BAD_GATEWAY,
                 Json(json!({
                     "error": {
                         "code": 502,
-                        "message": "Active upstream account has empty API token in AMR.",
+                        "message": err_msg,
                         "status": "UNAVAILABLE"
                     }
                 })),
             ).into_response();
         }
         Err(e) => {
+            let status = match e {
+                crate::proxy::balancer::RoutingError::NoAccounts => StatusCode::SERVICE_UNAVAILABLE,
+                _ => StatusCode::TOO_MANY_REQUESTS,
+            };
             let (lang, standardized) = {
                 let c = state.config.read();
                 (c.language.clone(), c.standardized_error_handling)
             };
             let raw = format!("{}", e);
-            let msg = format_amr_error_message(&raw, StatusCode::TOO_MANY_REQUESTS, &lang, standardized);
+            let msg = format_amr_error_message(&raw, status, &lang, standardized);
+            state.stats.record_detailed_request(
+                "POST",
+                &format!("/v1beta/{}", clean_path),
+                &requested_model,
+                status.as_u16(),
+                0,
+                0,
+                "Dispatcher",
+                "",
+                "",
+                &payload.to_string(),
+                &msg,
+                Some(&msg),
+            );
             return (
-                StatusCode::TOO_MANY_REQUESTS,
+                status,
                 Json(json!({
                     "error": {
-                        "code": 429,
+                        "code": status.as_u16(),
                         "message": msg,
-                        "status": "RESOURCE_EXHAUSTED"
+                        "status": if status == StatusCode::SERVICE_UNAVAILABLE { "UNAVAILABLE" } else { "RESOURCE_EXHAUSTED" }
                     }
                 })),
             ).into_response();
@@ -850,6 +897,20 @@ async fn chat_completions(
         };
         let raw = format!("Model '{}' is disabled by administrator in settings.", requested_model);
         let msg = format_amr_error_message(&raw, StatusCode::FORBIDDEN, &lang, standardized);
+        state.stats.record_detailed_request(
+            "POST",
+            "/v1/chat/completions",
+            &requested_model,
+            403,
+            0,
+            0,
+            "Dispatcher",
+            payload.reasoning_effort.as_deref().unwrap_or(""),
+            "",
+            &serde_json::to_string(&payload).unwrap_or_default(),
+            &msg,
+            Some(&msg),
+        );
         return (
             StatusCode::FORBIDDEN,
             Json(json!({
@@ -882,17 +943,24 @@ async fn chat_completions(
     let initial_account = match selected_account {
         Ok(acc) if !acc.api_key.is_empty() => acc,
         Ok(_) => {
-            state.stats.record_request(
+            let err_msg = "Active upstream account has empty API token in AMR. Please connect an account in AMR.";
+            state.stats.record_detailed_request(
                 "POST",
                 "/v1/chat/completions",
                 &requested_model,
                 502,
                 0,
                 start_time.elapsed().as_millis() as u64,
+                "Dispatcher",
+                payload.reasoning_effort.as_deref().unwrap_or(""),
+                "",
+                &serde_json::to_string(&payload).unwrap_or_default(),
+                err_msg,
+                Some(err_msg),
             );
             return (
                 StatusCode::BAD_GATEWAY,
-                Json(json!({"error": {"message": "Active upstream account has empty API token in AMR. Please connect an account in AMR.", "type": "upstream_error", "code": "upstream_account_missing_token"}})),
+                Json(json!({"error": {"message": err_msg, "type": "upstream_error", "code": "upstream_account_missing_token"}})),
             ).into_response();
         }
         Err(e) => {
@@ -901,20 +969,26 @@ async fn chat_completions(
                 crate::proxy::balancer::RoutingError::NoAccounts => StatusCode::SERVICE_UNAVAILABLE,
                 _ => StatusCode::TOO_MANY_REQUESTS,
             };
-            state.stats.record_request(
-                "POST",
-                "/v1/chat/completions",
-                &requested_model,
-                status.as_u16(),
-                0,
-                lat,
-            );
             let (lang, standardized) = {
                 let c = state.config.read();
                 (c.language.clone(), c.standardized_error_handling)
             };
             let raw = format!("{}", e);
             let msg = format_amr_error_message(&raw, status, &lang, standardized);
+            state.stats.record_detailed_request(
+                "POST",
+                "/v1/chat/completions",
+                &requested_model,
+                status.as_u16(),
+                0,
+                lat,
+                "Dispatcher",
+                payload.reasoning_effort.as_deref().unwrap_or(""),
+                "",
+                &serde_json::to_string(&payload).unwrap_or_default(),
+                &msg,
+                Some(&msg),
+            );
             return (
                 status,
                 Json(json!({
@@ -1999,6 +2073,20 @@ async fn claude_messages(
         };
         let raw = format!("Model '{}' is disabled by administrator in settings.", model);
         let msg = format_amr_error_message(&raw, StatusCode::FORBIDDEN, &lang, standardized);
+        state.stats.record_detailed_request(
+            "POST",
+            "/v1/messages",
+            &model,
+            403,
+            0,
+            0,
+            "Dispatcher",
+            "",
+            "",
+            &payload.to_string(),
+            &msg,
+            Some(&msg),
+        );
         return (
             StatusCode::FORBIDDEN,
             Json(json!({
@@ -2022,12 +2110,28 @@ async fn claude_messages(
     let initial_account = match selected_account {
         Ok(acc) if !acc.api_key.is_empty() => acc,
         Ok(_) => {
+            let err_msg = "Account has empty API token in AMR";
+            state.stats.record_detailed_request(
+                "POST",
+                "/v1/messages",
+                &model,
+                502,
+                0,
+                start_time.elapsed().as_millis() as u64,
+                "Dispatcher",
+                "",
+                "",
+                &payload.to_string(),
+                err_msg,
+                Some(err_msg),
+            );
             return (
                 StatusCode::BAD_GATEWAY,
-                Json(json!({"type": "error", "error": {"type": "authentication_error", "message": "Account has empty API token in AMR"}})),
+                Json(json!({"type": "error", "error": {"type": "authentication_error", "message": err_msg}})),
             ).into_response();
         }
         Err(e) => {
+            let lat = start_time.elapsed().as_millis() as u64;
             let status = match e {
                 crate::proxy::balancer::RoutingError::NoAccounts => StatusCode::SERVICE_UNAVAILABLE,
                 _ => StatusCode::TOO_MANY_REQUESTS,
@@ -2038,6 +2142,20 @@ async fn claude_messages(
             };
             let raw = format!("{}", e);
             let msg = format_amr_error_message(&raw, status, &lang, standardized);
+            state.stats.record_detailed_request(
+                "POST",
+                "/v1/messages",
+                &model,
+                status.as_u16(),
+                0,
+                lat,
+                "Dispatcher",
+                "",
+                "",
+                &payload.to_string(),
+                &msg,
+                Some(&msg),
+            );
             return (
                 status,
                 Json(json!({
