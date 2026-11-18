@@ -16,7 +16,8 @@ use axum::{Json, Router};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Instant;
-use tower_http::cors::CorsLayer;
+use axum::middleware::{self, Next};
+use axum::extract::Request;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -223,9 +224,26 @@ pub fn create_proxy_router(state: AppState) -> Router {
         .route("/usage", get(billing_usage))
         .route("/usage/", get(billing_usage))
         .route("/oauth/callback", get(oauth_callback))
-        .layer(CorsLayer::permissive())
+        .layer(middleware::from_fn_with_state(state.clone(), authenticate))
         .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
         .with_state(state)
+}
+
+async fn authenticate(State(state): State<AppState>, request: Request, next: Next) -> Response {
+    if matches!(request.uri().path(), "/health" | "/health/" | "/oauth/callback") {
+        return next.run(request).await;
+    }
+    let key = state.config.read().master_api_key.clone();
+    let headers = request.headers();
+    let bearer = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "));
+    let api_key = headers.get("x-api-key").or_else(|| headers.get("x-goog-api-key"))
+        .and_then(|v| v.to_str().ok());
+    if !key.is_empty() && (bearer == Some(key.as_str()) || api_key == Some(key.as_str())) {
+        next.run(request).await
+    } else {
+        (StatusCode::UNAUTHORIZED, "Invalid or missing API key").into_response()
+    }
 }
 
 async fn oauth_callback(

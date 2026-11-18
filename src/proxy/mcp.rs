@@ -339,8 +339,31 @@ async fn execute_mcp_web_search(state: &AppState, payload: &Value) -> String {
 }
 
 async fn execute_mcp_fetch_url(state: &AppState, url_str: &str) -> String {
-    // 1. Direct fetch using proxy client with natural user agent
-    let client = &state.http_client;
+    // Resolve once and pin the connection to the checked addresses. Do not use
+    // environment proxies or follow redirects, which could bypass this check.
+    let _ = state;
+    let url = match reqwest::Url::parse(url_str) {
+        Ok(url) if matches!(url.scheme(), "http" | "https") && url.username().is_empty() && url.password().is_none() => url,
+        _ => return "Invalid HTTP or HTTPS URL".into(),
+    };
+    let Some(host) = url.host_str() else { return "URL has no host".into(); };
+    let Some(port) = url.port_or_known_default() else { return "URL has no port".into(); };
+    let addresses: Vec<_> = match tokio::net::lookup_host((host, port)).await {
+        Ok(addresses) => addresses.collect(),
+        Err(_) => return "Could not resolve URL host".into(),
+    };
+    if addresses.is_empty() || addresses.iter().any(|a| !is_public_address(a.ip())) {
+        return "URL resolves to a non-public address".into();
+    }
+    let client = match reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .resolve_to_addrs(host, &addresses)
+        .timeout(std::time::Duration::from_secs(15))
+        .build() {
+            Ok(client) => client,
+            Err(_) => return "Could not create HTTP client".into(),
+        };
     match client
         .get(url_str)
         .header(
@@ -352,13 +375,23 @@ async fn execute_mcp_fetch_url(state: &AppState, url_str: &str) -> String {
         .send()
         .await
     {
-        Ok(resp) => {
+        Ok(mut resp) => {
             if resp.status().is_success() {
-                let html = resp.text().await.unwrap_or_default();
+                const MAX_BYTES: usize = 2 * 1024 * 1024;
+                let mut body = Vec::new();
+                loop {
+                    match resp.chunk().await {
+                        Ok(Some(chunk)) if body.len() + chunk.len() <= MAX_BYTES => body.extend_from_slice(&chunk),
+                        Ok(Some(_)) => return "Page exceeds the 2 MiB size limit".into(),
+                        Ok(None) => break,
+                        Err(_) => return "Could not read page".into(),
+                    }
+                }
+                let html = String::from_utf8_lossy(&body);
                 // Strip tags for clean markdown/text content
                 let clean = strip_html_tags(&html);
-                if clean.len() > 30000 {
-                    format!("{}\n\n[Content truncated at 30,000 characters]", &clean[..30000])
+                if clean.chars().count() > 30000 {
+                    format!("{}\n\n[Content truncated at 30,000 characters]", clean.chars().take(30000).collect::<String>())
                 } else {
                     clean
                 }
@@ -370,12 +403,29 @@ async fn execute_mcp_fetch_url(state: &AppState, url_str: &str) -> String {
     }
 }
 
+fn is_public_address(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(ip) => {
+            let [a, b, c, _] = ip.octets();
+            !(a == 0 || a == 10 || a == 127 || a >= 224 ||
+                (a == 100 && (64..=127).contains(&b)) ||
+                (a == 169 && b == 254) || (a == 172 && (16..=31).contains(&b)) ||
+                (a == 192 && (b == 168 || b == 0 || (b == 88 && c == 99))) ||
+                (a == 198 && (b == 18 || b == 19 || (b == 51 && c == 100))) ||
+                (a == 203 && b == 0 && c == 113))
+        }
+        // Restrict IPv6 to globally routed unicast; mapped IPv4 addresses are rejected.
+        std::net::IpAddr::V6(ip) => (ip.segments()[0] & 0xe000) == 0x2000 &&
+            !(ip.segments()[0] == 0x2001 && ip.segments()[1] == 0x0db8),
+    }
+}
+
 fn strip_html_tags(html: &str) -> String {
     let mut out = String::new();
     let mut in_tag = false;
     let mut in_script = false;
 
-    let lower = html.to_lowercase();
+    let lower = html.to_ascii_lowercase();
     let mut i = 0;
     let bytes = html.as_bytes();
 
@@ -399,7 +449,10 @@ fn strip_html_tags(html: &str) -> String {
         }
 
         if !in_tag && !in_script {
-            out.push(bytes[i] as char);
+            let ch = html[i..].chars().next().unwrap();
+            out.push(ch);
+            i += ch.len_utf8();
+            continue;
         }
         i += 1;
     }
@@ -419,4 +472,20 @@ fn strip_html_tags(html: &str) -> String {
         }
     }
     final_text.trim().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{strip_html_tags, is_public_address};
+    #[test]
+    fn preserves_unicode() {
+        assert_eq!(strip_html_tags("<p>Привет, 世界!</p><script>ignored</script>"), "Привет, 世界!");
+    }
+    #[test]
+    fn blocks_internal_addresses() {
+        for ip in ["127.0.0.1", "10.0.0.1", "169.254.169.254", "::1", "::ffff:127.0.0.1"] {
+            assert!(!is_public_address(ip.parse().unwrap()), "{ip}");
+        }
+        assert!(is_public_address("8.8.8.8".parse().unwrap()));
+    }
 }

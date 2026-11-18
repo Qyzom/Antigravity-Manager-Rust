@@ -2361,7 +2361,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     main_window.on_regenerate_master_key(move || {
         let new_key = format!(
             "sk-amr-{}",
-            &uuid::Uuid::new_v4().simple().to_string()[..16]
+            uuid::Uuid::new_v4().simple()
         );
         let lang = {
             let mut cfg = c_regen.write();

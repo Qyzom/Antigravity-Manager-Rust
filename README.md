@@ -38,6 +38,8 @@
 
 ### Overview & Philosophy
 
+**API authentication:** Send the master key displayed in Settings as `Authorization: Bearer <key>`, `x-api-key: <key>`, or `x-goog-api-key: <key>`. Existing clients and MCP configurations must include this header. Health checks and the OAuth callback do not require a key. Browser cross-origin access is disabled. The MCP page-fetch tool accepts public HTTP(S) addresses only, does not follow redirects, and limits responses to 2 MiB.
+
 **AMR (Antigravity Manager Rust)** is a cross-platform local AI protocol proxy and load balancer written in pure Rust. It transforms multiple upstream accounts into unified local endpoints compatible with **OpenAI** (`/v1/*`), **Anthropic Claude** (`/v1/messages`), **Google Gemini Native** (`/v1beta/models/*`), and **Model Context Protocol (MCP)** (`/mcp`), supporting modern AI coding tools and agents including **Roo Code**, **Claude Code**, **Cline**, **Cursor**, **Windsurf**, **Codex**, **OpenCode**, and **Continue.dev**.
 
 > [!NOTE]

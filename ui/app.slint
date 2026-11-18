@@ -4284,7 +4284,7 @@ export component MainWindow inherits Window {
                             padding: 12px;
                             alignment: start;
                             Text {
-                                text: "{\n  \"mcpServers\": {\n    \"amr\": {\n      \"url\": \"http://" + root.proxy_host + ":" + root.proxy_port + "/mcp\"\n    }\n  }\n}";
+                                text: "{\n  \"mcpServers\": {\n    \"amr\": {\n      \"url\": \"http://" + root.proxy_host + ":" + root.proxy_port + "/mcp\",\n      \"headers\": { \"Authorization\": \"Bearer " + root.master_api_key + "\" }\n    }\n  }\n}";
                                 font-family: "monospace";
                                 font-size: 12px;
                                 color: #38bdf8;
@@ -4301,7 +4301,7 @@ export component MainWindow inherits Window {
                         is_accent: true;
                         custom_height: 30px;
                         clicked => {
-                            root.copy_text_to_clipboard("{\n  \"mcpServers\": {\n    \"amr\": {\n      \"url\": \"http://" + root.proxy_host + ":" + root.proxy_port + "/mcp\"\n    }\n  }\n}");
+                            root.copy_text_to_clipboard("{\n  \"mcpServers\": {\n    \"amr\": {\n      \"url\": \"http://" + root.proxy_host + ":" + root.proxy_port + "/mcp\",\n      \"headers\": { \"Authorization\": \"Bearer " + root.master_api_key + "\" }\n    }\n  }\n}");
                         }
                     }
                 }

@@ -444,7 +444,7 @@ pub struct AppConfig {
 fn default_master_api_key() -> String {
     format!(
         "sk-amr-{}",
-        &uuid::Uuid::new_v4().simple().to_string()[..16]
+        uuid::Uuid::new_v4().simple()
     )
 }
 
@@ -555,7 +555,7 @@ impl Default for AppConfig {
             enable_billing_emulation: true,
             check_updates_startup: true,
             clear_logs_on_exit: false,
-            master_api_key: "sk-amr-v1-master-key".to_string(),
+            master_api_key: default_master_api_key(),
             accounts: Vec::new(),
             active_account_id: None,
             models: Vec::new(),
@@ -892,6 +892,12 @@ impl AppConfig {
         if path.exists() {
             if let Ok(content) = fs::read_to_string(&path) {
                 if let Ok(mut cfg) = serde_json::from_str::<AppConfig>(&content) {
+                    if cfg.master_api_key == "sk-amr-v1-master-key" || cfg.master_api_key.is_empty() {
+                        cfg.master_api_key = default_master_api_key();
+                        if let Err(error) = cfg.save() {
+                            log::error!("Could not persist replacement API key: {error}");
+                        }
+                    }
                     cfg.sanitize_models();
 
                     // Auto-recover accounts and ensure timestamp & tier consistency
@@ -1148,7 +1154,13 @@ impl AppConfig {
             Self::config_path()
         };
         let json = serde_json::to_string_pretty(self)?;
-        fs::write(path, json)
+        use std::io::Write;
+        let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+        let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
+        temporary.write_all(json.as_bytes())?;
+        temporary.as_file().sync_all()?;
+        temporary.persist(path).map_err(|error| error.error)?;
+        Ok(())
     }
 
     pub fn get_active_account(&self) -> Option<&UpstreamAccount> {

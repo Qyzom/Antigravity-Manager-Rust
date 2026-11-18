@@ -1274,10 +1274,16 @@ mod tests {
         };
 
         let app = create_proxy_router(state);
+        let key = config.read().master_api_key.clone();
+
+        let unauthorized = Request::builder().uri("/v1/models")
+            .body(axum::body::Body::empty()).unwrap();
+        assert_eq!(app.clone().oneshot(unauthorized).await.unwrap().status(), StatusCode::UNAUTHORIZED);
 
         // 1. Subscription query
         let req_sub = Request::builder()
             .uri("/v1/dashboard/billing/subscription")
+            .header("Authorization", format!("Bearer {key}"))
             .body(axum::body::Body::empty())
             .unwrap();
         let resp_sub = app.clone().oneshot(req_sub).await.unwrap();
@@ -1286,6 +1292,7 @@ mod tests {
         // 2. Usage query
         let req_usage = Request::builder()
             .uri("/v1/dashboard/billing/usage")
+            .header("x-api-key", &key)
             .body(axum::body::Body::empty())
             .unwrap();
         let resp_usage = app.clone().oneshot(req_usage).await.unwrap();
@@ -1295,6 +1302,7 @@ mod tests {
         config.write().enable_billing_emulation = false;
         let req_off = Request::builder()
             .uri("/v1/dashboard/billing/subscription")
+            .header("x-goog-api-key", &key)
             .body(axum::body::Body::empty())
             .unwrap();
         let resp_off = app.oneshot(req_off).await.unwrap();
