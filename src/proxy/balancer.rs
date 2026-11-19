@@ -500,8 +500,9 @@ impl LoadBalancer {
         let target_canon = AppConfig::canonical_catalog_id(target_model);
         let is_virtual = matches!(
             target_model,
-            "web-search" | "whisper-1" | "tts-1" | "stt-1"
-        );
+            "web-search" | "whisper-1" | "tts-1" | "tts-1-hd" | "stt-1"
+        ) || target_model.starts_with("tts-")
+            || target_model.contains("tts");
         let model_eligible: Vec<UpstreamAccount> = if is_virtual {
             quota_eligible.clone()
         } else {

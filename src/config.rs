@@ -878,6 +878,10 @@ impl AppConfig {
         for (idx, (vid, vname, vprov)) in [
             ("whisper-1", "Whisper 1 (Audio STT)", "openai"),
             ("tts-1", "TTS 1 (Audio Speech)", "openai"),
+            ("tts-1-hd", "TTS 1 HD (Audio Speech)", "openai"),
+            ("gemini-3.8-flash-lite-tts", "Gemini 3.8 Flash Lite TTS (Fast Live Voice)", "gemini"),
+            ("gemini-3.8-flash-tts", "Gemini 3.8 Flash TTS", "gemini"),
+            ("gemini-3.1-flash-tts-preview", "Gemini 3.1 Flash TTS Preview", "gemini"),
         ]
         .into_iter()
         .enumerate()
@@ -1161,13 +1165,19 @@ impl AppConfig {
     }
 
     pub fn save(&self) -> std::io::Result<()> {
+        use std::io::Write;
         let path = if self.portable_mode {
             PathBuf::from("amr.json")
         } else {
             Self::config_path()
         };
         let json = serde_json::to_string_pretty(self)?;
-        fs::write(path, json)
+        let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+        let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
+        temporary.write_all(json.as_bytes())?;
+        temporary.as_file().sync_all()?;
+        temporary.persist(&path).map_err(|error| error.error)?;
+        Ok(())
     }
 
     pub fn get_active_account(&self) -> Option<&UpstreamAccount> {
@@ -1295,7 +1305,12 @@ impl AppConfig {
                             "reasoningEffort": false,
                             "thinking_budget": false,
                             "max_thinking_budget": false,
-                            "images": false
+                            "images": false,
+                            "voices": [
+                                "Fola", "Arlo", "Cleo", "Finn", "Gero", "Lora", "Neno", "Olin", "Tari",
+                                "Zephyr", "Puck", "Charon", "Fenrir", "Kore", "Aoede", "Orus", "Leda", "Sulafat",
+                                "alloy", "echo", "fable", "onyx", "nova", "shimmer", "ash", "coral", "sage"
+                            ]
                         }),
                         serde_json::json!(["input", "model", "voice", "response_format", "speed"]),
                     )

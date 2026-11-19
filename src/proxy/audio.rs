@@ -148,24 +148,66 @@ pub struct WebSearchRequest {
     pub model: Option<String>,
 }
 
-fn map_openai_voice_to_gemini(voice: &str) -> String {
+/// Maps any incoming voice name (Antigravity 44.9+, Gemini Native, OpenAI API)
+/// to the optimal upstream voice identifier.
+pub fn map_openai_voice_to_gemini(voice: &str) -> String {
     match voice.trim().to_lowercase().as_str() {
-        "alloy" | "zephyr" => "Zephyr".to_string(),
-        "echo" | "puck" => "Puck".to_string(),
-        "fable" | "charon" => "Charon".to_string(),
-        "onyx" | "fenrir" => "Fenrir".to_string(),
-        "nova" | "kore" => "Kore".to_string(),
-        "shimmer" | "aoede" => "Aoede".to_string(),
-        "ash" | "orus" => "Orus".to_string(),
-        "coral" | "leda" => "Leda".to_string(),
-        "sage" | "sulafat" => "Sulafat".to_string(),
+        // --- 9 Native Antigravity Voices (Antigravity v44.9+) ---
+        "fola" => "Fola".to_string(),
+        "arlo" => "Arlo".to_string(),
+        "cleo" => "Cleo".to_string(),
+        "finn" => "Finn".to_string(),
+        "gero" => "Gero".to_string(),
+        "lora" => "Lora".to_string(),
+        "neno" => "Neno".to_string(),
+        "olin" => "Olin".to_string(),
+        "tari" => "Tari".to_string(),
+
+        // --- 9 Google Gemini Native Voices ---
+        "zephyr" => "Zephyr".to_string(),
+        "puck" => "Puck".to_string(),
+        "charon" => "Charon".to_string(),
+        "fenrir" => "Fenrir".to_string(),
+        "kore" => "Kore".to_string(),
+        "aoede" => "Aoede".to_string(),
+        "orus" => "Orus".to_string(),
+        "leda" => "Leda".to_string(),
+        "sulafat" => "Sulafat".to_string(),
+
+        // --- 9 OpenAI TTS API Voice Mappings (paired with Antigravity / Gemini) ---
+        "alloy" => "Fola".to_string(),
+        "echo" => "Arlo".to_string(),
+        "fable" => "Finn".to_string(),
+        "onyx" => "Neno".to_string(),
+        "nova" => "Cleo".to_string(),
+        "shimmer" => "Lora".to_string(),
+        "ash" => "Gero".to_string(),
+        "coral" => "Tari".to_string(),
+        "sage" => "Olin".to_string(),
+
         other => {
             let mut chars = other.chars();
             match chars.next() {
                 Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                None => "Zephyr".to_string(),
+                None => "Fola".to_string(),
             }
         }
+    }
+}
+
+/// Fallback voice resolver in case an upstream endpoint only supports legacy Gemini Native voices
+pub fn fallback_gemini_voice(voice: &str) -> &'static str {
+    match voice.trim().to_lowercase().as_str() {
+        "fola" | "alloy" | "zephyr" => "Zephyr",
+        "arlo" | "echo" | "puck" => "Puck",
+        "cleo" | "nova" | "kore" => "Kore",
+        "finn" | "fable" | "charon" => "Charon",
+        "gero" | "ash" | "orus" => "Orus",
+        "lora" | "shimmer" | "aoede" => "Aoede",
+        "neno" | "onyx" | "fenrir" => "Fenrir",
+        "olin" | "sage" | "sulafat" => "Sulafat",
+        "tari" | "coral" | "leda" => "Leda",
+        _ => "Zephyr",
     }
 }
 
@@ -825,10 +867,16 @@ pub async fn handle_audio_speech(
     State(state): State<AppState>,
     Json(req): Json<AudioSpeechRequest>,
 ) -> Response {
-    if !state.config.read().is_model_enabled("tts-1") {
+    let is_enabled = {
+        let cfg = state.config.read();
+        cfg.is_model_enabled(&req.model)
+            || cfg.is_model_enabled("tts-1")
+            || cfg.is_model_enabled("tts-1-hd")
+    };
+    if !is_enabled {
         return error_response(
             StatusCode::FORBIDDEN,
-            "AMR: Model 'tts-1' is disabled by administrator in settings.".to_string(),
+            format!("AMR: Model '{}' is disabled by administrator in settings.", req.model),
             "model_disabled",
         );
     }
@@ -856,16 +904,35 @@ pub async fn handle_audio_speech(
         )
     };
 
-    let candidate_models: Vec<&'static str> = match req.model.to_lowercase().as_str() {
+    let candidate_models: Vec<&'static str> = match req.model.trim().to_lowercase().as_str() {
+        "gemini-3.8-flash-lite-tts" => vec![
+            "gemini-3.8-flash-lite-tts",
+            "gemini-3.8-flash-tts",
+            "gemini-3.1-flash-tts-preview",
+            "gemini-2.5-flash",
+        ],
+        "gemini-3.8-flash-tts" => vec![
+            "gemini-3.8-flash-tts",
+            "gemini-3.8-flash-lite-tts",
+            "gemini-3.1-flash-tts-preview",
+            "gemini-2.5-flash",
+        ],
         "gemini-3.1-flash-tts-preview" => vec![
             "gemini-3.1-flash-tts-preview",
+            "gemini-3.8-flash-lite-tts",
             "gemini-3.8-flash-tts",
             "gemini-2.5-flash",
         ],
-        "gemini-3.8-flash-tts" => vec!["gemini-3.8-flash-tts", "gemini-2.5-flash"],
-        _ => vec![
-            "gemini-3.1-flash-tts-preview",
+        "tts-1-hd" => vec![
             "gemini-3.8-flash-tts",
+            "gemini-3.8-flash-lite-tts",
+            "gemini-3.1-flash-tts-preview",
+            "gemini-2.5-flash",
+        ],
+        _ => vec![
+            "gemini-3.8-flash-lite-tts",
+            "gemini-3.8-flash-tts",
+            "gemini-3.1-flash-tts-preview",
             "gemini-2.5-flash",
             "gemini-3.8-flash-medium",
         ],
@@ -876,100 +943,118 @@ pub async fn handle_audio_speech(
         "No TTS upstream model succeeded".to_string(),
     );
 
-    for upstream_model in candidate_models {
-        let res = execute_generate_content(&state, "gemini-3.8-flash", upstream_model, |acc| {
-            let project_id = acc
-                .project_id
-                .clone()
-                .unwrap_or_else(|| "aicode-consumers".to_string());
-            json!({
-                "project": project_id,
-                "requestId": format!("tts-{}", uuid::Uuid::new_v4()),
-                "userAgent": "antigravity",
-                "requestType": "agent",
-                "model": upstream_model,
-                "request": {
-                    "contents": [{
-                        "role": "user",
-                        "parts": [{ "text": speech_prompt }]
-                    }],
-                    "generationConfig": {
-                        "responseModalities": ["AUDIO"],
-                        "speechConfig": {
-                            "voiceConfig": {
-                                "prebuiltVoiceConfig": {
-                                    "voiceName": voice_name
+    let voice_attempts = [
+        voice_name.clone(),
+        fallback_gemini_voice(&req.voice).to_string(),
+    ];
+
+    'model_loop: for upstream_model in candidate_models {
+        let mut tried_voices = std::collections::HashSet::new();
+
+        for current_voice in &voice_attempts {
+            if !tried_voices.insert(current_voice.as_str()) {
+                continue;
+            }
+
+            let res = execute_generate_content(&state, "tts-1", upstream_model, |acc| {
+                let project_id = acc
+                    .project_id
+                    .clone()
+                    .unwrap_or_else(|| "aicode-consumers".to_string());
+                json!({
+                    "project": project_id,
+                    "requestId": format!("tts-{}", uuid::Uuid::new_v4()),
+                    "userAgent": "antigravity",
+                    "requestType": "agent",
+                    "model": upstream_model,
+                    "request": {
+                        "contents": [{
+                            "role": "user",
+                            "parts": [{ "text": speech_prompt }]
+                        }],
+                        "generationConfig": {
+                            "responseModalities": ["AUDIO"],
+                            "speechConfig": {
+                                "voiceConfig": {
+                                    "prebuiltVoiceConfig": {
+                                        "voiceName": current_voice
+                                    }
                                 }
                             }
                         }
                     }
-                }
+                })
             })
-        })
-        .await;
+            .await;
 
-        match res {
-            Ok((json_resp, account_name)) => {
-                let parts = extract_candidate_parts(&json_resp);
-                for p in parts {
-                    if let Some(inline) = p.get("inlineData") {
-                        if let Some(b64) = inline.get("data").and_then(|d| d.as_str()) {
-                            let upstream_mime = inline
-                                .get("mimeType")
-                                .and_then(|m| m.as_str())
-                                .unwrap_or("audio/L16;codec=pcm;rate=24000");
-                            if let Ok(raw_audio) = general_purpose::STANDARD.decode(b64.trim()) {
-                                let final_bytes = if upstream_mime.to_lowercase().contains("l16")
-                                    || upstream_mime.to_lowercase().contains("pcm")
-                                {
-                                    let rate = parse_pcm_rate(upstream_mime);
-                                    wrap_pcm_in_wav(&raw_audio, rate, 1, 16)
-                                } else {
-                                    raw_audio
-                                };
-                                let content_type =
-                                    detect_container_content_type(&final_bytes, upstream_mime);
-                                let elapsed_ms = start_time.elapsed().as_millis() as u64;
-                                state.stats.record_detailed_request(
-                                    "POST",
-                                    "/v1/audio/speech",
-                                    &req.model,
-                                    200,
-                                    final_bytes.len() as u64,
-                                    elapsed_ms,
-                                    &account_name,
-                                    "off",
-                                    "Content-Type: application/json",
-                                    &format!("voice={} model={}", voice_name, upstream_model),
-                                    &format!("[audio: {} bytes, {}]", final_bytes.len(), content_type),
-                                    None,
-                                );
+            match res {
+                Ok((json_resp, account_name)) => {
+                    let parts = extract_candidate_parts(&json_resp);
+                    for p in parts {
+                        if let Some(inline) = p.get("inlineData") {
+                            if let Some(b64) = inline.get("data").and_then(|d| d.as_str()) {
+                                let upstream_mime = inline
+                                    .get("mimeType")
+                                    .and_then(|m| m.as_str())
+                                    .unwrap_or("audio/L16;codec=pcm;rate=24000");
+                                if let Ok(raw_audio) = general_purpose::STANDARD.decode(b64.trim()) {
+                                    let final_bytes = if upstream_mime.to_lowercase().contains("l16")
+                                        || upstream_mime.to_lowercase().contains("pcm")
+                                    {
+                                        let rate = parse_pcm_rate(upstream_mime);
+                                        wrap_pcm_in_wav(&raw_audio, rate, 1, 16)
+                                    } else {
+                                        raw_audio
+                                    };
+                                    let content_type =
+                                        detect_container_content_type(&final_bytes, upstream_mime);
+                                    let elapsed_ms = start_time.elapsed().as_millis() as u64;
+                                    state.stats.record_detailed_request(
+                                        "POST",
+                                        "/v1/audio/speech",
+                                        &req.model,
+                                        200,
+                                        final_bytes.len() as u64,
+                                        elapsed_ms,
+                                        &account_name,
+                                        "off",
+                                        "Content-Type: application/json",
+                                        &format!("voice={} model={}", current_voice, upstream_model),
+                                        &format!("[audio: {} bytes, {}]", final_bytes.len(), content_type),
+                                        None,
+                                    );
 
-                                return (
-                                    StatusCode::OK,
-                                    [
-                                        ("content-type", content_type),
-                                        ("x-amr-audio-voice", voice_name.as_str()),
-                                        ("x-amr-upstream-model", upstream_model),
-                                    ],
-                                    final_bytes,
-                                )
-                                    .into_response();
+                                    return (
+                                        StatusCode::OK,
+                                        [
+                                            (header::CONTENT_TYPE, content_type),
+                                            (header::HeaderName::from_static("x-amr-audio-voice"), current_voice.as_str()),
+                                            (header::HeaderName::from_static("x-amr-upstream-model"), upstream_model),
+                                        ],
+                                        final_bytes,
+                                    )
+                                        .into_response();
+                                }
                             }
                         }
                     }
+                    last_err = (
+                        StatusCode::NOT_IMPLEMENTED,
+                        format!(
+                            "Model '{}' responded without audio inlineData (AUDIO TTS output is not enabled on this Cloud Code account/endpoint)",
+                            upstream_model
+                        ),
+                    );
                 }
-                last_err = (
-                    StatusCode::NOT_IMPLEMENTED,
-                    format!(
-                        "Model '{}' responded without audio inlineData (AUDIO TTS output is not enabled on this Cloud Code account/endpoint)",
-                        upstream_model
-                    ),
-                );
-            }
-            Err((status, msg)) => {
-                last_err = (status, msg);
-                if status == StatusCode::UNAUTHORIZED || status == StatusCode::TOO_MANY_REQUESTS {
+                Err((status, msg)) => {
+                    last_err = (status, msg.clone());
+                    if status == StatusCode::UNAUTHORIZED || status == StatusCode::TOO_MANY_REQUESTS {
+                        break 'model_loop;
+                    }
+                    // If error specifically says invalid voice or voice not found, continue to retry with fallback_gemini_voice
+                    if msg.to_lowercase().contains("voice") {
+                        continue;
+                    }
                     break;
                 }
             }
@@ -1072,5 +1157,76 @@ pub async fn handle_web_search(
             );
             error_response(status, msg, "web_search_error")
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_antigravity_voices_mapping() {
+        // All 9 new Antigravity v44.9+ voices
+        assert_eq!(map_openai_voice_to_gemini("gero"), "Gero");
+        assert_eq!(map_openai_voice_to_gemini("Gero"), "Gero");
+        assert_eq!(map_openai_voice_to_gemini("fola"), "Fola");
+        assert_eq!(map_openai_voice_to_gemini("FOLA"), "Fola");
+        assert_eq!(map_openai_voice_to_gemini("arlo"), "Arlo");
+        assert_eq!(map_openai_voice_to_gemini("cleo"), "Cleo");
+        assert_eq!(map_openai_voice_to_gemini("finn"), "Finn");
+        assert_eq!(map_openai_voice_to_gemini("lora"), "Lora");
+        assert_eq!(map_openai_voice_to_gemini("neno"), "Neno");
+        assert_eq!(map_openai_voice_to_gemini("olin"), "Olin");
+        assert_eq!(map_openai_voice_to_gemini("tari"), "Tari");
+    }
+
+    #[test]
+    fn test_gemini_native_voices_mapping() {
+        assert_eq!(map_openai_voice_to_gemini("zephyr"), "Zephyr");
+        assert_eq!(map_openai_voice_to_gemini("puck"), "Puck");
+        assert_eq!(map_openai_voice_to_gemini("charon"), "Charon");
+        assert_eq!(map_openai_voice_to_gemini("fenrir"), "Fenrir");
+        assert_eq!(map_openai_voice_to_gemini("kore"), "Kore");
+        assert_eq!(map_openai_voice_to_gemini("aoede"), "Aoede");
+        assert_eq!(map_openai_voice_to_gemini("orus"), "Orus");
+        assert_eq!(map_openai_voice_to_gemini("leda"), "Leda");
+        assert_eq!(map_openai_voice_to_gemini("sulafat"), "Sulafat");
+    }
+
+    #[test]
+    fn test_openai_voices_alias_mapping() {
+        assert_eq!(map_openai_voice_to_gemini("alloy"), "Fola");
+        assert_eq!(map_openai_voice_to_gemini("echo"), "Arlo");
+        assert_eq!(map_openai_voice_to_gemini("nova"), "Cleo");
+        assert_eq!(map_openai_voice_to_gemini("fable"), "Finn");
+        assert_eq!(map_openai_voice_to_gemini("ash"), "Gero");
+        assert_eq!(map_openai_voice_to_gemini("shimmer"), "Lora");
+        assert_eq!(map_openai_voice_to_gemini("onyx"), "Neno");
+        assert_eq!(map_openai_voice_to_gemini("sage"), "Olin");
+        assert_eq!(map_openai_voice_to_gemini("coral"), "Tari");
+    }
+
+    #[test]
+    fn test_fallback_gemini_voice() {
+        assert_eq!(fallback_gemini_voice("Gero"), "Orus");
+        assert_eq!(fallback_gemini_voice("Fola"), "Zephyr");
+        assert_eq!(fallback_gemini_voice("Arlo"), "Puck");
+        assert_eq!(fallback_gemini_voice("Cleo"), "Kore");
+        assert_eq!(fallback_gemini_voice("Finn"), "Charon");
+        assert_eq!(fallback_gemini_voice("Lora"), "Aoede");
+        assert_eq!(fallback_gemini_voice("Neno"), "Fenrir");
+        assert_eq!(fallback_gemini_voice("Olin"), "Sulafat");
+        assert_eq!(fallback_gemini_voice("Tari"), "Leda");
+    }
+
+    #[test]
+    fn test_wrap_pcm_in_wav() {
+        let fake_pcm = vec![0u8; 100];
+        let wav = wrap_pcm_in_wav(&fake_pcm, 24000, 1, 16);
+        assert_eq!(&wav[0..4], b"RIFF");
+        assert_eq!(&wav[8..12], b"WAVE");
+        assert_eq!(&wav[12..16], b"fmt ");
+        assert_eq!(&wav[36..40], b"data");
+        assert_eq!(wav.len(), 44 + 100);
     }
 }

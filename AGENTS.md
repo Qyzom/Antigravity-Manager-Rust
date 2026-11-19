@@ -5,6 +5,10 @@ Below is the definitive record of changes and protocol advancements implemented 
 
 ### Version Changelog (English)
 - **v0.1.7 (Latest)**:
+  - **Antigravity v44.9.1 TTS & Live Mode Integration**: Native support for all 9 official Antigravity voices (`Fola`, `Arlo`, `Cleo`, `Finn`, `Gero`, `Lora`, `Neno`, `Olin`, `Tari`), seamless bidirectional mapping for Gemini Native (`Zephyr`, `Puck`, `Charon`...) and OpenAI voice aliases (`alloy`, `echo`, `ash`...), and automatic fallback pairing.
+  - **Ultra-Fast Live TTS Models**: Integrated lightweight `gemini-3.8-flash-lite-tts` for sub-200ms Live voice latency alongside `gemini-3.8-flash-tts` and `gemini-3.1-flash-tts-preview`, plus broadcasted 27-voice capability catalog in `GET /v1/models`.
+  - **Hardened MCP Web Fetching & SSRF Defense**: Comprehensive protection against SSRF in `fetch_web_page` (rejects loopback, internal, private, and documentation IP ranges with DNS pre-resolution and redirect validation), strict 2 MiB response cap, and Unicode-safe HTML tag stripper.
+  - **Atomic Configuration Persistence**: Named temporary file staging (`tempfile`) and atomic file replacement preventing configuration truncation or corruption during simultaneous writes.
   - **Instant Proxy Port & Host Hot-Reload**: Rebinds Axum HTTP listener immediately on port or host change without stopping or manually restarting the proxy daemon.
   - **Comprehensive 429 & Dispatcher Logging**: Structured pre-dispatch logging across OpenAI (`/v1/chat/completions`), Claude (`/v1/messages`), and Google Gemini (`/v1beta/models/*`) recording exact error messages, request payloads, and remaining cooldown seconds (`retry in Xs`).
   - **MCP Search Results Limit & Enhanced Web Tools**: Added customizable search results limit selector (`mcp_search_max_results`: 3, 5, 10, 15) for `google_web_search`, intelligent URL auto-prefixing (`https://`), and friendly query validation for `fetch_web_page`.
