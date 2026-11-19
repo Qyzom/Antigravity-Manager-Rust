@@ -34,6 +34,7 @@ log = "0.4"
 env_logger = "0.11"
 uuid = { version = "1.10", features = ["v4"] }
 fastrand = "2.3"
+tempfile = "3"
 
 
 # System Tray

@@ -333,8 +333,56 @@ async fn execute_mcp_fetch_url(state: &AppState, url_str: &str) -> String {
         }
     };
 
-    // Direct fetch using proxy client with natural user agent
-    let client = &state.http_client;
+    if !matches!(parsed.scheme(), "http" | "https") || !parsed.username().is_empty() || parsed.password().is_some() {
+        return format!("Invalid or unsupported URL scheme/credentials for '{}'.", target_url);
+    }
+
+    let Some(host) = parsed.host_str() else {
+        return format!("URL has no host: '{}'", target_url);
+    };
+    let Some(port) = parsed.port_or_known_default() else {
+        return format!("URL has no port: '{}'", target_url);
+    };
+
+    // DNS resolution & public address verification to protect against SSRF
+    let addresses: Vec<_> = match tokio::net::lookup_host((host, port)).await {
+        Ok(addrs) => addrs.collect(),
+        Err(e) => return format!("Could not resolve URL host '{}': {}", host, e),
+    };
+
+    if addresses.is_empty() || addresses.iter().any(|a| !is_public_address(a.ip())) {
+        return format!("Security error: URL '{}' resolves to a private, loopback, or non-public address.", target_url);
+    }
+
+    let client = match reqwest::Client::builder()
+        .no_proxy()
+        .resolve_to_addrs(host, &addresses)
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 5 {
+                return attempt.error("Too many redirects");
+            }
+            let next_url = attempt.url();
+            if !matches!(next_url.scheme(), "http" | "https") {
+                return attempt.error("Unsupported redirect scheme");
+            }
+            if let Some(h) = next_url.host_str() {
+                if let Ok(ip) = h.parse::<std::net::IpAddr>() {
+                    if !is_public_address(ip) {
+                        return attempt.error("Redirect to non-public IP rejected");
+                    }
+                } else if h.eq_ignore_ascii_case("localhost") {
+                    return attempt.error("Redirect to localhost rejected");
+                }
+            }
+            attempt.follow()
+        }))
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => state.http_client.clone(),
+    };
+
     match client
         .get(parsed)
         .header(
@@ -342,13 +390,31 @@ async fn execute_mcp_fetch_url(state: &AppState, url_str: &str) -> String {
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
         )
         .header("Accept", "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8")
-        .timeout(std::time::Duration::from_secs(15))
         .send()
         .await
     {
-        Ok(resp) => {
+        Ok(mut resp) => {
             if resp.status().is_success() {
-                let html = resp.text().await.unwrap_or_default();
+                const MAX_BYTES: usize = 2 * 1024 * 1024; // 2 MiB limit
+                let mut body = Vec::new();
+                loop {
+                    match resp.chunk().await {
+                        Ok(Some(chunk)) => {
+                            if body.len() + chunk.len() > MAX_BYTES {
+                                return format!(
+                                    "Error: Web page content at '{}' exceeds the 2 MiB size limit.",
+                                    target_url
+                                );
+                            }
+                            body.extend_from_slice(&chunk);
+                        }
+                        Ok(None) => break,
+                        Err(e) => {
+                            return format!("Error reading response from '{}': {}", target_url, e);
+                        }
+                    }
+                }
+                let html = String::from_utf8_lossy(&body);
                 // Strip tags for clean markdown/text content preserving all UTF-8 characters
                 let clean = strip_html_tags(&html);
                 if clean.chars().count() > 30000 {
@@ -362,6 +428,29 @@ async fn execute_mcp_fetch_url(state: &AppState, url_str: &str) -> String {
             }
         }
         Err(e) => format!("Error connecting to URL {}: {}", target_url, e),
+    }
+}
+
+pub fn is_public_address(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(ip) => {
+            let [a, b, c, _] = ip.octets();
+            !(a == 0
+                || a == 10
+                || a == 127
+                || a >= 224
+                || (a == 100 && (64..=127).contains(&b))
+                || (a == 169 && b == 254)
+                || (a == 172 && (16..=31).contains(&b))
+                || (a == 192 && (b == 168 || b == 0 || (b == 88 && c == 99)))
+                || (a == 198 && (b == 18 || b == 19 || (b == 51 && c == 100)))
+                || (a == 203 && b == 0 && c == 113))
+        }
+        // Restrict IPv6 to globally routed unicast (2000::/3); mapped IPv4 addresses and documentation are rejected.
+        std::net::IpAddr::V6(ip) => {
+            (ip.segments()[0] & 0xe000) == 0x2000
+                && !(ip.segments()[0] == 0x2001 && ip.segments()[1] == 0x0db8)
+        }
     }
 }
 
@@ -425,4 +514,54 @@ pub fn strip_html_tags(html: &str) -> String {
         }
     }
     final_text.trim().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_public_address, strip_html_tags};
+
+    #[test]
+    fn test_strip_html_tags_preserves_unicode() {
+        assert_eq!(
+            strip_html_tags("<p>Привет, 世界! 🦀</p><script>ignored()</script>"),
+            "Привет, 世界! 🦀"
+        );
+    }
+
+    #[test]
+    fn test_blocks_internal_and_private_addresses() {
+        let blocked = [
+            "127.0.0.1",
+            "127.0.1.1",
+            "10.0.0.1",
+            "10.254.0.1",
+            "172.16.0.1",
+            "172.31.255.255",
+            "192.168.1.1",
+            "169.254.169.254",
+            "0.0.0.0",
+            "224.0.0.1",
+            "240.0.0.1",
+            "::1",
+            "::",
+            "::ffff:127.0.0.1",
+            "fe80::1",
+            "fc00::1",
+        ];
+        for ip in blocked {
+            let parsed = ip.parse().unwrap();
+            assert!(!is_public_address(parsed), "Expected {} to be blocked", ip);
+        }
+
+        let allowed = [
+            "8.8.8.8",
+            "1.1.1.1",
+            "142.250.190.46",
+            "2607:f8b0:4005:805::200e",
+        ];
+        for ip in allowed {
+            let parsed = ip.parse().unwrap();
+            assert!(is_public_address(parsed), "Expected {} to be allowed", ip);
+        }
+    }
 }
