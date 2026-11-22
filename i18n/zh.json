@@ -418,5 +418,9 @@
     "lbl_stat_catalog_refreshes": "目录刷新次数",
     "lbl_status_diag_button": "诊断",
     "lbl_hide_unavailable_models": "在 API 中隐藏不可用模型",
-    "lbl_hide_unavailable_models_desc": "从 /v1/models 和 /v1beta/models 列表中排除配额耗尽和不可用的模型"
+    "lbl_hide_unavailable_models_desc": "从 /v1/models 和 /v1beta/models 列表中排除配额耗尽和不可用的模型",
+    "lbl_diag_quota_notice": "注意：诊断检查会向模型发送实际请求并消耗账户配额。",
+    "btn_show_key": "显示",
+    "btn_hide_key": "隐藏",
+    "lbl_master_key_badge": "授权"
 }

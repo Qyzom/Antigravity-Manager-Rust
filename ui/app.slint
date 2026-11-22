@@ -485,6 +485,10 @@ export struct I18nData {
     lbl_status_diag_button: string,
     lbl_hide_unavailable_models: string,
     lbl_hide_unavailable_models_desc: string,
+    lbl_diag_quota_notice: string,
+    btn_show_key: string,
+    btn_hide_key: string,
+    lbl_master_key_badge: string,
 }
 
 component NavItem inherits Rectangle {
@@ -759,9 +763,13 @@ export component MainWindow inherits Window {
     // Master API Key & Extra Dashboard Metrics
     in-out property <string> master_api_key: "sk-amr-v1-master-key";
     in-out property <string> master_key_status_text: "";
+    in-out property <bool> master_key_visible: false;
     in-out property <string> github_update_status: "";
     in-out property <bool> github_checking_update: false;
     in-out property <string> copied_model_id: "";
+    in-out property <string> mcp_test_status: "";
+    in-out property <string> mcp_test_result_text: "";
+    in-out property <bool> mcp_is_testing: false;
 
     // Modal 2: Test Model Dialog
     in-out property <bool> show_test_dialog: false;
@@ -987,6 +995,7 @@ export component MainWindow inherits Window {
     callback toggle_hide_brand();
     callback copy_master_key();
     callback regenerate_master_key();
+    callback run_mcp_diagnostic();
     callback check_github_updates();
     callback save_account_proxy(string, string);
     callback regenerate_account_device_fingerprint(string);
@@ -1701,11 +1710,36 @@ export component MainWindow inherits Window {
                                     alignment: space-between;
                                     Text { text: "URL: http://" + root.proxy_host + ":" + root.proxy_port + "/mcp"; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
 
-                                    ActionButton {
-                                        text: root.i18n.btn_mcp_config;
-                                        is_primary: false;
-                                        custom_height: 28px;
-                                        clicked => { root.open_mcp_config_dialog(); }
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        ActionButton {
+                                            text: root.mcp_test_status != "" ? root.mcp_test_status : root.i18n.btn_mcp_test;
+                                            is_primary: true;
+                                            is_accent: true;
+                                            custom_height: 28px;
+                                            is_disabled: root.mcp_is_testing;
+                                            clicked => { root.run_mcp_diagnostic(); }
+                                        }
+                                        ActionButton {
+                                            text: root.i18n.btn_mcp_config;
+                                            is_primary: false;
+                                            custom_height: 28px;
+                                            clicked => { root.open_mcp_config_dialog(); }
+                                        }
+                                    }
+                                }
+
+                                if root.mcp_test_result_text != "": Rectangle {
+                                    background: #0d0d0f;
+                                    border-radius: 6px;
+                                    border-width: 1px;
+                                    border-color: #27272a;
+                                    HorizontalLayout {
+                                        padding: 8px;
+                                        padding-left: 12px;
+                                        padding-right: 12px;
+                                        spacing: 8px;
+                                        Text { text: root.mcp_test_result_text; font-size: 11px; color: #38bdf8; wrap: word-wrap; horizontal-stretch: 1; }
                                     }
                                 }
 
@@ -1989,32 +2023,53 @@ export component MainWindow inherits Window {
 
                             // Master API Key Management Card
                             Rectangle {
-                                background: #18181b;
+                                background: #161821;
                                 border-radius: 8px;
                                 border-width: 1px;
-                                border-color: #27272a;
+                                border-color: #38bdf840;
 
                                 VerticalLayout {
-                                    padding: 8px;
-                                    spacing: 4px;
+                                    padding: 10px;
+                                    spacing: 6px;
 
-                                    Text { text: root.i18n.lbl_master_key_title; font-size: 11px; font-weight: 700; color: #ffffff; }
-                                    Text { text: root.i18n.lbl_master_key_desc; font-size: 9px; color: #71717a; }
+                                    HorizontalLayout {
+                                        alignment: space-between;
+                                        VerticalLayout {
+                                            spacing: 2px;
+                                            Text { text: root.i18n.lbl_master_key_title; font-size: 11px; font-weight: 700; color: #ffffff; }
+                                            Text { text: root.i18n.lbl_master_key_desc; font-size: 9px; color: #71717a; }
+                                        }
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Badge {
+                                                text: root.i18n.lbl_master_key_badge;
+                                            }
+                                        }
+                                    }
 
                                     HorizontalLayout {
                                         spacing: 6px;
                                         LineEdit {
                                             horizontal-stretch: 1;
                                             text: root.master_api_key;
+                                            input-type: root.master_key_visible ? InputType.text : InputType.password;
+                                        }
+                                        ActionButton {
+                                            text: root.master_key_visible ? root.i18n.btn_hide_key : root.i18n.btn_show_key;
+                                            is_primary: false;
+                                            custom_height: 26px;
+                                            clicked => { root.master_key_visible = !root.master_key_visible; }
                                         }
                                         ActionButton {
                                             text: root.master_key_status_text != "" ? root.master_key_status_text : root.i18n.btn_copy_key;
                                             is_primary: true;
+                                            custom_height: 26px;
                                             clicked => { root.copy_master_key(); }
                                         }
                                         ActionButton {
                                             text: root.i18n.btn_regenerate_key;
                                             is_danger: true;
+                                            custom_height: 26px;
                                             clicked => { root.regenerate_master_key(); }
                                         }
                                     }
@@ -3308,15 +3363,15 @@ export component MainWindow inherits Window {
                                         ActionButton {
                                             text: root.github_update_status;
                                             is_primary: true;
-                                            is_accent: true;
-                                            custom_height: 26px;
+                                            is_accent: false;
+                                            custom_height: 28px;
                                             is_disabled: root.github_checking_update;
                                             clicked => { root.check_github_updates(); }
                                         }
                                         ActionButton {
                                             text: root.i18n.btn_github_releases;
                                             is_primary: false;
-                                            custom_height: 26px;
+                                            custom_height: 28px;
                                             clicked => { root.open_github_releases(); }
                                         }
                                     }
@@ -4076,20 +4131,11 @@ export component MainWindow inherits Window {
 
                 HorizontalLayout {
                     alignment: space-between;
-                    HorizontalLayout {
-                        spacing: 8px;
-                        alignment: start;
-                        Text { text: root.i18n.diag_dialog_title + ": " + root.diag_model_name; font-size: 14px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
-                        ActionButton {
-                            custom_height: 24px;
-                            text: root.copied_model_id == root.diag_model_id ? root.i18n.lbl_copied : root.i18n.btn_copy;
-                            is_primary: false;
-                            clicked => { root.copy_model_id(root.diag_model_id); }
-                        }
-                    }
+                    Text { text: root.i18n.diag_dialog_title + ": " + root.diag_model_name; font-size: 14px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
                     ActionButton {
                         text: root.i18n.btn_close;
                         is_primary: false;
+                        custom_height: 26px;
                         clicked => { root.show_diagnostic_dialog = false; }
                     }
                 }
@@ -4102,13 +4148,46 @@ export component MainWindow inherits Window {
                     border-radius: 8px;
                     border-width: 1px;
                     border-color: #27272a;
-                    VerticalLayout {
-                        padding: 12px;
-                        spacing: 6px;
+                    HorizontalLayout {
+                        padding: 10px;
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 12px;
+                        alignment: space-between;
+
                         HorizontalLayout {
-                            spacing: 12px;
-                            alignment: space-between;
-                            Text { text: "ID: " + root.diag_model_id; font-family: "monospace"; font-size: 11px; color: #38bdf8; }
+                            spacing: 8px;
+                            alignment: center;
+                            Rectangle {
+                                background: #27272a80;
+                                border-radius: 4px;
+                                border-width: 1px;
+                                border-color: #3f3f46;
+                                HorizontalLayout {
+                                    padding-left: 8px;
+                                    padding-right: 8px;
+                                    padding-top: 4px;
+                                    padding-bottom: 4px;
+                                    Text {
+                                        text: root.diag_model_id;
+                                        font-family: "monospace";
+                                        font-size: 11px;
+                                        font-weight: 600;
+                                        color: #38bdf8;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                            ActionButton {
+                                custom_height: 24px;
+                                text: root.copied_model_id == root.diag_model_id ? root.i18n.lbl_copied : root.i18n.btn_copy;
+                                is_primary: false;
+                                clicked => { root.copy_model_id(root.diag_model_id); }
+                            }
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
                             Badge {
                                 text: root.diag_model_thinking ? root.i18n.lbl_badge_thinking : root.i18n.lbl_badge_no_thinking;
                             }
@@ -4201,6 +4280,13 @@ export component MainWindow inherits Window {
                                 custom_height: 32px;
                                 clicked => { root.run_model_diagnostic(root.diag_model_id); }
                             }
+                        }
+
+                        Text {
+                            text: root.i18n.lbl_diag_quota_notice;
+                            font-size: 10px;
+                            color: #71717a;
+                            wrap: word-wrap;
                         }
                     }
                 }

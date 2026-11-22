@@ -468,6 +468,10 @@ pub struct TranslationBundle {
     pub lbl_status_diag_button: String,
     pub lbl_hide_unavailable_models: String,
     pub lbl_hide_unavailable_models_desc: String,
+    pub lbl_diag_quota_notice: String,
+    pub btn_show_key: String,
+    pub btn_hide_key: String,
+    pub lbl_master_key_badge: String,
 }
 
 pub fn get_translations(lang: Language) -> TranslationBundle {

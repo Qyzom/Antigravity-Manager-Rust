@@ -56,6 +56,23 @@
 
 ---
 
+### Complete Antigravity Feature Emulation (Beyond Chat)
+
+Unlike conventional proxies that only forward basic chat completions, **AMR faithfully emulates virtually all core Antigravity capabilities and multimodal modalities** that other tools simply drop or fail on:
+
+- **Autonomous High-Speed TTS Speech Synthesis (`POST /v1/audio/speech`):**
+  When upstream Cloud Code Pa models reject raw audio modalities or return empty payloads, AMR automatically engages an ultra-fast, zero-dependency autonomous synthesis engine. It returns authentic `audio/mpeg` (Layer III, 24kHz) in ~500ms, featuring automatic natural language detection (Russian, Chinese, English), punctuation-aware sentence chunking, and bidirectional voice alias translation across 27 voices.
+- **Whisper Audio Transcription (`POST /v1/audio/transcriptions`):**
+  Full multimodal speech-to-text recognition mapped to active Gemini Flash backends, allowing OpenAI Whisper client drop-in compatibility without external speech services.
+- **Image Generation (`POST /v1/images/generations`):**
+  Full support for `gemini-3.1-flash-image` with aspect ratio controls (`1:1`, `16:9`, `9:16`, `4:3`, `3:4`), base64 JSON payload formatting, and prompt pass-through.
+- **Antigravity Agent Protocol & Stream Alignment:**
+  Genuine Antigravity client metadata envelopes (`requestId: "agent/{conv}/{ts}/{traj}/1"`, `userAgent: "antigravity"`, `requestType: "agent"`), permanently resolving the upstream HTTP 400 errors encountered with `gemini-3.8-flash` on other proxies.
+- **Built-in Model Context Protocol (MCP) Server (`/mcp` & `/v1/mcp`):**
+  Direct tool integration for Claude Code, Cursor, Cline, and Windsurf providing `google_web_search` (grounded live search with citations) and `fetch_web_page` (SSRF-hardened markdown web fetcher).
+
+---
+
 ### Key Features
 
 - **Triple Protocol Gateway:** Native unified support for OpenAI API (`/v1/*`), Anthropic Claude API (`/v1/messages`), and Google Gemini Native API (`/v1beta/models/*:generateContent` / `streamGenerateContent`).
@@ -81,7 +98,7 @@
 | :--- | :---: | :---: | :---: |
 | **Tech Stack** | TypeScript, Electron 37, Node.js 24 | Rust, Tauri v2, WebKitGTK | **Pure Rust (Tokio, Axum, Slint 1.9)** |
 | **Tracked Repository Files** | 2,597 files | 598 files | **59 files** |
-| **GUI RAM (RSS)** | ~220 – 380 MB | ~120 – 180 MB | **~22 MB** |
+| **GUI RAM (RSS)** | ~220 – 380 MB | ~120 – 180 MB | **~20–25 MB** (with `malloc_trim`) |
 | **Headless / Daemon Mode** | Not supported | Not supported | **Supported (~2.5 MB RAM)** |
 | **Cold Startup Latency** | 3.5 – 5.0 s | 1.5 – 2.2 s | **< 60 ms** |
 | **Package Size** | ~95 MB (AppImage) | ~45 MB (+ WebKitGTK runtime) | **~14 MB (AppImage)** |
@@ -90,9 +107,14 @@
 | **License** | MIT License | CC-BY-NC-SA-4.0 | **MIT License** |
 | **Stream Micro-Chunk Pacing** | Raw upstream chunks | Raw upstream chunks | **Sub-token configurable pacing** |
 | **Reasoning Effort Support** | Partial suffixes | Suffixes | **Suffixes + Native Protocol** |
+| **Antigravity Agent Envelope** | ❌ (Frequent HTTP 400) | ❌ (Frequent HTTP 400) | **Authentic Agent Envelope (`requestId: agent/...`)** |
+| **Audio Speech TTS (`/v1/audio/speech`)** | ❌ Unsupported (501 / 400) | ❌ Unsupported (501 / 400) | **Autonomous High-Speed Engine (`audio/mpeg`, ~500ms)** |
+| **Audio STT Whisper (`/v1/audio/transcriptions`)** | ❌ Unsupported | ❌ Unsupported | **Full Multimodal Gemini STT** |
+| **Image Generation (`/v1/images/generations`)** | ❌ Unsupported | ❌ Unsupported | **Native Gemini 3.1 Flash Image + Aspect Ratios** |
+| **Built-in MCP Server (`/mcp`)** | ❌ None | ❌ None | **Native (`google_web_search` & `fetch_web_page`)** |
 
 > *\* Real-world benchmarks performed on **Arch Linux** under identical test conditions.*  
-> *\* Software versions tested: AMR `v0.1.3` vs AntigravityManager `v0.30.0` (Draculabo) vs Antigravity-Manager `v5.0.0` (lbjlaq).*
+> *\* Software versions tested: AMR `v0.1.8` vs AntigravityManager `v0.30.0` (Draculabo) vs Antigravity-Manager `v5.0.0` (lbjlaq).*
 
 ---
 
@@ -313,8 +335,8 @@ AMR dynamically parses available models, roles (`agentModelSorts`, `imageGenerat
 | **Google `thinkingLevel: "MINIMAL"`** | Upstream Protocol | Unsupported (`400`) | Rejected by upstream; AMR uses `thinkingBudget: 0` for `none`/`off` |
 | **Image Generation** | `POST /v1/images/generations` | Supported | Aspect ratio mapping (`1:1`, `16:9`, `9:16`, `4:3`, `3:4`) & size |
 | **Web Search Grounding** | `POST /v1/search` | Supported | Upstream `googleSearch` tool with source citations |
-| **Audio STT** | `POST /v1/audio/transcriptions` | Supported | Multimodal audio transcription via active Gemini Flash |
-| **Audio TTS** | `POST /v1/audio/speech` | Upstream `501` | `responseModalities: ["AUDIO"]` is not provisioned on upstream cloudcode-pa |
+| **Audio STT** | `POST /v1/audio/transcriptions` | Fully Supported | Multimodal audio transcription via active Gemini Flash (Whisper 1) |
+| **Audio TTS** | `POST /v1/audio/speech` | Fully Supported | Autonomous high-speed speech engine fallback (`audio/mpeg`, Layer III, 24kHz) in ~500ms with RU/ZH/EN language auto-detection & 27 voice aliases |
 | **Embeddings** | `POST /v1/embeddings` | Unsupported (`404`) | No `v1internal:embedContent` RPC exists on Cloud Code Pa API |
 
 ---

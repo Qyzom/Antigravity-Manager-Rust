@@ -418,5 +418,9 @@
     "lbl_stat_catalog_refreshes": "Catalog Refreshes",
     "lbl_status_diag_button": "Diagnostics",
     "lbl_hide_unavailable_models": "Hide Unavailable Models from API",
-    "lbl_hide_unavailable_models_desc": "Omit exhausted and disabled models from /v1/models and /v1beta/models broadcast"
+    "lbl_hide_unavailable_models_desc": "Omit exhausted and disabled models from /v1/models and /v1beta/models broadcast",
+    "lbl_diag_quota_notice": "Notice: Running diagnostics performs a live request to the model and consumes account quota.",
+    "btn_show_key": "Show",
+    "btn_hide_key": "Hide",
+    "lbl_master_key_badge": "Authorization"
 }

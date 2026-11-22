@@ -52,6 +52,19 @@ fn open_in_system(target: &str) {
     let _ = std::process::Command::new("open").arg(target).spawn();
 }
 
+fn is_newer_version(remote: &str, current: &str) -> bool {
+    let parse_ver = |s: &str| -> (u32, u32, u32) {
+        let clean = s.trim().trim_start_matches('v');
+        let parts: Vec<u32> = clean.split('.').filter_map(|p| p.parse::<u32>().ok()).collect();
+        (
+            parts.first().copied().unwrap_or(0),
+            parts.get(1).copied().unwrap_or(0),
+            parts.get(2).copied().unwrap_or(0),
+        )
+    };
+    parse_ver(remote) > parse_ver(current)
+}
+
 pub fn show_and_focus_window(w: &MainWindow) {
     w.window().set_minimized(false);
     let _ = w.show();
@@ -641,6 +654,10 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_status_diag_button: t.lbl_status_diag_button.into(),
         lbl_hide_unavailable_models: t.lbl_hide_unavailable_models.into(),
         lbl_hide_unavailable_models_desc: t.lbl_hide_unavailable_models_desc.into(),
+        lbl_diag_quota_notice: t.lbl_diag_quota_notice.into(),
+        btn_show_key: t.btn_show_key.into(),
+        btn_hide_key: t.btn_hide_key.into(),
+        lbl_master_key_badge: t.lbl_master_key_badge.into(),
     };
     ui.set_github_update_status(t.btn_check_updates.clone().into());
     ui.set_test_prompt(t.lbl_test_default_prompt.clone().into());
@@ -2444,14 +2461,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(resp) if resp.status().is_success() => {
                     if let Ok(json) = resp.json::<serde_json::Value>().await {
                         if let Some(tag) = json.get("tag_name").and_then(|v| v.as_str()) {
-                            if tag == current_ver
-                                || tag.trim_start_matches('v') == env!("CARGO_PKG_VERSION")
-                            {
-                                format!("{} ({})", current_ver, t.lbl_latest_version)
-                            } else {
+                            if is_newer_version(tag, env!("CARGO_PKG_VERSION")) {
                                 has_update = true;
                                 *latest_tag_async.write() = Some(tag.to_string());
                                 format!("{} {}", t.btn_download_update, tag)
+                            } else {
+                                format!("{} ({})", current_ver, t.lbl_latest_version)
                             }
                         } else {
                             format!("{} ({})", current_ver, t.lbl_latest_version)
@@ -2505,10 +2520,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if resp.status().is_success() {
                     if let Ok(json) = resp.json::<serde_json::Value>().await {
                         if let Some(tag) = json.get("tag_name").and_then(|v| v.as_str()) {
-                            let current_ver = concat!("v", env!("CARGO_PKG_VERSION"));
-                            if tag != current_ver
-                                && tag.trim_start_matches('v') != env!("CARGO_PKG_VERSION")
-                            {
+                            if is_newer_version(tag, env!("CARGO_PKG_VERSION")) {
                                 *latest_tag_startup.write() = Some(tag.to_string());
                                 let lang_code = c_startup.read().language.clone();
                                 let t = amr::i18n::get_translations(
@@ -2637,6 +2649,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(h) = h_mcp_cfg_dlg.upgrade() {
             h.set_show_mcp_config_dialog(true);
         }
+    });
+
+    // Run MCP Tools Diagnostic Check callback
+    let h_mcp_diag = window_handle.clone();
+    let state_mcp = Arc::clone(&shared_app_state);
+    main_window.on_run_mcp_diagnostic(move || {
+        if let Some(h) = h_mcp_diag.upgrade() {
+            h.set_mcp_is_testing(true);
+            h.set_mcp_test_status("Testing...".into());
+            h.set_mcp_test_result_text("".into());
+        }
+        let h_inner = h_mcp_diag.clone();
+        let st = Arc::clone(&state_mcp);
+        tokio::spawn(async move {
+            let t0 = std::time::Instant::now();
+            let fetch_res = amr::proxy::mcp::execute_mcp_tool_direct(&st, "fetch_web_page", "https://example.com").await;
+            let search_res = amr::proxy::mcp::execute_mcp_tool_direct(&st, "google_web_search", "Rust").await;
+            let elapsed = t0.elapsed().as_millis();
+
+            let fetch_ok = !fetch_res.contains("Failed to fetch") && !fetch_res.contains("Security error");
+            let search_ok = !search_res.contains("Search failed") && !search_res.is_empty();
+
+            let summary = if search_ok && fetch_ok {
+                format!("Success (Search & Fetch active • {} ms)", elapsed)
+            } else if search_ok {
+                format!("Search OK, Fetch failed ({} ms)", elapsed)
+            } else if fetch_ok {
+                format!("Fetch OK, Search failed ({} ms)", elapsed)
+            } else {
+                format!("Failed ({} ms)", elapsed)
+            };
+
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(h) = h_inner.upgrade() {
+                    h.set_mcp_is_testing(false);
+                    h.set_mcp_test_status("Test MCP Tools".into());
+                    h.set_mcp_test_result_text(summary.into());
+                }
+            });
+        });
     });
 
     // MCP Search Max Results callback

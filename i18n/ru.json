@@ -418,5 +418,9 @@
     "lbl_stat_catalog_refreshes": "Обновлений каталога",
     "lbl_status_diag_button": "Диагностика",
     "lbl_hide_unavailable_models": "Скрывать недоступные модели в API",
-    "lbl_hide_unavailable_models_desc": "Исключать исчерпанные и отключенные модели из списков /v1/models и /v1beta/models"
+    "lbl_hide_unavailable_models_desc": "Исключать исчерпанные и отключенные модели из списков /v1/models и /v1beta/models",
+    "lbl_diag_quota_notice": "Примечание: Диагностика выполняет реальный сетевой запрос к модели и расходует квоту аккаунта.",
+    "btn_show_key": "Показать",
+    "btn_hide_key": "Скрыть",
+    "lbl_master_key_badge": "Авторизация"
 }
