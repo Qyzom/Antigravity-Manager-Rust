@@ -4,7 +4,15 @@
 Below is the definitive record of changes and protocol advancements implemented across all versions:
 
 ### Version Changelog (English)
-- **v0.1.7 (Latest)**:
+- **v0.1.8 (Latest)**:
+  - **Autonomous High-Speed TTS Synthesis Fallback**: Implemented an ultra-fast, zero-dependency speech synthesis engine fallback for `/v1/audio/speech` returning authentic `audio/mpeg` (Layer III, 24kHz) within ~500ms when upstream Cloud Code Pa models reject audio generation modality or return empty `inlineData`. Includes automatic natural language detection for Russian, Chinese, and English, smart text chunking, and immediate failover without multi-second timeouts.
+  - **Gemini Pa Agent Protocol & Stream Alignment**: Re-engineered Cloud Code Pa agent request envelope with genuine Antigravity client metadata (`requestId: "agent/{conv}/{ts}/{traj}/1"`, `userAgent: "antigravity"`, `requestType: "agent"`, default `project: "aicode-consumers"`), resolving upstream HTTP 400 errors across `gemini-3.8-flash` and multimodal models. Added transparent Server-Sent Events (SSE) decoding into standard Gemini JSON responses for non-streaming callers and diagnostics.
+  - **Antigravity Hub 2.33.0 & 2.29.1 Upstream Emulation**: Updated upstream CL metadata tables in client spoofer for latest official Antigravity IDE hub releases (`2.29.1` and `2.33.0`).
+  - **Overhauled Diagnostics & Scrollable Inspect Modal**: Fixed diagnostic payload cut-offs by enclosing `diag_last_error` in a fluid scrollable container (`ScrollView`), removed redundant `Provider:` field, added dynamic model notices badge, and broadened model ID matching across full clone suffixes.
+  - **Refined Slint UI & Window Responsiveness**: Increased standard window dimensions to 1140x740 with strict `content-width: self.visible-width` to eliminate awkward horizontal scrollbars. Fixed clipped preference label layouts in Settings tab with flexible text wrapping and zero min-width constraints.
+  - **Streamlined MCP Surface**: Removed legacy decorative badges and placeholder logos from MCP Master Card in favor of clean native indicators.
+
+- **v0.1.7**:
   - **Antigravity v44.9.1 TTS & Live Mode Integration**: Native support for all 9 official Antigravity voices (`Fola`, `Arlo`, `Cleo`, `Finn`, `Gero`, `Lora`, `Neno`, `Olin`, `Tari`), seamless bidirectional mapping for Gemini Native (`Zephyr`, `Puck`, `Charon`...) and OpenAI voice aliases (`alloy`, `echo`, `ash`...), and automatic fallback pairing.
   - **Ultra-Fast Live TTS Models**: Integrated lightweight `gemini-3.8-flash-lite-tts` for sub-200ms Live voice latency alongside `gemini-3.8-flash-tts` and `gemini-3.1-flash-tts-preview`, plus broadcasted 27-voice capability catalog in `GET /v1/models`.
   - **Hardened MCP Web Fetching & SSRF Defense**: Comprehensive protection against SSRF in `fetch_web_page` (rejects loopback, internal, private, and documentation IP ranges with DNS pre-resolution and redirect validation), strict 2 MiB response cap, and Unicode-safe HTML tag stripper.

@@ -118,6 +118,8 @@ pub fn get_official_hub_user_agent_with_meta(
     let cl_default = match ver {
         "2.23.1" => "998881661",
         "2.28.1" => "1000353293",
+        "2.29.1" => "1015941558",
+        "2.33.0" => "1023160026",
         "1.107.0" => "987654321",
         _ => OFFICIAL_HUB_CL,
     };

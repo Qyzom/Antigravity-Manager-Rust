@@ -98,7 +98,7 @@
 
 ### Downloads
 
-Pre-built standalone binaries and distribution packages for the latest AMR release are available on the [**Releases**](https://github.com/Qyzom/Antigravity-Manager-Rust/releases/latest) page (replace `<VERSION>` with the downloaded release tag, e.g. `0.1.7`):
+Pre-built standalone binaries and distribution packages for the latest AMR release are available on the [**Releases**](https://github.com/Qyzom/Antigravity-Manager-Rust/releases/latest) page (replace `<VERSION>` with the downloaded release tag, e.g. `0.1.8`):
 
 #### 🐧 Linux — Intel & AMD 64-bit (`x86_64`)
 | Format / Distro | Package File | Description |

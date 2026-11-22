@@ -691,7 +691,9 @@ async fn gemini_content(
         (uuid::Uuid::new_v4().to_string(), uuid::Uuid::new_v4().simple().to_string())
     };
 
-    let endpoints = if is_stream {
+    let is_chat = !target_model.contains("image") && target_model != "web-search";
+    let use_stream_endpoint = is_stream || is_chat;
+    let endpoints = if use_stream_endpoint {
         &crate::proxy::antigravity::STREAM_ENDPOINTS[..]
     } else {
         &crate::proxy::antigravity::GENERATE_ENDPOINTS[..]
@@ -703,7 +705,7 @@ async fn gemini_content(
     let machine_id_str = machine_id.clone();
     let mut res_opt = None;
     for &endpoint_url in endpoints {
-        let headers_to_use = if is_stream {
+        let headers_to_use = if use_stream_endpoint {
             build_upstream_headers(
                 &req_token,
                 &client_id_str,
@@ -762,7 +764,7 @@ async fn gemini_content(
                             }
                             state.cfg_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-                            let retry_headers = if is_stream {
+                            let retry_headers = if use_stream_endpoint {
                                 build_upstream_headers(
                                     &req_token,
                                     &client_id,
@@ -865,6 +867,25 @@ async fn gemini_content(
                 let actual = val.get("response").unwrap_or(&val);
                 return Json(actual.clone()).into_response();
             } else {
+                let mut last_response: Option<Value> = None;
+                for line in body_text.lines() {
+                    let trimmed = line.trim();
+                    if let Some(json_str) = trimmed.strip_prefix("data: ") {
+                        if json_str == "[DONE]" {
+                            continue;
+                        }
+                        if let Ok(v) = serde_json::from_str::<Value>(json_str) {
+                            if let Some(resp) = v.get("response") {
+                                last_response = Some(resp.clone());
+                            } else {
+                                last_response = Some(v);
+                            }
+                        }
+                    }
+                }
+                if let Some(resp) = last_response {
+                    return Json(resp).into_response();
+                }
                 return (StatusCode::OK, body_text).into_response();
             }
         }
@@ -2953,18 +2974,34 @@ pub async fn run_diagnostic_check(state: &AppState, model_id: &str) -> (u16, u64
     let spoof_go = cfg.spoof_go_sdk;
     let inject_meta = cfg.inject_ide_metadata;
 
-    let headers = build_upstream_headers_json(
-        &account.api_key,
-        &client_id,
-        &machine_id,
-        platform,
-        &ide_ver,
-        &spoof_arch,
-        &spoof_channel,
-        spoof_go,
-        inject_meta,
-        &target_model,
-    );
+    let is_chat = !target_model.contains("image") && !target_model.contains("whisper") && target_model != "tts-1";
+    let headers = if is_chat {
+        build_upstream_headers(
+            &account.api_key,
+            &client_id,
+            &machine_id,
+            platform,
+            &ide_ver,
+            &spoof_arch,
+            &spoof_channel,
+            spoof_go,
+            inject_meta,
+            &target_model,
+        )
+    } else {
+        build_upstream_headers_json(
+            &account.api_key,
+            &client_id,
+            &machine_id,
+            platform,
+            &ide_ver,
+            &spoof_arch,
+            &spoof_channel,
+            spoof_go,
+            inject_meta,
+            &target_model,
+        )
+    };
 
     let test_req = crate::proxy::mappers::openai::OpenAIChatRequest {
         model: target_model.clone(),
@@ -2996,7 +3033,13 @@ pub async fn run_diagnostic_check(state: &AppState, model_id: &str) -> (u16, u64
     );
 
     let client = state.get_client_for_account(&account);
-    let endpoints = if cfg.lock_production_endpoints {
+    let endpoints = if is_chat {
+        if cfg.lock_production_endpoints {
+            &crate::proxy::antigravity::STREAM_ENDPOINTS[..1]
+        } else {
+            &crate::proxy::antigravity::STREAM_ENDPOINTS[..]
+        }
+    } else if cfg.lock_production_endpoints {
         &crate::proxy::antigravity::GENERATE_ENDPOINTS[..1]
     } else {
         &crate::proxy::antigravity::GENERATE_ENDPOINTS[..]
@@ -3029,18 +3072,33 @@ pub async fn run_diagnostic_check(state: &AppState, model_id: &str) -> (u16, u64
                                 let _ = cfg_w.save();
                             }
                             account.api_key = fresh_token;
-                            let retry_headers = build_upstream_headers_json(
-                                &account.api_key,
-                                &client_id,
-                                &machine_id,
-                                platform,
-                                &ide_ver,
-                                &spoof_arch,
-                                &spoof_channel,
-                                spoof_go,
-                                inject_meta,
-                                &target_model,
-                            );
+                            let retry_headers = if is_chat {
+                                build_upstream_headers(
+                                    &account.api_key,
+                                    &client_id,
+                                    &machine_id,
+                                    platform,
+                                    &ide_ver,
+                                    &spoof_arch,
+                                    &spoof_channel,
+                                    spoof_go,
+                                    inject_meta,
+                                    &target_model,
+                                )
+                            } else {
+                                build_upstream_headers_json(
+                                    &account.api_key,
+                                    &client_id,
+                                    &machine_id,
+                                    platform,
+                                    &ide_ver,
+                                    &spoof_arch,
+                                    &spoof_channel,
+                                    spoof_go,
+                                    inject_meta,
+                                    &target_model,
+                                )
+                            };
                             if let Ok(retry_resp) = client.post(endpoint_url).headers(retry_headers).json(&test_payload).send().await {
                                 let retry_status = retry_resp.status().as_u16();
                                 let retry_lat = t0.elapsed().as_millis() as u64;

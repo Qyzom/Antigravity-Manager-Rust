@@ -669,10 +669,10 @@ export component MainWindow inherits Window {
     title: "AMR — Antigravity Manager Rust";
     icon: @image-url("../assets/icons/logo_256.png");
     default-font-family: "Unbounded";
-    min-width: 1080px;
-    min-height: 720px;
-    max-width: 1080px;
-    max-height: 720px;
+    min-width: 1140px;
+    min-height: 740px;
+    max-width: 1140px;
+    max-height: 740px;
     background: #09090b;
 
     // Translations
@@ -879,6 +879,7 @@ export component MainWindow inherits Window {
     in-out property <bool> show_diagnostic_dialog: false;
     in-out property <string> diag_model_id: "";
     in-out property <string> diag_model_name: "";
+    in-out property <string> diag_model_notice: "";
     in-out property <string> diag_model_provider: "";
     in-out property <string> diag_model_modality: "";
     in-out property <bool> diag_model_thinking: false;
@@ -1130,6 +1131,7 @@ export component MainWindow inherits Window {
 
             // Scrollable Content View
             ScrollView {
+                content-width: self.visible-width;
                 VerticalLayout {
                     alignment: start;
                     padding-right: 8px;
@@ -1873,7 +1875,7 @@ export component MainWindow inherits Window {
                                                 }
                                             }
 
-                                            // Availability / Quota / Notice badge with tooltip on hover
+                                            // Availability / Quota / Notice badge
                                             if model.availability_status != "available" : Rectangle {
                                                 height: 18px;
                                                 border-radius: 4px;
@@ -1886,11 +1888,9 @@ export component MainWindow inherits Window {
                                                     padding-left: 6px;
                                                     padding-right: 6px;
                                                     Text {
-                                                        text: badge_touch.has-hover && model.notice != "" 
-                                                            ? model.notice 
-                                                            : (model.availability_status == "disabled" ? root.i18n.lbl_model_disabled :
-                                                               model.availability_status == "exhausted" ? root.i18n.lbl_model_exhausted :
-                                                               root.i18n.lbl_model_notice);
+                                                        text: model.availability_status == "disabled" ? root.i18n.lbl_model_disabled :
+                                                              model.availability_status == "exhausted" ? root.i18n.lbl_model_exhausted :
+                                                              root.i18n.lbl_model_notice;
                                                         font-size: 9px;
                                                         font-weight: 700;
                                                         color: model.availability_status == "disabled" ? #f87171 :
@@ -1898,7 +1898,6 @@ export component MainWindow inherits Window {
                                                         vertical-alignment: center;
                                                     }
                                                 }
-                                                badge_touch := TouchArea { }
                                             }
                                         }
                                     }
@@ -3297,6 +3296,7 @@ export component MainWindow inherits Window {
                                     VerticalLayout {
                                         spacing: 3px;
                                         horizontal-stretch: 1;
+                                        min-width: 0px;
                                         alignment: center;
                                         Text { text: root.i18n.about_spec_runtime + ": " + root.i18n.about_spec_runtime_val + " • " + root.i18n.about_spec_transport + ": " + root.i18n.about_spec_transport_val; font-size: 11px; color: #a1a1aa; wrap: word-wrap; }
                                         Text { text: root.i18n.about_spec_gui + ": " + root.i18n.about_spec_gui_val; font-size: 11px; color: #71717a; wrap: word-wrap; }
@@ -3341,9 +3341,11 @@ export component MainWindow inherits Window {
                                 HorizontalLayout {
                                     alignment: space-between;
                                     VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        min-width: 0px;
                                         spacing: 2px;
-                                        Text { text: root.i18n.lbl_language; font-size: 12px; color: #e4e4e7; }
-                                        Text { text: root.i18n.lbl_language_desc; font-size: 11px; color: #71717a; }
+                                        Text { text: root.i18n.lbl_language; font-size: 12px; color: #e4e4e7; wrap: word-wrap; }
+                                        Text { text: root.i18n.lbl_language_desc; font-size: 11px; color: #71717a; wrap: word-wrap; }
                                     }
                                     HorizontalLayout {
                                         spacing: 6px;
@@ -3513,7 +3515,7 @@ export component MainWindow inherits Window {
                                         horizontal-stretch: 1;
                                         spacing: 2px;
                                         Text { text: root.i18n.lbl_app_folder; font-size: 12px; color: #e4e4e7; }
-                                        Text { text: root.config_folder_path + " (" + root.config_folder_size + ") • " + root.i18n.lbl_config_files_hint; font-size: 11px; color: #71717a; }
+                                        Text { text: root.config_folder_path + " (" + root.config_folder_size + ") • " + root.i18n.lbl_config_files_hint; font-size: 11px; color: #71717a; wrap: word-wrap; }
                                     }
                                     ActionButton {
                                         text: root.i18n.btn_open_folder;
@@ -4056,7 +4058,7 @@ export component MainWindow inherits Window {
         }
 
         modal_card_diag := Rectangle {
-            width: 640px;
+            width: 680px;
             height: modal_inner_diag.min-height;
             background: #141416;
             border-radius: 12px;
@@ -4107,11 +4109,26 @@ export component MainWindow inherits Window {
                             spacing: 12px;
                             alignment: space-between;
                             Text { text: "ID: " + root.diag_model_id; font-family: "monospace"; font-size: 11px; color: #38bdf8; }
-                            Text { text: "Provider: " + root.diag_model_provider; font-size: 11px; color: #a1a1aa; }
                             Badge {
                                 text: root.diag_model_thinking ? root.i18n.lbl_badge_thinking : root.i18n.lbl_badge_no_thinking;
                             }
                         }
+                    }
+                }
+
+                // Model Notice (if present)
+                if root.diag_model_notice != "": Rectangle {
+                    background: #1e293b60;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: #3b82f640;
+                    VerticalLayout {
+                        padding: 10px;
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 4px;
+                        Text { text: root.i18n.lbl_model_notice; font-size: 11px; font-weight: 700; color: #60a5fa; }
+                        Text { text: root.diag_model_notice; font-size: 11px; color: #93c5fd; wrap: word-wrap; }
                     }
                 }
 
@@ -4134,17 +4151,28 @@ export component MainWindow inherits Window {
                     }
                 }
 
-                // Last Error (if present)
+                // Last Error / Diagnostic Result (scrollable, contained)
                 if root.diag_last_error != "": Rectangle {
                     background: #2b1414;
                     border-radius: 8px;
                     border-width: 1px;
                     border-color: #7f1d1d;
+                    max-height: 160px;
+                    clip: true;
                     VerticalLayout {
                         padding: 12px;
-                        spacing: 4px;
+                        spacing: 6px;
                         Text { text: root.i18n.lbl_diag_error; font-size: 11px; font-weight: 700; color: #f87171; }
-                        Text { text: root.diag_last_error; font-size: 11px; color: #fca5a5; wrap: word-wrap; }
+                        ScrollView {
+                            content-width: self.visible-width;
+                            Text {
+                                text: root.diag_last_error;
+                                font-family: "monospace";
+                                font-size: 11px;
+                                color: #fca5a5;
+                                wrap: word-wrap;
+                            }
+                        }
                     }
                 }
 

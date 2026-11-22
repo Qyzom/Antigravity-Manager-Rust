@@ -65,11 +65,19 @@ pub fn build_antigravity_from_gemini(
     }
 
     let upstream_model = crate::proxy::antigravity::normalize_antigravity_upstream_model(target_model);
+    let pid = project_id.filter(|p| !p.trim().is_empty()).unwrap_or("aicode-consumers");
+    let ts = chrono::Utc::now().timestamp_millis();
+    let conv = &uuid::Uuid::new_v4().simple().to_string()[..16];
+    let traj = &uuid::Uuid::new_v4().simple().to_string()[..8];
+    let request_id = format!("agent/{}/{}/{}/1", conv, ts, traj);
 
     json!({
-        "project": project_id.unwrap_or(""),
+        "project": pid,
+        "requestId": request_id,
+        "request": req_obj,
         "model": upstream_model,
-        "request": req_obj
+        "userAgent": "antigravity",
+        "requestType": "agent",
     })
 }
 

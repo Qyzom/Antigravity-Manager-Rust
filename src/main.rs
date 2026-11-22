@@ -2566,7 +2566,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     breakdown_lines.push(format!("{}: {}", acc_label, t.lbl_stage_quarantine));
                     continue;
                 }
-                if let Some(m) = acc.available_models.iter().find(|m| m.id == model_id || model_id.starts_with(&m.id)) {
+                if let Some(m) = acc.available_models.iter().find(|m| m.id == model_id || m.id.starts_with(&model_id) || model_id.starts_with(&m.id)) {
                     if m.disabled {
                         breakdown_lines.push(format!("{}: {}", acc_label, t.lbl_model_disabled));
                     } else {
@@ -2583,8 +2583,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 breakdown_lines.join("\n")
             };
 
+            let notice = cfg.models.iter().find(|m| m.id == model_id).map(|m| m.notice.clone()).unwrap_or_default();
             h.set_diag_model_id(model_id.into());
             h.set_diag_model_name(model_name.into());
+            h.set_diag_model_notice(notice.into());
             h.set_diag_model_provider(provider.into());
             h.set_diag_model_modality(modality.into());
             h.set_diag_model_thinking(thinking);
