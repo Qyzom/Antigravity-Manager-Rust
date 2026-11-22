@@ -879,9 +879,6 @@ impl AppConfig {
             ("whisper-1", "Whisper 1 (Audio STT)", "openai"),
             ("tts-1", "TTS 1 (Audio Speech)", "openai"),
             ("tts-1-hd", "TTS 1 HD (Audio Speech)", "openai"),
-            ("gemini-3.8-flash-lite-tts", "Gemini 3.8 Flash Lite TTS (Fast Live Voice)", "gemini"),
-            ("gemini-3.8-flash-tts", "Gemini 3.8 Flash TTS", "gemini"),
-            ("gemini-3.1-flash-tts-preview", "Gemini 3.1 Flash TTS Preview", "gemini"),
         ]
         .into_iter()
         .enumerate()

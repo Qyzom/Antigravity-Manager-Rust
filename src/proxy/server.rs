@@ -2948,6 +2948,108 @@ pub async fn run_diagnostic_check(state: &AppState, model_id: &str) -> (u16, u64
     if !cfg.is_model_enabled(model_id) {
         return (403, 0, "Model is disabled in settings".to_string());
     }
+
+    // 1. Audio Speech (TTS) diagnostics
+    if model_id.contains("tts") {
+        let tts_req = crate::proxy::audio::AudioSpeechRequest {
+            model: model_id.to_string(),
+            input: "AMR diagnostic speech test".to_string(),
+            voice: "alloy".to_string(),
+            response_format: Some("mp3".to_string()),
+            speed: Some(1.0),
+        };
+        let resp = crate::proxy::audio::handle_audio_speech(
+            axum::extract::State(state.clone()),
+            axum::Json(tts_req),
+        ).await;
+        let status = resp.status().as_u16();
+        let latency = t0.elapsed().as_millis() as u64;
+        if resp.status().is_success() {
+            return (status, latency, "OK: Audio Speech (TTS) is responsive and operational".to_string());
+        } else {
+            let body_bytes = match axum::body::to_bytes(resp.into_body(), 1024 * 64).await {
+                Ok(b) => b,
+                Err(_) => bytes::Bytes::new(),
+            };
+            let err_text = String::from_utf8_lossy(&body_bytes).to_string();
+            return (status, latency, format!("TTS Diagnostic failed (HTTP {}): {}", status, err_text));
+        }
+    }
+
+    // 2. Image Generation diagnostics
+    if model_id.contains("image") {
+        let img_req = crate::proxy::audio::ImageGenerationRequest {
+            prompt: "Minimal white circle on black background".to_string(),
+            model: Some(model_id.to_string()),
+            n: Some(1),
+            quality: None,
+            response_format: Some("b64_json".to_string()),
+            size: Some("1024x1024".to_string()),
+            style: None,
+            aspect_ratio: None,
+            image_size: None,
+        };
+        let resp = crate::proxy::audio::handle_image_generations(
+            axum::extract::State(state.clone()),
+            axum::Json(img_req),
+        ).await;
+        let status = resp.status().as_u16();
+        let latency = t0.elapsed().as_millis() as u64;
+        if resp.status().is_success() {
+            return (status, latency, "OK: Image Generation is responsive and healthy".to_string());
+        } else {
+            let body_bytes = match axum::body::to_bytes(resp.into_body(), 1024 * 64).await {
+                Ok(b) => b,
+                Err(_) => bytes::Bytes::new(),
+            };
+            let err_text = String::from_utf8_lossy(&body_bytes).to_string();
+            return (status, latency, format!("Image Gen Diagnostic failed (HTTP {}): {}", status, err_text));
+        }
+    }
+
+    // 3. Audio STT (Whisper) diagnostics
+    if model_id.contains("whisper") {
+        use base64::Engine;
+        let sample_pcm = vec![0u8; 3200];
+        let wav_data = crate::proxy::audio::wrap_pcm_in_wav(&sample_pcm, 16000, 1, 16);
+        let base64_audio = base64::engine::general_purpose::STANDARD.encode(&wav_data);
+        let gemini_model = crate::proxy::audio::pick_dynamic_gemini_model(state, "chat", Some(model_id));
+        let res = crate::proxy::audio::execute_generate_content(state, &gemini_model, &gemini_model, |acc| {
+            let project_id = acc
+                .project_id
+                .clone()
+                .unwrap_or_else(|| "aicode-consumers".to_string());
+            serde_json::json!({
+                "project": project_id,
+                "requestId": format!("stt-diag-{}", uuid::Uuid::new_v4()),
+                "userAgent": "antigravity",
+                "requestType": "agent",
+                "model": gemini_model,
+                "request": {
+                    "contents": [{
+                        "role": "user",
+                        "parts": [
+                            {
+                                "inlineData": {
+                                    "mimeType": "audio/wav",
+                                    "data": base64_audio
+                                }
+                            },
+                            {
+                                "text": "Transcribe."
+                            }
+                        ]
+                    }]
+                }
+            })
+        }).await;
+        let latency = t0.elapsed().as_millis() as u64;
+        return match res {
+            Ok(_) => (200, latency, "OK: Audio Transcription (STT) is responsive and healthy".to_string()),
+            Err((status, msg)) => (status.as_u16(), latency, format!("Whisper Diagnostic failed (HTTP {}): {}", status, msg)),
+        };
+    }
+
     let acc_res = state.balancer.select_account(&cfg, model_id, None);
     let mut account = match acc_res {
         Ok(a) => a,

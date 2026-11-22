@@ -316,7 +316,7 @@ pub fn fallback_gemini_voice(voice: &str) -> &'static str {
 }
 
 /// Wraps raw linear PCM (little-endian 16-bit mono) in a standard 44-byte RIFF/WAVE header.
-fn wrap_pcm_in_wav(pcm_data: &[u8], sample_rate: u32, channels: u16, bits_per_sample: u16) -> Vec<u8> {
+pub(crate) fn wrap_pcm_in_wav(pcm_data: &[u8], sample_rate: u32, channels: u16, bits_per_sample: u16) -> Vec<u8> {
     let byte_rate = sample_rate * (channels as u32) * (bits_per_sample as u32 / 8);
     let block_align = channels * (bits_per_sample / 8);
     let data_size = pcm_data.len() as u32;

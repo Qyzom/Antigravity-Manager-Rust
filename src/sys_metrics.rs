@@ -3,6 +3,11 @@
 pub fn get_process_memory_mb() -> f64 {
     #[cfg(target_os = "linux")]
     {
+        // Release unused heap memory pages retained in glibc malloc arenas back to OS kernel
+        unsafe {
+            libc::malloc_trim(0);
+        }
+
         // Read RssAnon (private heap & stack allocated memory) rather than
         // total VmRSS which includes Mesa's shared GPU driver libraries (libLLVM ~180MB)
         if let Ok(content) = std::fs::read_to_string("/proc/self/status") {
