@@ -111,110 +111,6 @@ pub struct ImageGenerationRequest {
     pub style: Option<String>,
 }
 
-/// Simple zero-dependency URL encoder for query strings
-fn url_encode(input: &str) -> String {
-    let mut encoded = String::new();
-    for b in input.bytes() {
-        match b {
-            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                encoded.push(b as char);
-            }
-            b' ' => encoded.push('+'),
-            _ => {
-                encoded.push_str(&format!("%{:02X}", b));
-            }
-        }
-    }
-    encoded
-}
-
-/// Detect language from text content (RU, ZH, or EN default)
-pub fn detect_text_language(text: &str) -> &'static str {
-    let mut cyrillic = 0;
-    let mut cjk = 0;
-    let mut latin = 0;
-    for c in text.chars() {
-        match c {
-            '\u{0400}'..='\u{04FF}' => cyrillic += 1,
-            '\u{4E00}'..='\u{9FFF}' => cjk += 1,
-            'a'..='z' | 'A'..='Z' => latin += 1,
-            _ => {}
-        }
-    }
-    if cyrillic > latin && cyrillic > cjk {
-        "ru"
-    } else if cjk > latin && cjk > cyrillic {
-        "zh-CN"
-    } else {
-        "en"
-    }
-}
-
-/// Fallback speech synthesis engine using Google Web Speech API.
-/// Highly resilient, zero-quota, sub-second latency, pure HTTP.
-pub async fn synthesize_speech_fallback(
-    client: &reqwest::Client,
-    text: &str,
-    _voice: &str,
-    _response_format: Option<&str>,
-) -> Result<(Vec<u8>, &'static str), String> {
-    let lang = detect_text_language(text);
-
-    let mut chunks = Vec::new();
-    let mut current = String::new();
-
-    for word in text.split_whitespace() {
-        if current.len() + word.len() + 1 > 180 && !current.is_empty() {
-            chunks.push(current.clone());
-            current.clear();
-        }
-        if !current.is_empty() {
-            current.push(' ');
-        }
-        current.push_str(word);
-    }
-    if !current.is_empty() {
-        chunks.push(current);
-    }
-    if chunks.is_empty() {
-        chunks.push(text.to_string());
-    }
-
-    let mut combined_audio = Vec::new();
-    for chunk in chunks {
-        let enc = url_encode(&chunk);
-        let url = format!(
-            "https://translate.google.com/translate_tts?ie=UTF-8&q={}&tl={}&client=tw-ob",
-            enc, lang
-        );
-        match client
-            .get(&url)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            .header("Accept", "audio/mpeg,audio/*;q=0.9")
-            .timeout(std::time::Duration::from_secs(10))
-            .send()
-            .await
-        {
-            Ok(resp) => {
-                if resp.status().is_success() {
-                    if let Ok(bytes) = resp.bytes().await {
-                        combined_audio.extend_from_slice(&bytes);
-                    }
-                }
-            }
-            Err(e) => {
-                return Err(format!("Google Speech fallback error: {}", e));
-            }
-        }
-    }
-
-    if combined_audio.is_empty() {
-        return Err("No audio bytes received from Speech fallback".to_string());
-    }
-
-    Ok((combined_audio, "audio/mpeg"))
-}
-
 /// Request schema for OpenAI /v1/audio/speech (TTS)
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct AudioSpeechRequest {
@@ -1017,8 +913,11 @@ pub async fn handle_audio_speech(
     };
 
     let mut last_err: (StatusCode, String) = (
-        StatusCode::BAD_GATEWAY,
-        "No TTS upstream model succeeded".to_string(),
+        StatusCode::NOT_IMPLEMENTED,
+        format!(
+            "AMR: Audio Speech (TTS) is not supported by upstream Google Antigravity. Model '{}' does not provision audio generation modality.",
+            req.model
+        ),
     );
 
     let voice_attempts = [
@@ -1119,7 +1018,7 @@ pub async fn handle_audio_speech(
                     last_err = (
                         StatusCode::NOT_IMPLEMENTED,
                         format!(
-                            "Model '{}' responded without audio inlineData (AUDIO TTS output is not enabled on this Cloud Code account/endpoint)",
+                            "AMR: Audio Speech (TTS) is not supported by upstream Google Antigravity. Model '{}' responded without audio inlineData (AUDIO TTS output is not provisioned on this Cloud Code account/endpoint).",
                             upstream_model
                         ),
                     );
@@ -1138,43 +1037,6 @@ pub async fn handle_audio_speech(
                 }
             }
         }
-    }
-
-    // If upstream Cloud Code Pa models failed or do not have AUDIO output enabled on this account,
-    // trigger autonomous fallback speech synthesis (Google Speech Engine)
-    if let Ok((fallback_bytes, content_type)) = synthesize_speech_fallback(
-        &state.http_client,
-        &input_text,
-        &req.voice,
-        req.response_format.as_deref(),
-    )
-    .await
-    {
-        let elapsed_ms = start_time.elapsed().as_millis() as u64;
-        state.stats.record_request(
-            "POST",
-            "/v1/audio/speech",
-            &req.model,
-            StatusCode::OK.as_u16(),
-            fallback_bytes.len() as u64,
-            elapsed_ms,
-        );
-        return (
-            StatusCode::OK,
-            [
-                (header::CONTENT_TYPE, content_type),
-                (
-                    header::HeaderName::from_static("x-amr-audio-voice"),
-                    "google-speech",
-                ),
-                (
-                    header::HeaderName::from_static("x-amr-upstream-model"),
-                    "google-speech-engine",
-                ),
-            ],
-            fallback_bytes,
-        )
-            .into_response();
     }
 
     let elapsed_ms = start_time.elapsed().as_millis() as u64;
@@ -1344,18 +1206,5 @@ mod tests {
         assert_eq!(&wav[12..16], b"fmt ");
         assert_eq!(&wav[36..40], b"data");
         assert_eq!(wav.len(), 44 + 100);
-    }
-
-    #[test]
-    fn test_detect_text_language() {
-        assert_eq!(detect_text_language("Привет, как дела?"), "ru");
-        assert_eq!(detect_text_language("Hello, how are you today?"), "en");
-        assert_eq!(detect_text_language("你好，世界！"), "zh-CN");
-    }
-
-    #[test]
-    fn test_url_encode() {
-        assert_eq!(url_encode("hello world"), "hello+world");
-        assert_eq!(url_encode("foo/bar?"), "foo%2Fbar%3F");
     }
 }

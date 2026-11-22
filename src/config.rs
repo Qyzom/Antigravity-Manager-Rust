@@ -895,7 +895,11 @@ impl AppConfig {
                     supports_thinking: false,
                     availability_status: "available".to_string(),
                     quota_percent: 100,
-                    notice: String::new(),
+                    notice: if vid.contains("tts") {
+                        "Audio Speech (TTS) is not provisioned on upstream Google Antigravity accounts (Cloud Code Pa API does not support audio generation modality).".to_string()
+                    } else {
+                        String::new()
+                    },
                     available_accounts_count: active_count,
                     max_tokens: 1_048_576,
                     max_output_tokens: 65_536,

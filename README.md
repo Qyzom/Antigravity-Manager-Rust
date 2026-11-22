@@ -58,10 +58,8 @@
 
 ### Complete Antigravity Feature Emulation (Beyond Chat)
 
-Unlike conventional proxies that only forward basic chat completions, **AMR faithfully emulates virtually all core Antigravity capabilities and multimodal modalities** that other tools simply drop or fail on:
+Unlike conventional proxies that only forward basic chat completions, **AMR faithfully emulates core Antigravity capabilities and multimodal modalities** while maintaining strict transparency:
 
-- **Autonomous High-Speed TTS Speech Synthesis (`POST /v1/audio/speech`):**
-  When upstream Cloud Code Pa models reject raw audio modalities or return empty payloads, AMR automatically engages an ultra-fast, zero-dependency autonomous synthesis engine. It returns authentic `audio/mpeg` (Layer III, 24kHz) in ~500ms, featuring automatic natural language detection (Russian, Chinese, English), punctuation-aware sentence chunking, and bidirectional voice alias translation across 27 voices.
 - **Whisper Audio Transcription (`POST /v1/audio/transcriptions`):**
   Full multimodal speech-to-text recognition mapped to active Gemini Flash backends, allowing OpenAI Whisper client drop-in compatibility without external speech services.
 - **Image Generation (`POST /v1/images/generations`):**
@@ -70,6 +68,8 @@ Unlike conventional proxies that only forward basic chat completions, **AMR fait
   Genuine Antigravity client metadata envelopes (`requestId: "agent/{conv}/{ts}/{traj}/1"`, `userAgent: "antigravity"`, `requestType: "agent"`), permanently resolving the upstream HTTP 400 errors encountered with `gemini-3.8-flash` on other proxies.
 - **Built-in Model Context Protocol (MCP) Server (`/mcp` & `/v1/mcp`):**
   Direct tool integration for Claude Code, Cursor, Cline, and Windsurf providing `google_web_search` (grounded live search with citations) and `fetch_web_page` (SSRF-hardened markdown web fetcher).
+- **Strict Error Transparency & Zero Fake Fallbacks:**
+  AMR strictly reports authentic upstream statuses. When an upstream API gateway does not provision a requested modality (such as `responseModalities: ["AUDIO"]` for speech synthesis on Cloud Code Pa accounts), AMR returns an explicit HTTP 501 with clear diagnostic details rather than silently masking upstream errors behind third-party web scrapers.
 
 ---
 
@@ -108,7 +108,7 @@ Unlike conventional proxies that only forward basic chat completions, **AMR fait
 | **Stream Micro-Chunk Pacing** | Raw upstream chunks | Raw upstream chunks | **Sub-token configurable pacing** |
 | **Reasoning Effort Support** | Partial suffixes | Suffixes | **Suffixes + Native Protocol** |
 | **Antigravity Agent Envelope** | ❌ (Frequent HTTP 400) | ❌ (Frequent HTTP 400) | **Authentic Agent Envelope (`requestId: agent/...`)** |
-| **Audio Speech TTS (`/v1/audio/speech`)** | ❌ Unsupported (501 / 400) | ❌ Unsupported (501 / 400) | **Autonomous High-Speed Engine (`audio/mpeg`, ~500ms)** |
+| **Audio Speech TTS (`/v1/audio/speech`)** | ❌ Unsupported | ❌ Unsupported | **Transparent HTTP 501 (Not provisioned on upstream Cloud Code)** |
 | **Audio STT Whisper (`/v1/audio/transcriptions`)** | ❌ Unsupported | ❌ Unsupported | **Full Multimodal Gemini STT** |
 | **Image Generation (`/v1/images/generations`)** | ❌ Unsupported | ❌ Unsupported | **Native Gemini 3.1 Flash Image + Aspect Ratios** |
 | **Built-in MCP Server (`/mcp`)** | ❌ None | ❌ None | **Native (`google_web_search` & `fetch_web_page`)** |
@@ -336,7 +336,7 @@ AMR dynamically parses available models, roles (`agentModelSorts`, `imageGenerat
 | **Image Generation** | `POST /v1/images/generations` | Supported | Aspect ratio mapping (`1:1`, `16:9`, `9:16`, `4:3`, `3:4`) & size |
 | **Web Search Grounding** | `POST /v1/search` | Supported | Upstream `googleSearch` tool with source citations |
 | **Audio STT** | `POST /v1/audio/transcriptions` | Fully Supported | Multimodal audio transcription via active Gemini Flash (Whisper 1) |
-| **Audio TTS** | `POST /v1/audio/speech` | Fully Supported | Autonomous high-speed speech engine fallback (`audio/mpeg`, Layer III, 24kHz) in ~500ms with RU/ZH/EN language auto-detection & 27 voice aliases |
+| **Audio TTS** | `POST /v1/audio/speech` | Unsupported (`501`) | Upstream Google Cloud Code Pa accounts do not provision `responseModalities: ["AUDIO"]` |
 | **Embeddings** | `POST /v1/embeddings` | Unsupported (`404`) | No `v1internal:embedContent` RPC exists on Cloud Code Pa API |
 
 ---
