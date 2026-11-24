@@ -24,7 +24,7 @@
   <releases>
     <release version="@VERSION@" date="@DATE@">
       <description>
-        <p>AMR v@VERSION@: Pure Rust AI API proxy, protocol emulator, multimodal audio/image support, and quota-aware dispatcher.</p>
+        <p>AMR v@VERSION@: Official 1.0.0 Production LTS milestone. Pure Rust AI API proxy, protocol emulator, zero bloat, multimodal STT, web search grounding, and quota-aware balancer.</p>
       </description>
     </release>
   </releases>
