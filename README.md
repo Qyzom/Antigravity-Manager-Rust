@@ -60,16 +60,14 @@
 
 Unlike conventional proxies that only forward basic chat completions, **AMR faithfully emulates core Antigravity capabilities and multimodal modalities** while maintaining strict transparency:
 
-- **Whisper Audio Transcription (`POST /v1/audio/transcriptions`):**
-  Full multimodal speech-to-text recognition mapped to active Gemini Flash backends, allowing OpenAI Whisper client drop-in compatibility without external speech services.
-- **Image Generation (`POST /v1/images/generations`):**
-  Full support for `gemini-3.1-flash-image` with aspect ratio controls (`1:1`, `16:9`, `9:16`, `4:3`, `3:4`), base64 JSON payload formatting, and prompt pass-through.
+- **Native Audio Speech-to-Text (`POST /v1/audio/transcriptions`):**
+  Full high-accuracy multimodal speech recognition via native `gemini-3.5-transcribe` (powered by Google Gemini Flash multimodal audio), with transparent drop-in compatibility for OpenAI Whisper clients (`whisper-1` / `stt-1`).
 - **Antigravity Agent Protocol & Stream Alignment:**
-  Genuine Antigravity client metadata envelopes (`requestId: "agent/{conv}/{ts}/{traj}/1"`, `userAgent: "antigravity"`, `requestType: "agent"`), permanently resolving the upstream HTTP 400 errors encountered with `gemini-3.8-flash` on other proxies.
+  Genuine Antigravity client metadata envelopes (`requestId: "agent/{conv}/{ts}/{traj}/1"`, `userAgent: "antigravity"`, `requestType: "agent"`), permanently resolving upstream HTTP 400 errors encountered with `gemini-3.8-flash` on other proxies.
 - **Built-in Model Context Protocol (MCP) Server (`/mcp` & `/v1/mcp`):**
   Direct tool integration for Claude Code, Cursor, Cline, and Windsurf providing `google_web_search` (grounded live search with citations) and `fetch_web_page` (SSRF-hardened markdown web fetcher).
-- **Strict Error Transparency & Zero Fake Fallbacks:**
-  AMR strictly reports authentic upstream statuses. When an upstream API gateway does not provision a requested modality (such as `responseModalities: ["AUDIO"]` for speech synthesis on Cloud Code Pa accounts), AMR returns an explicit HTTP 501 with clear diagnostic details rather than silently masking upstream errors behind third-party web scrapers.
+- **Strict Error Transparency & Zero Fake Layers:**
+  AMR strictly exposes authentic upstream capabilities without artificial mocks or brittle scrapers. Modalities not natively provisioned by Cloud Code Pa on standard licenses (such as stateless REST TTS and enterprise-only image generation) are cleanly excluded to ensure 100% stable proxy operations.
 
 ---
 
@@ -108,19 +106,17 @@ Unlike conventional proxies that only forward basic chat completions, **AMR fait
 | **Stream Micro-Chunk Pacing** | Raw upstream chunks | Raw upstream chunks | **Sub-token configurable pacing** |
 | **Reasoning Effort Support** | Partial suffixes | Suffixes | **Suffixes + Native Protocol** |
 | **Antigravity Agent Envelope** | ❌ (Frequent HTTP 400) | ❌ (Frequent HTTP 400) | **Authentic Agent Envelope (`requestId: agent/...`)** |
-| **Audio Speech TTS (`/v1/audio/speech`)** | ❌ Unsupported | ❌ Unsupported | **Transparent HTTP 501 (Not provisioned on upstream Cloud Code)** |
-| **Audio STT Whisper (`/v1/audio/transcriptions`)** | ❌ Unsupported | ❌ Unsupported | **Full Multimodal Gemini STT** |
-| **Image Generation (`/v1/images/generations`)** | ❌ Unsupported | ❌ Unsupported | **Native Gemini 3.1 Flash Image + Aspect Ratios** |
+| **Audio Speech-to-Text (`/v1/audio/transcriptions`)** | ❌ Unsupported | ❌ Unsupported | **Native `gemini-3.5-transcribe` / Multimodal STT** |
 | **Built-in MCP Server (`/mcp`)** | ❌ None | ❌ None | **Native (`google_web_search` & `fetch_web_page`)** |
 
 > *\* Real-world benchmarks performed on **Arch Linux** under identical test conditions.*  
-> *\* Software versions tested: AMR `v0.1.8` vs AntigravityManager `v0.30.0` (Draculabo) vs Antigravity-Manager `v5.0.0` (lbjlaq).*
+> *\* Software versions tested: AMR `v1.0.0` vs AntigravityManager `v0.30.0` (Draculabo) vs Antigravity-Manager `v5.0.0` (lbjlaq).*
 
 ---
 
 ### Downloads
 
-Pre-built standalone binaries and distribution packages for the latest AMR release are available on the [**Releases**](https://github.com/Qyzom/Antigravity-Manager-Rust/releases/latest) page (replace `<VERSION>` with the downloaded release tag, e.g. `0.1.8`):
+Pre-built standalone binaries and distribution packages for the latest AMR release are available on the [**Releases**](https://github.com/Qyzom/Antigravity-Manager-Rust/releases/latest) page (replace `<VERSION>` with the downloaded release tag, e.g. `1.0.0`):
 
 #### 🐧 Linux — Intel & AMD 64-bit (`x86_64`)
 | Format / Distro | Package File | Description |
@@ -333,10 +329,10 @@ AMR dynamically parses available models, roles (`agentModelSorts`, `imageGenerat
 | **Model Context Protocol (MCP)** | `POST /mcp` & `/v1/mcp` | Fully Supported | JSON-RPC 2.0 tools: `google_web_search(query)` & `fetch_web_page(url)` |
 | **`reasoning_effort`** | `none`/`low`/`medium`/`high` | Supported | Maps `none`/`off` to `thinkingBudget: 0` and `low`/`medium`/`high` to `thinkingLevel` (`LOW`/`MEDIUM`/`HIGH`) |
 | **Google `thinkingLevel: "MINIMAL"`** | Upstream Protocol | Unsupported (`400`) | Rejected by upstream; AMR uses `thinkingBudget: 0` for `none`/`off` |
-| **Image Generation** | `POST /v1/images/generations` | Supported | Aspect ratio mapping (`1:1`, `16:9`, `9:16`, `4:3`, `3:4`) & size |
 | **Web Search Grounding** | `POST /v1/search` | Supported | Upstream `googleSearch` tool with source citations |
-| **Audio STT** | `POST /v1/audio/transcriptions` | Fully Supported | Multimodal audio transcription via active Gemini Flash (Whisper 1) |
-| **Audio TTS** | `POST /v1/audio/speech` | Unsupported (`501`) | Upstream Google Cloud Code Pa accounts do not provision `responseModalities: ["AUDIO"]` |
+| **Audio STT** | `POST /v1/audio/transcriptions` | Fully Supported | Multimodal audio transcription via `gemini-3.5-transcribe` (with `whisper-1` alias) |
+| **Audio TTS** | `POST /v1/audio/speech` | Unsupported (`404`) | Purged; upstream Google Cloud Code Pa does not offer stateless REST TTS |
+| **Image Generation** | `POST /v1/images/generations` | Unsupported (`404`) | Purged; upstream Cloud Code Pa restricts to Enterprise license (`#3501`) |
 | **Embeddings** | `POST /v1/embeddings` | Unsupported (`404`) | No `v1internal:embedContent` RPC exists on Cloud Code Pa API |
 
 ---
