@@ -421,9 +421,7 @@ export struct I18nData {
     lbl_stage_cooldown: string,
     lbl_stage_quarantine: string,
     lbl_stage_probing: string,
-    lbl_badge_image: string,
     lbl_badge_stt: string,
-    lbl_badge_tts: string,
     lbl_badge_search: string,
     lbl_model_disabled: string,
     lbl_model_exhausted: string,
@@ -771,34 +769,7 @@ export component MainWindow inherits Window {
     in-out property <string> mcp_test_result_text: "";
     in-out property <bool> mcp_is_testing: false;
 
-    // Modal 2: Test Model Dialog
-    in-out property <bool> show_test_dialog: false;
-    in-out property <string> test_model_id: "claude-3-7-sonnet";
-    in-out property <string> test_modality: "chat"; // "chat", "image", "stt", "tts", "search"
-    property <bool> is_image_test_model: root.test_modality == "image";
-    in-out property <string> test_prompt: "";
-    in-out property <string> test_timeout_secs: "60";
-    in-out property <string> test_max_tokens: "2048";
-    in-out property <string> test_temperature: "0.7";
-    in-out property <int> test_reasoning_effort_index: 0; // 0: Default, 1: Off, 2: Low, 3: Medium, 4: High
-    in-out property <bool> test_stream: true;
-    in-out property <string> test_image_aspect_ratio: "1:1";
-    in-out property <image> test_preview_image;
-    in-out property <bool> test_has_preview_image: false;
-    in-out property <string> test_audio_file_path: "";
-    in-out property <string> test_stt_language: "";
-    in-out property <string> test_tts_voice: "alloy";
-    in-out property <string> test_tts_speed: "1.0";
-    in-out property <string> test_audio_output_path: "";
-    in-out property <bool> test_has_audio_output: false;
-    in-out property <string> test_search_domain: "";
-    in-out property <bool> test_running: false;
-    in-out property <string> test_status: "";
-    in-out property <string> test_latency: "0 ms";
-    in-out property <string> test_tokens: "0";
-    in-out property <string> test_response: "";
-
-    // Modal 3: Log Details Inspector
+    // Modal: Log Details Inspector
     in-out property <bool> show_log_modal: false;
     in-out property <bool> modal_log_copied: false;
     in-out property <string> modal_log_time: "";
@@ -1896,9 +1867,7 @@ export component MainWindow inherits Window {
                                                     padding-left: 6px;
                                                     padding-right: 6px;
                                                     Text {
-                                                        text: model.modality == "image" ? root.i18n.lbl_badge_image :
-                                                              model.modality == "stt" ? root.i18n.lbl_badge_stt :
-                                                              model.modality == "tts" ? root.i18n.lbl_badge_tts :
+                                                        text: model.modality == "stt" ? root.i18n.lbl_badge_stt :
                                                               model.modality == "search" ? root.i18n.lbl_badge_search :
                                                               (model.supports_thinking ? root.i18n.lbl_badge_thinking : root.i18n.lbl_badge_no_thinking);
                                                         font-size: 9px;

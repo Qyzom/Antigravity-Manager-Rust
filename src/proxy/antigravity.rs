@@ -228,14 +228,6 @@ pub fn normalize_antigravity_upstream_model(requested: &str) -> &'static str {
         "gemini-2.5-flash"
     } else if clean.contains("whisper") || clean.contains("transcrib") {
         "gemini-3.8-flash-medium"
-    } else if clean == "gemini-3.8-flash-lite-tts" {
-        "gemini-3.8-flash-lite-tts"
-    } else if clean == "gemini-3.8-flash-tts" {
-        "gemini-3.8-flash-tts"
-    } else if clean == "gemini-3.1-flash-tts-preview" {
-        "gemini-3.1-flash-tts-preview"
-    } else if clean.contains("tts") {
-        "gemini-3.8-flash-lite-tts"
     } else if clean.contains("pro") {
         "gemini-2.5-pro"
     } else if clean.contains("gemini-2.5-flash") {
@@ -401,6 +393,7 @@ pub fn get_oauth_authorization_url(port: u16) -> String {
         "https://www.googleapis.com/auth/userinfo.profile",
         "https://www.googleapis.com/auth/cclog",
         "https://www.googleapis.com/auth/experimentsandconfigs",
+        "https://www.googleapis.com/auth/aicode",
     ]
     .join(" ");
 

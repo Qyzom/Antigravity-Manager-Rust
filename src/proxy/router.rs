@@ -119,9 +119,7 @@ pub fn resolve_model_with_effort(
             if lower.contains("web-search") || lower.contains("google-search") {
                 return ("web-search".to_string(), None);
             } else if lower.contains("whisper") || lower.contains("transcrib") || lower == "stt-1" {
-                return ("whisper-1".to_string(), None);
-            } else if lower.contains("tts") {
-                return ("tts-1".to_string(), None);
+                return ("gemini-3.5-transcribe".to_string(), None);
             } else if lower.contains("image") || lower.contains("imagen") || lower.contains("dall-e") {
                 if let Some(img) = account
                     .available_models
@@ -273,9 +271,7 @@ pub fn resolve_model_with_effort(
             } else if lower.contains("web-search") || lower.contains("google-search") {
                 ("web-search".to_string(), None)
             } else if lower.contains("whisper") || lower.contains("transcrib") || lower == "stt-1" {
-                ("whisper-1".to_string(), None)
-            } else if lower.contains("tts") {
-                ("tts-1".to_string(), None)
+                ("gemini-3.5-transcribe".to_string(), None)
             } else if lower == "gemini-3.8-flash-tiered" || lower.contains("tiered") {
                 ("gemini-3.8-flash-tiered".to_string(), effective_effort)
             } else if lower == "gemini-2.5-flash"

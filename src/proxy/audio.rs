@@ -8,12 +8,12 @@ use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::Path;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 
 use crate::config::UpstreamAccount;
 use crate::proxy::antigravity::{
-    aspect_ratio_from_size_or_hint, build_web_search_payload, extract_clean_error_message,
-    extract_grounding_info, normalize_antigravity_upstream_model, GENERATE_ENDPOINTS,
+    build_web_search_payload, extract_clean_error_message, extract_grounding_info,
+    normalize_antigravity_upstream_model, GENERATE_ENDPOINTS,
 };
 use crate::proxy::server::{build_upstream_headers_json, AppState};
 
@@ -60,10 +60,9 @@ pub(crate) fn pick_dynamic_gemini_model(state: &AppState, modality: &str, reques
         let lower = req_m.to_lowercase();
         if lower != "whisper-1"
             && lower != "stt-1"
+            && lower != "gemini-3.5-transcribe"
             && lower != "web-search"
             && lower != "google-search"
-            && !lower.contains("dall-e")
-            && !lower.contains("imagen")
         {
             return normalize_antigravity_upstream_model(req_m).to_string();
         }
@@ -74,67 +73,17 @@ pub(crate) fn pick_dynamic_gemini_model(state: &AppState, modality: &str, reques
             !m.disabled
                 && m.remaining_fraction > 0.0
                 && match modality {
-                    "image" => m.modality == "image" || m.id.to_lowercase().contains("image"),
                     "search" => m.modality == "search",
-                    _ => m.provider == "gemini" && m.modality != "image",
+                    _ => m.provider == "gemini",
                 }
         }) {
             return found.id.clone();
         }
     }
     match modality {
-        "image" => "gemini-3.1-flash-image".to_string(),
         "search" => "gemini-3.5-flash-lite".to_string(),
         _ => "gemini-3.8-flash-medium".to_string(),
     }
-}
-
-/// Request schema for OpenAI /v1/images/generations
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct ImageGenerationRequest {
-    pub prompt: String,
-    #[serde(default)]
-    pub model: Option<String>,
-    #[serde(default)]
-    pub n: Option<u32>,
-    #[serde(default)]
-    pub size: Option<String>,
-    #[serde(default, alias = "aspectRatio")]
-    pub aspect_ratio: Option<String>,
-    #[serde(default, alias = "imageSize")]
-    pub image_size: Option<String>,
-    #[serde(default)]
-    pub response_format: Option<String>,
-    #[serde(default)]
-    pub quality: Option<String>,
-    #[serde(default)]
-    pub style: Option<String>,
-}
-
-/// Request schema for OpenAI /v1/audio/speech (TTS)
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct AudioSpeechRequest {
-    #[serde(default = "default_tts_model")]
-    pub model: String,
-    pub input: String,
-    #[serde(default = "default_voice")]
-    pub voice: String,
-    #[serde(default = "default_speech_format")]
-    pub response_format: Option<String>,
-    #[serde(default)]
-    pub speed: Option<f32>,
-}
-
-fn default_tts_model() -> String {
-    "tts-1".to_string()
-}
-
-fn default_voice() -> String {
-    "alloy".to_string()
-}
-
-fn default_speech_format() -> Option<String> {
-    Some("wav".to_string())
 }
 
 /// Request schema for /v1/search (Web Search / Google Grounding)
@@ -146,69 +95,6 @@ pub struct WebSearchRequest {
     pub domain: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
-}
-
-/// Maps any incoming voice name (Antigravity 44.9+, Gemini Native, OpenAI API)
-/// to the optimal upstream voice identifier.
-pub fn map_openai_voice_to_gemini(voice: &str) -> String {
-    match voice.trim().to_lowercase().as_str() {
-        // --- 9 Native Antigravity Voices (Antigravity v44.9+) ---
-        "fola" => "Fola".to_string(),
-        "arlo" => "Arlo".to_string(),
-        "cleo" => "Cleo".to_string(),
-        "finn" => "Finn".to_string(),
-        "gero" => "Gero".to_string(),
-        "lora" => "Lora".to_string(),
-        "neno" => "Neno".to_string(),
-        "olin" => "Olin".to_string(),
-        "tari" => "Tari".to_string(),
-
-        // --- 9 Google Gemini Native Voices ---
-        "zephyr" => "Zephyr".to_string(),
-        "puck" => "Puck".to_string(),
-        "charon" => "Charon".to_string(),
-        "fenrir" => "Fenrir".to_string(),
-        "kore" => "Kore".to_string(),
-        "aoede" => "Aoede".to_string(),
-        "orus" => "Orus".to_string(),
-        "leda" => "Leda".to_string(),
-        "sulafat" => "Sulafat".to_string(),
-
-        // --- 9 OpenAI TTS API Voice Mappings (paired with Antigravity / Gemini) ---
-        "alloy" => "Fola".to_string(),
-        "echo" => "Arlo".to_string(),
-        "fable" => "Finn".to_string(),
-        "onyx" => "Neno".to_string(),
-        "nova" => "Cleo".to_string(),
-        "shimmer" => "Lora".to_string(),
-        "ash" => "Gero".to_string(),
-        "coral" => "Tari".to_string(),
-        "sage" => "Olin".to_string(),
-
-        other => {
-            let mut chars = other.chars();
-            match chars.next() {
-                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                None => "Fola".to_string(),
-            }
-        }
-    }
-}
-
-/// Fallback voice resolver in case an upstream endpoint only supports legacy Gemini Native voices
-pub fn fallback_gemini_voice(voice: &str) -> &'static str {
-    match voice.trim().to_lowercase().as_str() {
-        "fola" | "alloy" | "zephyr" => "Zephyr",
-        "arlo" | "echo" | "puck" => "Puck",
-        "cleo" | "nova" | "kore" => "Kore",
-        "finn" | "fable" | "charon" => "Charon",
-        "gero" | "ash" | "orus" => "Orus",
-        "lora" | "shimmer" | "aoede" => "Aoede",
-        "neno" | "onyx" | "fenrir" => "Fenrir",
-        "olin" | "sage" | "sulafat" => "Sulafat",
-        "tari" | "coral" | "leda" => "Leda",
-        _ => "Zephyr",
-    }
 }
 
 /// Wraps raw linear PCM (little-endian 16-bit mono) in a standard 44-byte RIFF/WAVE header.
@@ -234,45 +120,6 @@ pub(crate) fn wrap_pcm_in_wav(pcm_data: &[u8], sample_rate: u32, channels: u16, 
     wav.extend_from_slice(&data_size.to_le_bytes());
     wav.extend_from_slice(pcm_data);
     wav
-}
-
-fn parse_pcm_rate(mime: &str) -> u32 {
-    for part in mime.split(';') {
-        let trimmed = part.trim();
-        if let Some(val) = trimmed.strip_prefix("rate=") {
-            if let Ok(r) = val.trim().parse::<u32>() {
-                if (8000..=192000).contains(&r) {
-                    return r;
-                }
-            }
-        }
-    }
-    24000
-}
-
-fn detect_container_content_type(bytes: &[u8], upstream_mime: &str) -> &'static str {
-    if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WAVE" {
-        return "audio/wav";
-    }
-    if bytes.len() >= 4 && &bytes[..4] == b"fLaC" {
-        return "audio/flac";
-    }
-    if bytes.len() >= 4 && &bytes[..4] == b"OggS" {
-        return "audio/ogg";
-    }
-    if bytes.len() >= 3 && (&bytes[..3] == b"ID3" || (bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0))
-    {
-        return "audio/mpeg";
-    }
-    match normalize_audio_mime(upstream_mime) {
-        "audio/wav" => "audio/wav",
-        "audio/mp3" => "audio/mpeg",
-        "audio/ogg" => "audio/ogg",
-        "audio/flac" => "audio/flac",
-        "audio/aac" => "audio/aac",
-        "audio/webm" => "audio/webm",
-        _ => "audio/wav",
-    }
 }
 
 /// Shared non-streaming upstream executor for `v1internal:generateContent` with automatic OAuth refresh and balancer telemetry.
@@ -531,17 +378,19 @@ pub async fn handle_audio_transcriptions(
     State(state): State<AppState>,
     mut multipart: Multipart,
 ) -> Response {
-    if !state.config.read().is_model_enabled("whisper-1") {
+    if !state.config.read().is_model_enabled("gemini-3.5-transcribe")
+        && !state.config.read().is_model_enabled("whisper-1")
+    {
         return error_response(
             StatusCode::FORBIDDEN,
-            "AMR: Model 'whisper-1' is disabled by administrator in settings.".to_string(),
+            "AMR: Model 'gemini-3.5-transcribe' is disabled by administrator in settings.".to_string(),
             "model_disabled",
         );
     }
     let start_time = Instant::now();
     let mut audio_bytes: Option<Vec<u8>> = None;
     let mut filename: Option<String> = None;
-    let mut model_name = "whisper-1".to_string();
+    let mut model_name = "gemini-3.5-transcribe".to_string();
     let mut prompt_override: Option<String> = None;
     let mut language: Option<String> = None;
     let mut response_format = "json".to_string();
@@ -701,355 +550,7 @@ pub async fn handle_audio_transcriptions(
     }
 }
 
-/// Handler for OpenAI-compatible /v1/images/generations
-pub async fn handle_image_generations(
-    State(state): State<AppState>,
-    Json(req): Json<ImageGenerationRequest>,
-) -> Response {
-    let target_check = req.model.as_deref().unwrap_or("gemini-3.1-flash-image");
-    if !state.config.read().is_model_enabled(target_check) {
-        return error_response(
-            StatusCode::FORBIDDEN,
-            format!("AMR: Model '{}' is disabled by administrator in settings.", target_check),
-            "model_disabled",
-        );
-    }
-    let start_time = Instant::now();
-    let prompt = req.prompt.trim().to_string();
-    if prompt.is_empty() {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "Prompt cannot be empty".to_string(),
-            "missing_prompt",
-        );
-    }
 
-    let model = pick_dynamic_gemini_model(&state, "image", req.model.as_deref());
-    let aspect_ratio =
-        aspect_ratio_from_size_or_hint(req.aspect_ratio.as_deref(), req.size.as_deref())
-            .unwrap_or("1:1");
-    let requested_n = req.n.unwrap_or(1).clamp(1, 4) as usize;
-
-    let image_size = req.image_size.clone();
-
-    let res = execute_generate_content(&state, &model, &model, |acc| {
-        let project_id = acc
-            .project_id
-            .clone()
-            .unwrap_or_else(|| "aicode-consumers".to_string());
-        let mut img_cfg = json!({ "aspectRatio": aspect_ratio });
-        if let Some(sz) = image_size.as_deref().filter(|s| !s.trim().is_empty()) {
-            img_cfg["imageSize"] = json!(sz.trim());
-        }
-        json!({
-            "project": project_id,
-            "requestId": format!("img-{}", uuid::Uuid::new_v4()),
-            "userAgent": "antigravity",
-            "requestType": "image_gen",
-            "model": model,
-            "request": {
-                "contents": [{
-                    "role": "user",
-                    "parts": [{ "text": prompt }]
-                }],
-                "generationConfig": {
-                    "responseModalities": ["TEXT", "IMAGE"],
-                    "imageConfig": img_cfg
-                }
-            }
-        })
-    })
-    .await;
-
-    match res {
-        Ok((json_resp, account_name)) => {
-            let parts = extract_candidate_parts(&json_resp);
-            let text_caption = collect_non_thought_text(parts);
-            let revised_prompt = if text_caption.is_empty() {
-                prompt.clone()
-            } else {
-                text_caption
-            };
-
-            let mut images: Vec<(String, String)> = Vec::new();
-            for p in parts {
-                if let Some(inline) = p.get("inlineData") {
-                    if let Some(data) = inline.get("data").and_then(|d| d.as_str()) {
-                        let m = inline
-                            .get("mimeType")
-                            .and_then(|m| m.as_str())
-                            .unwrap_or("image/png")
-                            .to_string();
-                        images.push((data.to_string(), m));
-                        if images.len() >= requested_n {
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if images.is_empty() {
-                return error_response(
-                    StatusCode::BAD_GATEWAY,
-                    "Upstream did not return any image data in candidates".to_string(),
-                    "empty_image_response",
-                );
-            }
-
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs();
-            let is_url_req = req.response_format.as_deref() == Some("url");
-            let total_b64_len: usize = images.iter().map(|(b, _)| b.len()).sum();
-
-            let data_items: Vec<Value> = images
-                .into_iter()
-                .map(|(b64, mime_type)| {
-                    if is_url_req {
-                        json!({
-                            "url": format!("data:{};base64,{}", mime_type, b64),
-                            "mime_type": mime_type,
-                            "revised_prompt": revised_prompt
-                        })
-                    } else {
-                        json!({
-                            "b64_json": b64,
-                            "mime_type": mime_type,
-                            "revised_prompt": revised_prompt
-                        })
-                    }
-                })
-                .collect();
-
-            let elapsed_ms = start_time.elapsed().as_millis() as u64;
-            state.stats.record_detailed_request(
-                "POST",
-                "/v1/images/generations",
-                &model,
-                200,
-                total_b64_len as u64,
-                elapsed_ms,
-                &account_name,
-                "off",
-                "Content-Type: application/json",
-                &format!("prompt={} aspectRatio={}", prompt, aspect_ratio),
-                &format!("[{} generated image(s), {} b64 chars]", data_items.len(), total_b64_len),
-                None,
-            );
-
-            (
-                StatusCode::OK,
-                Json(json!({
-                    "created": now,
-                    "data": data_items
-                })),
-            )
-                .into_response()
-        }
-        Err((status, msg)) => {
-            let elapsed_ms = start_time.elapsed().as_millis() as u64;
-            state.stats.record_request(
-                "POST",
-                "/v1/images/generations",
-                &model,
-                status.as_u16(),
-                0,
-                elapsed_ms,
-            );
-            error_response(status, msg, "upstream_error")
-        }
-    }
-}
-
-/// Handler for OpenAI-compatible /v1/audio/speech (TTS)
-pub async fn handle_audio_speech(
-    State(state): State<AppState>,
-    Json(req): Json<AudioSpeechRequest>,
-) -> Response {
-    let is_enabled = {
-        let cfg = state.config.read();
-        cfg.is_model_enabled(&req.model)
-            || cfg.is_model_enabled("tts-1")
-            || cfg.is_model_enabled("tts-1-hd")
-    };
-    if !is_enabled {
-        return error_response(
-            StatusCode::FORBIDDEN,
-            format!("AMR: Model '{}' is disabled by administrator in settings.", req.model),
-            "model_disabled",
-        );
-    }
-    let start_time = Instant::now();
-    let input_text = req.input.trim().to_string();
-    if input_text.is_empty() {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "Input text cannot be empty".to_string(),
-            "missing_input",
-        );
-    }
-
-    let voice_name = map_openai_voice_to_gemini(&req.voice);
-    let speed = req.speed.unwrap_or(1.0).clamp(0.25, 4.0);
-    let speech_prompt = if (speed - 1.0).abs() > 0.05 {
-        format!(
-            "Read the following text aloud naturally at approximately {:.2}x speaking pace, without extra commentary:\n\n{}",
-            speed, input_text
-        )
-    } else {
-        format!(
-            "Read the following text aloud verbatim without extra commentary:\n\n{}",
-            input_text
-        )
-    };
-
-    let candidate_models: Vec<&'static str> = match req.model.trim().to_lowercase().as_str() {
-        "gemini-3.8-flash-lite-tts" => vec!["gemini-3.8-flash-lite-tts"],
-        "gemini-3.8-flash-tts" => vec!["gemini-3.8-flash-tts"],
-        "gemini-3.1-flash-tts-preview" => vec!["gemini-3.1-flash-tts-preview"],
-        "tts-1-hd" => vec!["gemini-3.8-flash-tts"],
-        _ => vec!["gemini-3.8-flash-lite-tts"],
-    };
-
-    let mut last_err: (StatusCode, String) = (
-        StatusCode::NOT_IMPLEMENTED,
-        format!(
-            "AMR: Audio Speech (TTS) is not supported by upstream Google Antigravity. Model '{}' does not provision audio generation modality.",
-            req.model
-        ),
-    );
-
-    let voice_attempts = [
-        voice_name.clone(),
-        fallback_gemini_voice(&req.voice).to_string(),
-    ];
-
-    'model_loop: for upstream_model in candidate_models {
-        let mut tried_voices = std::collections::HashSet::new();
-
-        for current_voice in &voice_attempts {
-            if !tried_voices.insert(current_voice.as_str()) {
-                continue;
-            }
-
-            let res = execute_generate_content(&state, "tts-1", upstream_model, |acc| {
-                let project_id = acc
-                    .project_id
-                    .clone()
-                    .unwrap_or_else(|| "aicode-consumers".to_string());
-                json!({
-                    "project": project_id,
-                    "requestId": format!("tts-{}", uuid::Uuid::new_v4()),
-                    "userAgent": "antigravity",
-                    "requestType": "agent",
-                    "model": upstream_model,
-                    "request": {
-                        "contents": [{
-                            "role": "user",
-                            "parts": [{ "text": speech_prompt }]
-                        }],
-                        "generationConfig": {
-                            "responseModalities": ["AUDIO"],
-                            "speechConfig": {
-                                "voiceConfig": {
-                                    "prebuiltVoiceConfig": {
-                                        "voiceName": current_voice
-                                    }
-                                }
-                            }
-                        }
-                    }
-                })
-            })
-            .await;
-
-            match res {
-                Ok((json_resp, account_name)) => {
-                    let parts = extract_candidate_parts(&json_resp);
-                    for p in parts {
-                        if let Some(inline) = p.get("inlineData") {
-                            if let Some(b64) = inline.get("data").and_then(|d| d.as_str()) {
-                                let upstream_mime = inline
-                                    .get("mimeType")
-                                    .and_then(|m| m.as_str())
-                                    .unwrap_or("audio/L16;codec=pcm;rate=24000");
-                                if let Ok(raw_audio) = general_purpose::STANDARD.decode(b64.trim()) {
-                                    let final_bytes = if upstream_mime.to_lowercase().contains("l16")
-                                        || upstream_mime.to_lowercase().contains("pcm")
-                                    {
-                                        let rate = parse_pcm_rate(upstream_mime);
-                                        wrap_pcm_in_wav(&raw_audio, rate, 1, 16)
-                                    } else {
-                                        raw_audio
-                                    };
-                                    let content_type =
-                                        detect_container_content_type(&final_bytes, upstream_mime);
-                                    let elapsed_ms = start_time.elapsed().as_millis() as u64;
-                                    state.stats.record_detailed_request(
-                                        "POST",
-                                        "/v1/audio/speech",
-                                        &req.model,
-                                        200,
-                                        final_bytes.len() as u64,
-                                        elapsed_ms,
-                                        &account_name,
-                                        "off",
-                                        "Content-Type: application/json",
-                                        &format!("voice={} model={}", current_voice, upstream_model),
-                                        &format!("[audio: {} bytes, {}]", final_bytes.len(), content_type),
-                                        None,
-                                    );
-
-                                    return (
-                                        StatusCode::OK,
-                                        [
-                                            (header::CONTENT_TYPE, content_type),
-                                            (header::HeaderName::from_static("x-amr-audio-voice"), current_voice.as_str()),
-                                            (header::HeaderName::from_static("x-amr-upstream-model"), upstream_model),
-                                        ],
-                                        final_bytes,
-                                    )
-                                        .into_response();
-                                }
-                            }
-                        }
-                    }
-                    last_err = (
-                        StatusCode::NOT_IMPLEMENTED,
-                        format!(
-                            "AMR: Audio Speech (TTS) is not supported by upstream Google Antigravity. Model '{}' responded without audio inlineData (AUDIO TTS output is not provisioned on this Cloud Code account/endpoint).",
-                            upstream_model
-                        ),
-                    );
-                    break 'model_loop;
-                }
-                Err((status, msg)) => {
-                    last_err = (status, msg.clone());
-                    if status == StatusCode::UNAUTHORIZED || status == StatusCode::TOO_MANY_REQUESTS {
-                        break 'model_loop;
-                    }
-                    // If error specifically says invalid voice or voice not found, continue to retry with fallback_gemini_voice
-                    if msg.to_lowercase().contains("voice") {
-                        continue;
-                    }
-                    break;
-                }
-            }
-        }
-    }
-
-    let elapsed_ms = start_time.elapsed().as_millis() as u64;
-    state.stats.record_request(
-        "POST",
-        "/v1/audio/speech",
-        &req.model,
-        last_err.0.as_u16(),
-        0,
-        elapsed_ms,
-    );
-    error_response(last_err.0, last_err.1, "tts_upstream_error")
-}
 
 /// Handler for /v1/search (Antigravity GetWebSearchResults / Google Grounding)
 pub async fn handle_web_search(
@@ -1143,58 +644,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_antigravity_voices_mapping() {
-        // All 9 new Antigravity v44.9+ voices
-        assert_eq!(map_openai_voice_to_gemini("gero"), "Gero");
-        assert_eq!(map_openai_voice_to_gemini("Gero"), "Gero");
-        assert_eq!(map_openai_voice_to_gemini("fola"), "Fola");
-        assert_eq!(map_openai_voice_to_gemini("FOLA"), "Fola");
-        assert_eq!(map_openai_voice_to_gemini("arlo"), "Arlo");
-        assert_eq!(map_openai_voice_to_gemini("cleo"), "Cleo");
-        assert_eq!(map_openai_voice_to_gemini("finn"), "Finn");
-        assert_eq!(map_openai_voice_to_gemini("lora"), "Lora");
-        assert_eq!(map_openai_voice_to_gemini("neno"), "Neno");
-        assert_eq!(map_openai_voice_to_gemini("olin"), "Olin");
-        assert_eq!(map_openai_voice_to_gemini("tari"), "Tari");
-    }
-
-    #[test]
-    fn test_gemini_native_voices_mapping() {
-        assert_eq!(map_openai_voice_to_gemini("zephyr"), "Zephyr");
-        assert_eq!(map_openai_voice_to_gemini("puck"), "Puck");
-        assert_eq!(map_openai_voice_to_gemini("charon"), "Charon");
-        assert_eq!(map_openai_voice_to_gemini("fenrir"), "Fenrir");
-        assert_eq!(map_openai_voice_to_gemini("kore"), "Kore");
-        assert_eq!(map_openai_voice_to_gemini("aoede"), "Aoede");
-        assert_eq!(map_openai_voice_to_gemini("orus"), "Orus");
-        assert_eq!(map_openai_voice_to_gemini("leda"), "Leda");
-        assert_eq!(map_openai_voice_to_gemini("sulafat"), "Sulafat");
-    }
-
-    #[test]
-    fn test_openai_voices_alias_mapping() {
-        assert_eq!(map_openai_voice_to_gemini("alloy"), "Fola");
-        assert_eq!(map_openai_voice_to_gemini("echo"), "Arlo");
-        assert_eq!(map_openai_voice_to_gemini("nova"), "Cleo");
-        assert_eq!(map_openai_voice_to_gemini("fable"), "Finn");
-        assert_eq!(map_openai_voice_to_gemini("ash"), "Gero");
-        assert_eq!(map_openai_voice_to_gemini("shimmer"), "Lora");
-        assert_eq!(map_openai_voice_to_gemini("onyx"), "Neno");
-        assert_eq!(map_openai_voice_to_gemini("sage"), "Olin");
-        assert_eq!(map_openai_voice_to_gemini("coral"), "Tari");
-    }
-
-    #[test]
-    fn test_fallback_gemini_voice() {
-        assert_eq!(fallback_gemini_voice("Gero"), "Orus");
-        assert_eq!(fallback_gemini_voice("Fola"), "Zephyr");
-        assert_eq!(fallback_gemini_voice("Arlo"), "Puck");
-        assert_eq!(fallback_gemini_voice("Cleo"), "Kore");
-        assert_eq!(fallback_gemini_voice("Finn"), "Charon");
-        assert_eq!(fallback_gemini_voice("Lora"), "Aoede");
-        assert_eq!(fallback_gemini_voice("Neno"), "Fenrir");
-        assert_eq!(fallback_gemini_voice("Olin"), "Sulafat");
-        assert_eq!(fallback_gemini_voice("Tari"), "Leda");
+    fn test_detect_audio_mime() {
+        assert_eq!(detect_audio_mime("file.mp3"), "audio/mp3");
+        assert_eq!(detect_audio_mime("recording.wav"), "audio/wav");
+        assert_eq!(detect_audio_mime("voice.ogg"), "audio/ogg");
+        assert_eq!(detect_audio_mime("track.m4a"), "audio/aac");
+        assert_eq!(detect_audio_mime("audio.flac"), "audio/flac");
     }
 
     #[test]

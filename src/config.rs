@@ -873,12 +873,10 @@ impl AppConfig {
             })
             .collect();
 
-        // Append AMR virtual utility endpoints backed by active accounts (Audio STT & Audio TTS)
+        // Append AMR virtual utility endpoints backed by active accounts (Audio STT / Gemini Transcribe)
         let active_count = active_accounts.len();
         for (idx, (vid, vname, vprov)) in [
-            ("whisper-1", "Whisper 1 (Audio STT)", "openai"),
-            ("tts-1", "TTS 1 (Audio Speech)", "openai"),
-            ("tts-1-hd", "TTS 1 HD (Audio Speech)", "openai"),
+            ("gemini-3.5-transcribe", "Gemini 3.5 Transcribe (Audio STT)", "google"),
         ]
         .into_iter()
         .enumerate()
@@ -895,11 +893,7 @@ impl AppConfig {
                     supports_thinking: false,
                     availability_status: "available".to_string(),
                     quota_percent: 100,
-                    notice: if vid.contains("tts") {
-                        "Audio Speech (TTS) is not provisioned on upstream Google Antigravity accounts (Cloud Code Pa API does not support audio generation modality).".to_string()
-                    } else {
-                        String::new()
-                    },
+                    notice: String::new(),
                     available_accounts_count: active_count,
                     max_tokens: 1_048_576,
                     max_output_tokens: 65_536,
@@ -1251,30 +1245,11 @@ impl AppConfig {
 
             // Base model enriched with modality, reasoning and capability metadata
             let lower_id = base_id.to_lowercase();
-            let is_image = lower_id.contains("image") || lower_id.contains("dall-e");
             let is_stt = lower_id.contains("whisper") || lower_id.contains("transcrib");
-            let is_tts = lower_id.contains("tts");
             let is_search = lower_id.contains("web-search") || lower_id.contains("google-search");
 
             let (input_modalities, output_modalities, capabilities, supported_parameters) =
-                if is_image {
-                    (
-                        serde_json::json!(["text", "image"]),
-                        serde_json::json!(["image", "text"]),
-                        serde_json::json!({
-                            "chat_completions": true,
-                            "image_generation": true,
-                            "images": true,
-                            "reasoning": false,
-                            "thinking": false,
-                            "reasoning_effort": false,
-                            "reasoningEffort": false,
-                            "thinking_budget": false,
-                            "max_thinking_budget": false
-                        }),
-                        serde_json::json!(["prompt", "aspect_ratio", "size", "n", "response_format", "temperature"]),
-                    )
-                } else if is_stt {
+                if is_stt {
                     (
                         serde_json::json!(["audio"]),
                         serde_json::json!(["text"]),
@@ -1291,29 +1266,6 @@ impl AppConfig {
                             "images": false
                         }),
                         serde_json::json!(["file", "model", "prompt", "language", "response_format"]),
-                    )
-                } else if is_tts {
-                    (
-                        serde_json::json!(["text"]),
-                        serde_json::json!(["audio"]),
-                        serde_json::json!({
-                            "chat_completions": true,
-                            "audio_speech": true,
-                            "text_to_speech": true,
-                            "reasoning": false,
-                            "thinking": false,
-                            "reasoning_effort": false,
-                            "reasoningEffort": false,
-                            "thinking_budget": false,
-                            "max_thinking_budget": false,
-                            "images": false,
-                            "voices": [
-                                "Fola", "Arlo", "Cleo", "Finn", "Gero", "Lora", "Neno", "Olin", "Tari",
-                                "Zephyr", "Puck", "Charon", "Fenrir", "Kore", "Aoede", "Orus", "Leda", "Sulafat",
-                                "alloy", "echo", "fable", "onyx", "nova", "shimmer", "ash", "coral", "sage"
-                            ]
-                        }),
-                        serde_json::json!(["input", "model", "voice", "response_format", "speed"]),
                     )
                 } else if is_search {
                     (

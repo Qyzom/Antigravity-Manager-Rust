@@ -179,12 +179,8 @@ fn full_circle_path(cx: f64, cy: f64, r: f64) -> String {
 
 fn detect_model_modality(id: &str) -> &'static str {
     let lower = id.to_lowercase();
-    if lower.contains("image") || lower.contains("imagen") || lower.contains("dall-e") {
-        "image"
-    } else if lower.contains("whisper") || lower.contains("transcrib") || lower == "stt-1" {
+    if lower.contains("whisper") || lower.contains("transcrib") || lower == "stt-1" {
         "stt"
-    } else if lower.contains("tts") {
-        "tts"
     } else if lower.contains("web-search") || lower.contains("google-search") {
         "search"
     } else {
@@ -590,9 +586,7 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_stage_cooldown: t.lbl_stage_cooldown.into(),
         lbl_stage_quarantine: t.lbl_stage_quarantine.into(),
         lbl_stage_probing: t.lbl_stage_probing.into(),
-        lbl_badge_image: t.lbl_badge_image.into(),
         lbl_badge_stt: t.lbl_badge_stt.into(),
-        lbl_badge_tts: t.lbl_badge_tts.into(),
         lbl_badge_search: t.lbl_badge_search.into(),
         lbl_model_disabled: t.lbl_model_disabled.into(),
         lbl_model_exhausted: t.lbl_model_exhausted.into(),
@@ -660,8 +654,6 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_master_key_badge: t.lbl_master_key_badge.into(),
     };
     ui.set_github_update_status(t.btn_check_updates.clone().into());
-    ui.set_test_prompt(t.lbl_test_default_prompt.clone().into());
-    ui.set_test_status(t.test_status_ready.clone().into());
     ui.set_app_version(format!("v{}", env!("CARGO_PKG_VERSION")).into());
     ui.set_i18n(i18n_struct);
     ui.set_current_language(lang.to_index());

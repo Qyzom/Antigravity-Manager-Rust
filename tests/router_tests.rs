@@ -1236,7 +1236,7 @@ mod tests {
         cfg.rebuild_models_from_accounts();
         assert!(cfg.models.iter().any(|m| m.id == "gemini-3.8-flash" && m.availability_status == "available"));
         assert!(cfg.models.iter().any(|m| m.id == "gemini-4-argon" && m.availability_status == "disabled"));
-        assert!(cfg.models.iter().any(|m| m.id == "tts-1"));
+        assert!(cfg.models.iter().any(|m| m.id == "gemini-3.5-transcribe"));
         assert!(!cfg.models.iter().any(|m| m.id == "gemini-3.8-flash-medium"));
         let flash = cfg
             .models
@@ -1714,9 +1714,7 @@ mod tests {
 
         // Test sanitize_models preservation of utility modality models
         cfg.sanitize_models();
-        assert!(cfg.models.iter().any(|m| m.id == "gemini-3.1-flash-image"));
-        assert!(cfg.models.iter().any(|m| m.id == "whisper-1"));
-        assert!(cfg.models.iter().any(|m| m.id == "tts-1"));
+        assert!(cfg.models.iter().any(|m| m.id == "gemini-3.5-transcribe"));
     }
 
     #[test]
@@ -1761,18 +1759,10 @@ mod tests {
         cfg.rebuild_models_from_accounts();
         let broadcasted = cfg.get_broadcast_models();
 
-        let img = broadcasted.iter().find(|m| m["id"] == "gemini-3.1-flash-image").unwrap();
-        assert_eq!(img["capabilities"]["image_generation"], true);
-        assert_eq!(img["capabilities"]["reasoning"], false);
-        assert_eq!(img["output_modalities"], serde_json::json!(["image", "text"]));
-
-        let stt = broadcasted.iter().find(|m| m["id"] == "whisper-1").unwrap();
+        let stt = broadcasted.iter().find(|m| m["id"] == "gemini-3.5-transcribe").unwrap();
         assert_eq!(stt["capabilities"]["audio_transcription"], true);
         assert_eq!(stt["input_modalities"], serde_json::json!(["audio"]));
-
-        let tts = broadcasted.iter().find(|m| m["id"] == "tts-1").unwrap();
-        assert_eq!(tts["capabilities"]["audio_speech"], true);
-        assert_eq!(tts["output_modalities"], serde_json::json!(["audio"]));
+        assert_eq!(stt["owned_by"], "google");
 
         let acc = UpstreamAccount {
             id: "acc_1".into(),
@@ -1803,8 +1793,8 @@ mod tests {
             proxy_url: None,
             available_models: Vec::new(),
         };
-        assert_eq!(resolve_model("whisper-1", &acc), "whisper-1");
-        assert_eq!(resolve_model("tts-1", &acc), "tts-1");
+        assert_eq!(resolve_model("gemini-3.5-transcribe", &acc), "gemini-3.5-transcribe");
+        assert_eq!(resolve_model("whisper-1", &acc), "gemini-3.5-transcribe");
         assert_eq!(resolve_model("web-search", &acc), "web-search");
 
         // Verify native Google Gemini model list builder and payload
