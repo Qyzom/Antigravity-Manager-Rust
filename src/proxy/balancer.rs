@@ -241,10 +241,68 @@ impl LoadBalancer {
         jitter_pct: u8,
         reason: Option<&str>,
     ) {
+        self.record_failure_internal(
+            account_id,
+            status_code,
+            max_quarantine_secs,
+            jitter_pct,
+            reason,
+            None,
+            false,
+        );
+    }
+
+    /// Burst-safe rate limit recorder for live proxy requests:
+    /// If the account is already cooling down (e.g. concurrent in-flight requests from the same burst),
+    /// does NOT escalate `failure_count` further, and honors short upstream `retry_after_secs` hints.
+    pub fn record_rate_limit_hit(
+        &self,
+        account_id: &str,
+        status_code: u16,
+        max_quarantine_secs: u64,
+        jitter_pct: u8,
+        reason: Option<&str>,
+        retry_after_secs: Option<u64>,
+    ) {
+        self.record_failure_internal(
+            account_id,
+            status_code,
+            max_quarantine_secs,
+            jitter_pct,
+            reason,
+            retry_after_secs,
+            true,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn record_failure_internal(
+        &self,
+        account_id: &str,
+        status_code: u16,
+        max_quarantine_secs: u64,
+        jitter_pct: u8,
+        reason: Option<&str>,
+        retry_after_secs: Option<u64>,
+        coalesce_burst: bool,
+    ) {
         let now = Instant::now();
         let (expiry, _stage, _count) = {
             let mut health_map = self.account_health.write();
             let record = health_map.entry(account_id.to_string()).or_default();
+
+            if coalesce_burst
+                && record
+                    .cooldown_until
+                    .is_some_and(|until| until > now)
+            {
+                record.last_status_code = Some(status_code);
+                if let Some(r) = reason {
+                    record.last_failure_reason = Some(r.to_string());
+                }
+                return;
+            }
+
             record.failure_count += 1;
             record.total_failures += 1;
             record.last_failure_time = Some(now);
@@ -260,12 +318,27 @@ impl LoadBalancer {
             // Failure 2: ~15s (Backoff)
             // Failure 3: ~60s (Cooldown)
             // Failure 4+: max_quarantine_secs (Quarantine, clamped to min 30s)
-            let (base_secs, stage) = match record.failure_count {
+            let (mut base_secs, mut stage) = match record.failure_count {
                 1 => (3.0f64, HealthStage::SoftPause),
                 2 => (15.0f64, HealthStage::Backoff),
                 3 => (60.0f64, HealthStage::Cooldown),
                 _ => (max_quarantine_secs.max(30) as f64, HealthStage::Quarantine),
             };
+
+            // If upstream gave a short explicit retry hint (e.g. 2s-20s), honor it instead of locking 5m
+            if let Some(hint) = retry_after_secs {
+                let capped = hint.clamp(1, max_quarantine_secs.max(30)) as f64;
+                if capped < base_secs {
+                    base_secs = capped;
+                    if capped <= 5.0 {
+                        stage = HealthStage::SoftPause;
+                    } else if capped <= 20.0 {
+                        stage = HealthStage::Backoff;
+                    } else if capped <= 90.0 {
+                        stage = HealthStage::Cooldown;
+                    }
+                }
+            }
 
             // Apply randomized jitter (e.g. ±15%)
             let jitter_ratio = (jitter_pct as f64).clamp(0.0, 50.0) / 100.0;
@@ -433,12 +506,52 @@ impl LoadBalancer {
         }
     }
 
+    /// Extract short retry delay (in seconds) from upstream 429 error bodies
+    /// (e.g. "retryDelay": "4s", "reset after 3s", "retry in 5s").
+    pub fn parse_retry_delay_secs(body: &str) -> Option<u64> {
+        let lower = body.to_lowercase();
+        for marker in [
+            "\"retrydelay\":",
+            "\"retry_delay\":",
+            "reset after ",
+            "retry after ",
+            "retry in ",
+            "try again in ",
+        ] {
+            if let Some(pos) = lower.find(marker) {
+                let rest = &lower[pos + marker.len()..];
+                let trimmed = rest.trim_start_matches([' ', '"', ':']);
+                let num_str: String = trimmed
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit() || *c == '.')
+                    .collect();
+                if let Ok(val) = num_str.parse::<f64>() {
+                    if val > 0.0 {
+                        return Some(val.ceil() as u64);
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// Select optimal upstream account with cache affinity, quota balancing, model capability, and failover
     pub fn select_account(
         &self,
         config: &AppConfig,
         target_model: &str,
         session_id: Option<&str>,
+    ) -> Result<UpstreamAccount, RoutingError> {
+        self.select_account_excluding(config, target_model, session_id, &[])
+    }
+
+    /// Select optimal upstream account while excluding already-attempted account IDs for failover.
+    pub fn select_account_excluding(
+        &self,
+        config: &AppConfig,
+        target_model: &str,
+        session_id: Option<&str>,
+        exclude_ids: &[String],
     ) -> Result<UpstreamAccount, RoutingError> {
         let now = Instant::now();
         self.total_routed.fetch_add(1, Ordering::Relaxed);
@@ -454,18 +567,67 @@ impl LoadBalancer {
             return Err(RoutingError::NoAccounts);
         }
 
-        let family = ModelFamily::from_model(target_model);
+        let candidate_accounts: Vec<UpstreamAccount> = if exclude_ids.is_empty() {
+            active_accounts.clone()
+        } else {
+            active_accounts
+                .iter()
+                .filter(|a| !exclude_ids.iter().any(|ex| ex == &a.id))
+                .cloned()
+                .collect()
+        };
 
-        // 1. Filter accounts by quota eligibility for requested model family
-        let quota_eligible: Vec<UpstreamAccount> = active_accounts
+        if candidate_accounts.is_empty() {
+            return Err(RoutingError::AllCoolingDown {
+                retry_after_secs: 0,
+            });
+        }
+
+        let family = ModelFamily::from_model(target_model);
+        let target_canon = AppConfig::canonical_catalog_id(target_model);
+        let is_virtual = matches!(
+            target_model,
+            "web-search" | "gemini-3.5-transcribe" | "whisper-1"
+        );
+
+        let family_has_quota = |a: &UpstreamAccount| -> bool {
+            match family {
+                ModelFamily::ClaudeOrGpt => a.claude_percent > 0 && a.claude_weekly_percent > 0,
+                ModelFamily::Gemini => a.gemini_percent > 0 && a.gemini_weekly_percent > 0,
+            }
+        };
+
+        // 1. Check per-model quota when available_models is populated; fall back to family quota otherwise.
+        // This prevents 0% on one model (e.g. gemini-pro or opus) from blocking other models (flash/sonnet) that still have quota.
+        let quota_eligible: Vec<UpstreamAccount> = candidate_accounts
             .iter()
-            .filter(|a| match family {
-                ModelFamily::ClaudeOrGpt => {
-                    a.claude_percent > 0 && a.claude_weekly_percent > 0
+            .filter(|a| {
+                if is_virtual || a.available_models.is_empty() {
+                    return family_has_quota(a);
                 }
-                ModelFamily::Gemini => {
-                    (a.gemini_percent > 0 && a.gemini_weekly_percent > 0)
-                        || (a.claude_percent > 0 && a.claude_weekly_percent > 0)
+
+                let (resolved_target, _) =
+                    crate::proxy::router::resolve_model_with_effort(target_model, a, None);
+                let resolved_canon = AppConfig::canonical_catalog_id(&resolved_target);
+
+                let matching: Vec<_> = a
+                    .available_models
+                    .iter()
+                    .filter(|m| {
+                        let m_canon = AppConfig::canonical_catalog_id(&m.id);
+                        m.id.eq_ignore_ascii_case(target_model)
+                            || m_canon.eq_ignore_ascii_case(&target_canon)
+                            || m.id.eq_ignore_ascii_case(&resolved_target)
+                            || m_canon.eq_ignore_ascii_case(&resolved_canon)
+                    })
+                    .collect();
+
+                if !matching.is_empty() {
+                    matching
+                        .iter()
+                        .any(|m| !m.disabled && m.remaining_fraction > 0.0)
+                } else {
+                    family_has_quota(a)
                 }
             })
             .cloned()
@@ -474,7 +636,7 @@ impl LoadBalancer {
         if quota_eligible.is_empty() {
             return match family {
                 ModelFamily::ClaudeOrGpt => {
-                    let reset = active_accounts
+                    let reset = candidate_accounts
                         .iter()
                         .map(|a| a.claude_reset.as_str())
                         .next()
@@ -484,7 +646,7 @@ impl LoadBalancer {
                     })
                 }
                 ModelFamily::Gemini => {
-                    let reset = active_accounts
+                    let reset = candidate_accounts
                         .iter()
                         .map(|a| a.gemini_reset.as_str())
                         .next()
@@ -496,36 +658,7 @@ impl LoadBalancer {
             };
         }
 
-        // 1b. Prefer accounts where the requested model is explicitly available & not disabled
-        let target_canon = AppConfig::canonical_catalog_id(target_model);
-        let is_virtual = matches!(
-            target_model,
-            "web-search" | "gemini-3.5-transcribe" | "whisper-1"
-        );
-        let model_eligible: Vec<UpstreamAccount> = if is_virtual {
-            quota_eligible.clone()
-        } else {
-            let filtered: Vec<UpstreamAccount> = quota_eligible
-                .iter()
-                .filter(|a| {
-                    if a.available_models.is_empty() {
-                        return true;
-                    }
-                    a.available_models.iter().any(|m| {
-                        !m.disabled
-                            && m.remaining_fraction > 0.0
-                            && (m.id == target_model
-                                || AppConfig::canonical_catalog_id(&m.id) == target_canon)
-                    })
-                })
-                .cloned()
-                .collect();
-            if filtered.is_empty() {
-                quota_eligible
-            } else {
-                filtered
-            }
-        };
+        let model_eligible = quota_eligible;
 
         // 2. Evaluate Account Health & Probing Eligibility
         let (healthy_zero_fail, probing_accounts, min_cd_secs) = {
@@ -542,7 +675,7 @@ impl LoadBalancer {
                 // Check if account is currently cooling down in ladder
                 if let Some(exp) = cds.get(&acc.id) {
                     if *exp > now {
-                        let rem = (*exp - now).as_secs();
+                        let rem = (*exp - now).as_secs().max(1);
                         min_wait = Some(min_wait.map_or(rem, |w| w.min(rem)));
                         continue; // Active backoff ladder cooldown: skip to protect account!
                     }
@@ -559,51 +692,68 @@ impl LoadBalancer {
             (zero_fail, probing, min_wait.unwrap_or(0))
         };
 
-        // Prefer clean healthy accounts first. If none available, dispatch to probing account for trial recovery.
-        let healthy_accounts = if !healthy_zero_fail.is_empty() {
-            healthy_zero_fail
-        } else if !probing_accounts.is_empty() {
-            log::info!("[LoadBalancer] All active accounts have prior failures; dispatching to trial probing account to test auto-heal");
-            probing_accounts
-        } else {
+        // Include expired-cooldown probing accounts alongside zero-fail accounts so they can
+        // actually receive a trial request and auto-heal instead of starving forever.
+        let mut healthy_accounts = healthy_zero_fail;
+        if !probing_accounts.is_empty() {
+            if healthy_accounts.is_empty() {
+                log::info!("[LoadBalancer] All active accounts have prior failures; dispatching to trial probing account to test auto-heal");
+            }
+            healthy_accounts.extend(probing_accounts);
+        }
+
+        if healthy_accounts.is_empty() {
             return Err(RoutingError::AllCoolingDown {
                 retry_after_secs: min_cd_secs,
             });
+        }
+
+        let account_model_pct = |a: &UpstreamAccount| -> i32 {
+            if !is_virtual && !a.available_models.is_empty() {
+                if let Some(best) = a
+                    .available_models
+                    .iter()
+                    .filter(|m| {
+                        !m.disabled
+                            && (m.id.eq_ignore_ascii_case(target_model)
+                                || AppConfig::canonical_catalog_id(&m.id)
+                                    .eq_ignore_ascii_case(&target_canon))
+                    })
+                    .map(|m| (m.remaining_fraction * 100.0).round() as i32)
+                    .max()
+                {
+                    return best;
+                }
+            }
+            match family {
+                ModelFamily::ClaudeOrGpt => a.claude_percent.min(a.claude_weekly_percent),
+                ModelFamily::Gemini => a.gemini_percent.min(a.gemini_weekly_percent),
+            }
         };
 
         // Apply Quota Protection Threshold:
-        // Accounts with remaining quota <= threshold (default 5%) are held in reserve
+        // Accounts with remaining quota <= threshold (default 10%) are held in reserve
         let threshold = config.quota_protection_threshold as i32;
         let above_threshold: Vec<UpstreamAccount> = healthy_accounts
             .iter()
-            .filter(|a| match family {
-                ModelFamily::ClaudeOrGpt => {
-                    a.claude_percent > threshold && a.claude_weekly_percent > threshold
-                }
-                ModelFamily::Gemini => {
-                    a.gemini_percent > threshold && a.gemini_weekly_percent > threshold
-                }
-            })
+            .filter(|a| account_model_pct(a) > threshold)
             .cloned()
             .collect();
 
         let pool = if !above_threshold.is_empty() {
             above_threshold
         } else {
-            healthy_accounts.clone()
+            healthy_accounts
         };
 
         // 3. Routing strategy overrides (e.g. strict Failover)
         if config.routing_strategy == RoutingStrategy::Failover {
             if let Some(active_id) = &config.active_account_id {
-                if let Some(acc) = healthy_accounts.iter().find(|a| &a.id == active_id) {
+                if let Some(acc) = pool.iter().find(|a| &a.id == active_id) {
                     return Ok(acc.clone());
                 }
             }
-            return healthy_accounts
-                .first()
-                .cloned()
-                .ok_or(RoutingError::NoAccounts);
+            return pool.first().cloned().ok_or(RoutingError::NoAccounts);
         }
 
         // 4. Cache Affinity Evaluation
@@ -621,12 +771,9 @@ impl LoadBalancer {
                 let elapsed_secs = last_access.elapsed().as_secs();
 
                 if elapsed_secs < ttl_secs {
-                    if let Some(bound_acc) = healthy_accounts.iter().find(|a| a.id == bound_id) {
+                    if let Some(bound_acc) = pool.iter().find(|a| a.id == bound_id) {
                         // Account is alive and eligible. Now check mode rules:
-                        let bound_rem = match family {
-                            ModelFamily::ClaudeOrGpt => bound_acc.claude_percent as u64,
-                            ModelFamily::Gemini => bound_acc.gemini_percent as u64,
-                        };
+                        let bound_rem = account_model_pct(bound_acc).max(0) as u64;
 
                         match mode {
                             CacheAffinityMode::CacheFirst => {
@@ -639,27 +786,26 @@ impl LoadBalancer {
                                 }
                             }
                             CacheAffinityMode::Balanced => {
-                                // Sticky to session, but check if another account has significantly higher quota
-                                let max_other_rem = healthy_accounts
-                                    .iter()
-                                    .filter(|a| a.id != bound_id)
-                                    .map(|a| match family {
-                                        ModelFamily::ClaudeOrGpt => a.claude_percent as u64,
-                                        ModelFamily::Gemini => a.gemini_percent as u64,
-                                    })
-                                    .max()
-                                    .unwrap_or(0);
+                                if bound_rem > 0 {
+                                    // Sticky to session, but check if another account has significantly higher quota
+                                    let max_other_rem = pool
+                                        .iter()
+                                        .filter(|a| a.id != bound_id)
+                                        .map(|a| account_model_pct(a).max(0) as u64)
+                                        .max()
+                                        .unwrap_or(0);
 
-                                let delta = max_other_rem.saturating_sub(bound_rem);
-                                if (delta as u32) < config.quota_imbalance_threshold {
-                                    // Within threshold: stick to account to maximize prompt caching!
-                                    self.cache_hits.fetch_add(1, Ordering::Relaxed);
-                                    let mut bindings = self.session_bindings.write();
-                                    bindings.insert(sid.to_string(), (bound_id, now));
-                                    return Ok(bound_acc.clone());
-                                } else {
-                                    // Imbalance exceeded: smoothly rotate to level out quota
-                                    self.failover_rotations.fetch_add(1, Ordering::Relaxed);
+                                    let delta = max_other_rem.saturating_sub(bound_rem);
+                                    if (delta as u32) < config.quota_imbalance_threshold {
+                                        // Within threshold: stick to account to maximize prompt caching!
+                                        self.cache_hits.fetch_add(1, Ordering::Relaxed);
+                                        let mut bindings = self.session_bindings.write();
+                                        bindings.insert(sid.to_string(), (bound_id, now));
+                                        return Ok(bound_acc.clone());
+                                    } else {
+                                        // Imbalance exceeded: smoothly rotate to level out quota
+                                        self.failover_rotations.fetch_add(1, Ordering::Relaxed);
+                                    }
                                 }
                             }
                             CacheAffinityMode::AggressiveSpread => {
@@ -678,14 +824,9 @@ impl LoadBalancer {
                 pool[idx].clone()
             }
             RoutingStrategy::QuotaAware | RoutingStrategy::Failover => {
-                // Select account with maximum remaining percentage for this family
+                // Select account with maximum remaining percentage for this model/family
                 pool.into_iter()
-                    .max_by_key(|a| match family {
-                        ModelFamily::ClaudeOrGpt => {
-                            a.claude_percent.min(a.claude_weekly_percent)
-                        }
-                        ModelFamily::Gemini => a.gemini_percent.min(a.gemini_weekly_percent),
-                    })
+                    .max_by_key(|a| account_model_pct(a))
                     .ok_or(RoutingError::NoAccounts)?
             }
         };

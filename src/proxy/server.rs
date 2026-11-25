@@ -588,308 +588,432 @@ async fn gemini_content(
 
     let session_id = format!("gemini-{}", header_session.unwrap_or("default"));
 
-    let selected_account = {
+    let (
+        platform_str,
+        ide_ver,
+        lock_prod,
+        cooldown_429,
+        cooldown_secs,
+        cooldown_jitter,
+        auto_rotate_fp,
+        failover_enabled,
+        max_accounts,
+    ) = {
         let cfg = state.config.read();
-        state
-            .balancer
-            .select_account(&cfg, &requested_model, Some(&session_id))
+        (
+            cfg.resolved_platform(),
+            cfg.spoof_ide_version.clone(),
+            cfg.lock_production_endpoints,
+            cfg.cooldown_on_429,
+            cfg.cooldown_duration_secs,
+            cfg.cooldown_jitter_percent,
+            cfg.auto_rotate_fp_on_limit,
+            cfg.failover_on_429,
+            cfg.accounts.len(),
+        )
     };
 
-    let account = match selected_account {
-        Ok(acc) if !acc.api_key.is_empty() => acc,
-        Ok(_) => {
-            let err_msg = "Active upstream account has empty API token in AMR.";
-            state.stats.record_detailed_request(
-                "POST",
-                &format!("/v1beta/{}", clean_path),
-                &requested_model,
-                502,
-                0,
-                0,
-                "Dispatcher",
-                "",
-                "",
-                &payload.to_string(),
-                err_msg,
-                Some(err_msg),
-            );
-            return (
-                StatusCode::BAD_GATEWAY,
-                Json(json!({
-                    "error": {
-                        "code": 502,
-                        "message": err_msg,
-                        "status": "UNAVAILABLE"
-                    }
-                })),
-            ).into_response();
-        }
-        Err(e) => {
-            let status = match e {
-                crate::proxy::balancer::RoutingError::NoAccounts => StatusCode::SERVICE_UNAVAILABLE,
-                _ => StatusCode::TOO_MANY_REQUESTS,
-            };
-            let (lang, standardized) = {
-                let c = state.config.read();
-                (c.language.clone(), c.standardized_error_handling)
-            };
-            let raw = format!("{}", e);
-            let msg = format_amr_error_message(&raw, status, &lang, standardized);
-            state.stats.record_detailed_request(
-                "POST",
-                &format!("/v1beta/{}", clean_path),
-                &requested_model,
-                status.as_u16(),
-                0,
-                0,
-                "Dispatcher",
-                "",
-                "",
-                &payload.to_string(),
-                &msg,
-                Some(&msg),
-            );
-            return (
-                status,
-                Json(json!({
-                    "error": {
-                        "code": status.as_u16(),
-                        "message": msg,
-                        "status": if status == StatusCode::SERVICE_UNAVAILABLE { "UNAVAILABLE" } else { "RESOURCE_EXHAUSTED" }
-                    }
-                })),
-            ).into_response();
-        }
-    };
-
-    let (target_model, _) = crate::proxy::router::resolve_model_with_effort(&requested_model, &account, None);
-
-    let (platform_str, ide_ver) = {
-        let cfg = state.config.read();
-        (cfg.resolved_platform(), cfg.spoof_ide_version.clone())
-    };
-
-    let payload_json = crate::proxy::mappers::gemini::build_antigravity_from_gemini(
-        &payload,
-        &target_model,
-        account.project_id.as_deref(),
-    );
-
-    let client = state.get_client_for_account(&account);
-
-    let (client_id, machine_id) = if let Some(ref dp) = account.device_profile {
-        (dp.dev_device_id.clone(), dp.machine_id.clone())
+    let max_attempts = if failover_enabled {
+        max_accounts.clamp(1, 8)
     } else {
-        (uuid::Uuid::new_v4().to_string(), uuid::Uuid::new_v4().simple().to_string())
+        1
     };
-
-    let is_chat = !target_model.contains("image") && target_model != "web-search";
-    let use_stream_endpoint = is_stream || is_chat;
-    let endpoints = if use_stream_endpoint {
-        &crate::proxy::antigravity::STREAM_ENDPOINTS[..]
-    } else {
-        &crate::proxy::antigravity::GENERATE_ENDPOINTS[..]
-    };
-
+    let mut excluded_ids: Vec<String> = Vec::new();
+    let mut last_status = StatusCode::BAD_GATEWAY;
     let mut last_err = "No response from upstream".to_string();
-    let mut req_token = account.api_key.clone();
-    let client_id_str = client_id.clone();
-    let machine_id_str = machine_id.clone();
-    let mut res_opt = None;
-    for &endpoint_url in endpoints {
-        let headers_to_use = if use_stream_endpoint {
-            build_upstream_headers(
-                &req_token,
-                &client_id_str,
-                &machine_id_str,
-                platform_str,
-                &ide_ver,
-                "AUTO",
-                "stable",
-                true,
-                true,
-                &target_model,
-            )
-        } else {
-            build_upstream_headers_json(
-                &req_token,
-                &client_id_str,
-                &machine_id_str,
-                platform_str,
-                &ide_ver,
-                "AUTO",
-                "stable",
-                true,
-                true,
-                &target_model,
+
+    for attempt in 0..max_attempts {
+        let selected_account = {
+            let cfg = state.config.read();
+            state.balancer.select_account_excluding(
+                &cfg,
+                &requested_model,
+                Some(&session_id),
+                &excluded_ids,
             )
         };
 
-        match client
-            .post(endpoint_url)
-            .headers(headers_to_use)
-            .json(&payload_json)
-            .send()
-            .await
-        {
-            Ok(res) => {
-                let s = res.status();
-                if s.is_success() {
-                    res_opt = Some(res);
-                    break;
-                } else if (s == StatusCode::UNAUTHORIZED || s == StatusCode::FORBIDDEN) && account.refresh_token.is_some() {
-                    if let Some(ref rt) = account.refresh_token {
-                        if let Ok(tok_res) = crate::proxy::antigravity::refresh_token(&state.http_client, rt).await {
-                            let fresh = tok_res.access_token;
-                            req_token = fresh.clone();
-                            {
-                                let mut cfg = state.config.write();
-                                if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
-                                    acc.api_key = fresh.clone();
-                                    if tok_res.refresh_token.is_some() {
-                                        acc.refresh_token = tok_res.refresh_token;
-                                    }
-                                    acc.status = "ACTIVE".to_string();
-                                    acc.error_message = None;
-                                }
-                                let _ = cfg.save();
-                            }
-                            state.cfg_version.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-                            let retry_headers = if use_stream_endpoint {
-                                build_upstream_headers(
-                                    &req_token,
-                                    &client_id,
-                                    &machine_id,
-                                    platform_str,
-                                    &ide_ver,
-                                    "AUTO",
-                                    "stable",
-                                    true,
-                                    true,
-                                    &target_model,
-                                )
-                            } else {
-                                build_upstream_headers_json(
-                                    &req_token,
-                                    &client_id,
-                                    &machine_id,
-                                    platform_str,
-                                    &ide_ver,
-                                    "AUTO",
-                                    "stable",
-                                    true,
-                                    true,
-                                    &target_model,
-                                )
-                            };
-
-                            if let Ok(retry_res) = client
-                                .post(endpoint_url)
-                                .headers(retry_headers)
-                                .json(&payload_json)
-                                .send()
-                                .await
-                            {
-                                if retry_res.status().is_success() {
-                                    res_opt = Some(retry_res);
-                                    break;
-                                } else {
-                                    let code = retry_res.status().as_u16();
-                                    let err_b = retry_res.text().await.unwrap_or_default();
-                                    last_err = format!("HTTP {}: {}", code, err_b);
-                                }
-                            }
+        let account = match selected_account {
+            Ok(acc) if !acc.api_key.is_empty() => acc,
+            Ok(_) => {
+                let err_msg = "Active upstream account has empty API token in AMR.";
+                state.stats.record_detailed_request(
+                    "POST",
+                    &format!("/v1beta/{}", clean_path),
+                    &requested_model,
+                    502,
+                    0,
+                    0,
+                    "Dispatcher",
+                    "",
+                    "",
+                    &payload.to_string(),
+                    err_msg,
+                    Some(err_msg),
+                );
+                return (
+                    StatusCode::BAD_GATEWAY,
+                    Json(json!({
+                        "error": {
+                            "code": 502,
+                            "message": err_msg,
+                            "status": "UNAVAILABLE"
                         }
-                    }
-                } else {
-                    let err_body = res.text().await.unwrap_or_default();
-                    last_err = format!("HTTP {}: {}", s.as_u16(), err_body);
-                }
+                    })),
+                )
+                    .into_response();
             }
             Err(e) => {
-                last_err = format!("Network error: {}", e);
+                if attempt > 0 {
+                    break;
+                }
+                let status = match e {
+                    crate::proxy::balancer::RoutingError::NoAccounts => {
+                        StatusCode::SERVICE_UNAVAILABLE
+                    }
+                    _ => StatusCode::TOO_MANY_REQUESTS,
+                };
+                let (lang, standardized) = {
+                    let c = state.config.read();
+                    (c.language.clone(), c.standardized_error_handling)
+                };
+                let raw = format!("{}", e);
+                let msg = format_amr_error_message(&raw, status, &lang, standardized);
+                state.stats.record_detailed_request(
+                    "POST",
+                    &format!("/v1beta/{}", clean_path),
+                    &requested_model,
+                    status.as_u16(),
+                    0,
+                    0,
+                    "Dispatcher",
+                    "",
+                    "",
+                    &payload.to_string(),
+                    &msg,
+                    Some(&msg),
+                );
+                return (
+                    status,
+                    Json(json!({
+                        "error": {
+                            "code": status.as_u16(),
+                            "message": msg,
+                            "status": if status == StatusCode::SERVICE_UNAVAILABLE { "UNAVAILABLE" } else { "RESOURCE_EXHAUSTED" }
+                        }
+                    })),
+                )
+                    .into_response();
             }
-        }
-    }
+        };
+        excluded_ids.push(account.id.clone());
 
-    if let Some(res) = res_opt {
-        state.balancer.record_success(&account.id);
+        let (target_model, _) =
+            crate::proxy::router::resolve_model_with_effort(&requested_model, &account, None);
 
-        if is_stream {
-            let _stream_id = format!("gemini_{}", uuid::Uuid::new_v4().simple());
-            let log_ctx = StreamLoggingContext {
-                stats: state.stats.clone(),
-                method: "POST",
-                path: "/v1beta/models (stream)",
-                model: requested_model.clone(),
-                account_name: account.name.clone(),
-                reasoning_effort: "default".to_string(),
-                request_headers: "Content-Type: application/json; Accept: text/event-stream".to_string(),
-                request_body: serde_json::to_string_pretty(&payload).unwrap_or_default(),
-                start_time,
+        let payload_json = crate::proxy::mappers::gemini::build_antigravity_from_gemini(
+            &payload,
+            &target_model,
+            account.project_id.as_deref(),
+        );
+
+        let client = state.get_client_for_account(&account);
+
+        let (client_id, machine_id) = if let Some(ref dp) = account.device_profile {
+            (dp.dev_device_id.clone(), dp.machine_id.clone())
+        } else {
+            (
+                uuid::Uuid::new_v4().to_string(),
+                uuid::Uuid::new_v4().simple().to_string(),
+            )
+        };
+
+        let is_chat = !target_model.contains("image") && target_model != "web-search";
+        let use_stream_endpoint = is_stream || is_chat;
+        let endpoints: &[&str] = if use_stream_endpoint {
+            if lock_prod {
+                &crate::proxy::antigravity::STREAM_ENDPOINTS[..1]
+            } else {
+                &crate::proxy::antigravity::STREAM_ENDPOINTS[..]
+            }
+        } else if lock_prod {
+            &crate::proxy::antigravity::GENERATE_ENDPOINTS[..1]
+        } else {
+            &crate::proxy::antigravity::GENERATE_ENDPOINTS[..]
+        };
+
+        let mut req_token = account.api_key.clone();
+        let client_id_str = client_id.clone();
+        let machine_id_str = machine_id.clone();
+        let mut res_opt = None;
+        let mut hit_429 = false;
+        let mut hit_auth = false;
+
+        for &endpoint_url in endpoints {
+            let headers_to_use = if use_stream_endpoint {
+                build_upstream_headers(
+                    &req_token,
+                    &client_id_str,
+                    &machine_id_str,
+                    platform_str,
+                    &ide_ver,
+                    "AUTO",
+                    "stable",
+                    true,
+                    true,
+                    &target_model,
+                )
+            } else {
+                build_upstream_headers_json(
+                    &req_token,
+                    &client_id_str,
+                    &machine_id_str,
+                    platform_str,
+                    &ide_ver,
+                    "AUTO",
+                    "stable",
+                    true,
+                    true,
+                    &target_model,
+                )
             };
 
-            let mapped_stream = crate::proxy::stream::pass_through_stream(
-                Box::pin(res.bytes_stream()),
-                Some(log_ctx),
-            );
-
-            let resp = Response::builder()
-                .header(header::CONTENT_TYPE, "text/event-stream; charset=utf-8")
-                .header(header::CACHE_CONTROL, "no-cache, no-transform")
-                .header(header::CONNECTION, "keep-alive")
-                .body(Body::from_stream(mapped_stream))
-                .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
-            return resp;
-        } else {
-            let body_text = res.text().await.unwrap_or_default();
-            let lat = start_time.elapsed().as_millis() as u64;
-
-            state.stats.record_request(
-                "POST",
-                "/v1beta/models:generateContent",
-                &requested_model,
-                200,
-                50,
-                lat,
-            );
-
-            if let Ok(val) = serde_json::from_str::<Value>(&body_text) {
-                let actual = val.get("response").unwrap_or(&val);
-                return Json(actual.clone()).into_response();
-            } else {
-                let mut last_response: Option<Value> = None;
-                for line in body_text.lines() {
-                    let trimmed = line.trim();
-                    if let Some(json_str) = trimmed.strip_prefix("data: ") {
-                        if json_str == "[DONE]" {
-                            continue;
+            match client
+                .post(endpoint_url)
+                .headers(headers_to_use)
+                .json(&payload_json)
+                .send()
+                .await
+            {
+                Ok(res) => {
+                    let s = res.status();
+                    if s.is_success() {
+                        res_opt = Some(res);
+                        break;
+                    } else if s == StatusCode::TOO_MANY_REQUESTS {
+                        let err_body = res.text().await.unwrap_or_default();
+                        let clean =
+                            crate::proxy::antigravity::extract_clean_error_message(&err_body);
+                        last_status = StatusCode::TOO_MANY_REQUESTS;
+                        last_err = format!("HTTP 429: {}", clean);
+                        hit_429 = true;
+                        if cooldown_429 {
+                            let retry_hint =
+                                crate::proxy::balancer::LoadBalancer::parse_retry_delay_secs(
+                                    &err_body,
+                                );
+                            state.balancer.record_rate_limit_hit(
+                                &account.id,
+                                429,
+                                cooldown_secs,
+                                cooldown_jitter,
+                                Some(&last_err),
+                                retry_hint,
+                            );
                         }
-                        if let Ok(v) = serde_json::from_str::<Value>(json_str) {
-                            if let Some(resp) = v.get("response") {
-                                last_response = Some(resp.clone());
-                            } else {
-                                last_response = Some(v);
+                        if auto_rotate_fp {
+                            let mut cfg = state.config.write();
+                            if let Some(acc) =
+                                cfg.accounts.iter_mut().find(|a| a.id == account.id)
+                            {
+                                acc.device_profile =
+                                    Some(crate::config::DeviceProfile::generate());
+                                let _ = cfg.save();
                             }
+                        }
+                        break;
+                    } else if (s == StatusCode::UNAUTHORIZED || s == StatusCode::FORBIDDEN)
+                        && account.refresh_token.is_some()
+                    {
+                        if let Some(ref rt) = account.refresh_token {
+                            if let Ok(tok_res) =
+                                crate::proxy::antigravity::refresh_token(&state.http_client, rt)
+                                    .await
+                            {
+                                let fresh = tok_res.access_token;
+                                req_token = fresh.clone();
+                                {
+                                    let mut cfg = state.config.write();
+                                    if let Some(acc) =
+                                        cfg.accounts.iter_mut().find(|a| a.id == account.id)
+                                    {
+                                        acc.api_key = fresh.clone();
+                                        if tok_res.refresh_token.is_some() {
+                                            acc.refresh_token = tok_res.refresh_token;
+                                        }
+                                        acc.status = "ACTIVE".to_string();
+                                        acc.error_message = None;
+                                    }
+                                    let _ = cfg.save();
+                                }
+                                state
+                                    .cfg_version
+                                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+                                let retry_headers = if use_stream_endpoint {
+                                    build_upstream_headers(
+                                        &req_token,
+                                        &client_id,
+                                        &machine_id,
+                                        platform_str,
+                                        &ide_ver,
+                                        "AUTO",
+                                        "stable",
+                                        true,
+                                        true,
+                                        &target_model,
+                                    )
+                                } else {
+                                    build_upstream_headers_json(
+                                        &req_token,
+                                        &client_id,
+                                        &machine_id,
+                                        platform_str,
+                                        &ide_ver,
+                                        "AUTO",
+                                        "stable",
+                                        true,
+                                        true,
+                                        &target_model,
+                                    )
+                                };
+
+                                if let Ok(retry_res) = client
+                                    .post(endpoint_url)
+                                    .headers(retry_headers)
+                                    .json(&payload_json)
+                                    .send()
+                                    .await
+                                {
+                                    let rs = retry_res.status();
+                                    if rs.is_success() {
+                                        res_opt = Some(retry_res);
+                                        break;
+                                    }
+                                    let err_b = retry_res.text().await.unwrap_or_default();
+                                    last_status = rs;
+                                    last_err = format!("HTTP {}: {}", rs.as_u16(), err_b);
+                                    if rs == StatusCode::TOO_MANY_REQUESTS {
+                                        hit_429 = true;
+                                        if cooldown_429 {
+                                            let retry_hint = crate::proxy::balancer::LoadBalancer::parse_retry_delay_secs(&err_b);
+                                            state.balancer.record_rate_limit_hit(
+                                                &account.id,
+                                                429,
+                                                cooldown_secs,
+                                                cooldown_jitter,
+                                                Some(&last_err),
+                                                retry_hint,
+                                            );
+                                        }
+                                        break;
+                                    } else if rs == StatusCode::UNAUTHORIZED
+                                        || rs == StatusCode::FORBIDDEN
+                                    {
+                                        hit_auth = true;
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        let err_body = res.text().await.unwrap_or_default();
+                        last_status = s;
+                        last_err = format!("HTTP {}: {}", s.as_u16(), err_body);
+                        if s == StatusCode::UNAUTHORIZED || s == StatusCode::FORBIDDEN {
+                            hit_auth = true;
                         }
                     }
                 }
-                if let Some(resp) = last_response {
-                    return Json(resp).into_response();
+                Err(e) => {
+                    last_err = format!("Network error: {}", e);
                 }
-                return (StatusCode::OK, body_text).into_response();
             }
         }
+
+        if let Some(res) = res_opt {
+            state.balancer.record_success(&account.id);
+
+            if is_stream {
+                let _stream_id = format!("gemini_{}", uuid::Uuid::new_v4().simple());
+                let log_ctx = StreamLoggingContext {
+                    stats: state.stats.clone(),
+                    method: "POST",
+                    path: "/v1beta/models (stream)",
+                    model: requested_model.clone(),
+                    account_name: account.name.clone(),
+                    reasoning_effort: "default".to_string(),
+                    request_headers: "Content-Type: application/json; Accept: text/event-stream"
+                        .to_string(),
+                    request_body: serde_json::to_string_pretty(&payload).unwrap_or_default(),
+                    start_time,
+                };
+
+                let mapped_stream = crate::proxy::stream::pass_through_stream(
+                    Box::pin(res.bytes_stream()),
+                    Some(log_ctx),
+                );
+
+                let resp = Response::builder()
+                    .header(header::CONTENT_TYPE, "text/event-stream; charset=utf-8")
+                    .header(header::CACHE_CONTROL, "no-cache, no-transform")
+                    .header(header::CONNECTION, "keep-alive")
+                    .body(Body::from_stream(mapped_stream))
+                    .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response());
+                return resp;
+            } else {
+                let body_text = res.text().await.unwrap_or_default();
+                let lat = start_time.elapsed().as_millis() as u64;
+
+                state.stats.record_request(
+                    "POST",
+                    "/v1beta/models:generateContent",
+                    &requested_model,
+                    200,
+                    50,
+                    lat,
+                );
+
+                if let Ok(val) = serde_json::from_str::<Value>(&body_text) {
+                    let actual = val.get("response").unwrap_or(&val);
+                    return Json(actual.clone()).into_response();
+                } else {
+                    let mut last_response: Option<Value> = None;
+                    for line in body_text.lines() {
+                        let trimmed = line.trim();
+                        if let Some(json_str) = trimmed.strip_prefix("data: ") {
+                            if json_str == "[DONE]" {
+                                continue;
+                            }
+                            if let Ok(v) = serde_json::from_str::<Value>(json_str) {
+                                if let Some(resp) = v.get("response") {
+                                    last_response = Some(resp.clone());
+                                } else {
+                                    last_response = Some(v);
+                                }
+                            }
+                        }
+                    }
+                    if let Some(resp) = last_response {
+                        return Json(resp).into_response();
+                    }
+                    return (StatusCode::OK, body_text).into_response();
+                }
+            }
+        }
+
+        if (hit_429 || hit_auth) && failover_enabled {
+            continue;
+        }
+        break;
     }
 
     (
-        StatusCode::BAD_GATEWAY,
+        last_status,
         Json(json!({
             "error": {
-                "code": 502,
+                "code": last_status.as_u16(),
                 "message": format!("Antigravity upstream connection failure for Google Gemini API: {}", last_err),
-                "status": "UNAVAILABLE"
+                "status": if last_status == StatusCode::TOO_MANY_REQUESTS { "RESOURCE_EXHAUSTED" } else { "UNAVAILABLE" }
             }
         })),
     ).into_response()
@@ -1019,7 +1143,7 @@ async fn chat_completions(
         }
     };
 
-    let (resp, should_failover) = execute_chat_request(
+    let (mut resp, mut should_failover) = execute_chat_request(
         &state,
         &payload,
         &initial_account,
@@ -1028,26 +1152,35 @@ async fn chat_completions(
     )
     .await;
 
-    if should_failover {
-        let next_acc_opt = {
-            let cfg = state.config.read();
-            state
-                .balancer
-                .select_account(&cfg, &requested_model, Some(&session_id))
-                .ok()
-        };
+    if should_failover && state.config.read().failover_on_429 {
+        let mut excluded_ids = vec![initial_account.id.clone()];
+        let max_failovers = state.config.read().accounts.len().saturating_sub(1).min(8);
 
-        if let Some(next_acc) = next_acc_opt {
-            if next_acc.id != initial_account.id {
-                log::info!(
-                    "Automatic failover (429/Auth): rotating session from {} to {}",
-                    initial_account.name,
-                    next_acc.name
-                );
-                let (retry_resp, _) =
-                    execute_chat_request(&state, &payload, &next_acc, &requested_model, start_time)
-                        .await;
-                return retry_resp;
+        for _ in 0..max_failovers {
+            let next_acc_opt = {
+                let cfg = state.config.read();
+                state
+                    .balancer
+                    .select_account_excluding(&cfg, &requested_model, Some(&session_id), &excluded_ids)
+                    .ok()
+            };
+
+            let Some(next_acc) = next_acc_opt else {
+                break;
+            };
+            excluded_ids.push(next_acc.id.clone());
+
+            log::info!(
+                "Automatic failover (429/Auth): rotating session to {}",
+                next_acc.name
+            );
+            let (retry_resp, retry_failover) =
+                execute_chat_request(&state, &payload, &next_acc, &requested_model, start_time)
+                    .await;
+            resp = retry_resp;
+            should_failover = retry_failover;
+            if !should_failover {
+                break;
             }
         }
     }
@@ -1240,23 +1373,6 @@ async fn execute_chat_request(
                     res_opt = Some(r);
                     break;
                 } else if s == StatusCode::TOO_MANY_REQUESTS {
-                    // CRITICAL ANTI-BAN: Step up the backoff ladder and never hammer secondary endpoints
-                    if cooldown_429 {
-                        state.balancer.record_failure_with_reason(
-                            &account.id,
-                            429,
-                            cooldown_secs,
-                            cooldown_jitter,
-                            Some("HTTP 429: Too Many Requests (Rate limit / Quota exhausted)"),
-                        );
-                    }
-                    if auto_rotate_fp {
-                        let mut cfg = state.config.write();
-                        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
-                            acc.device_profile = Some(crate::config::DeviceProfile::generate());
-                            let _ = cfg.save();
-                        }
-                    }
                     res_opt = Some(r);
                     break;
                 } else {
@@ -1283,7 +1399,7 @@ async fn execute_chat_request(
         };
 
         let mut status = res.status();
-        let is_429 = status == StatusCode::TOO_MANY_REQUESTS;
+        let mut is_429 = status == StatusCode::TOO_MANY_REQUESTS;
         let mut is_auth_error =
             status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
 
@@ -1314,12 +1430,7 @@ async fn execute_chat_request(
                         .cfg_version
                         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-                    let retry_endpoints = if use_non_stream_generate {
-                        crate::proxy::antigravity::GENERATE_ENDPOINTS
-                    } else {
-                        crate::proxy::antigravity::STREAM_ENDPOINTS
-                    };
-                    for endpoint_url in retry_endpoints {
+                    for endpoint_url in endpoints {
                         let retry_headers = if use_non_stream_generate {
                             build_upstream_headers_json(
                                 &fresh_token,
@@ -1348,19 +1459,23 @@ async fn execute_chat_request(
                             )
                         };
 
-                        if let Ok(retry_res) = state
-                            .http_client
-                            .post(endpoint_url)
+                        if let Ok(retry_res) = client
+                            .post(*endpoint_url)
                             .headers(retry_headers)
                             .json(&payload_json)
                             .send()
                             .await
                         {
                             status = retry_res.status();
+                            is_429 = status == StatusCode::TOO_MANY_REQUESTS;
                             is_auth_error = status == StatusCode::UNAUTHORIZED
                                 || status == StatusCode::FORBIDDEN;
                             res = retry_res;
                             if status.is_success() {
+                                state.balancer.record_success(&account.id);
+                                break;
+                            }
+                            if is_429 {
                                 break;
                             }
                         }
@@ -1392,11 +1507,23 @@ async fn execute_chat_request(
             );
 
             if is_429 && cooldown_429 {
-                state.balancer.update_failure_reason(
+                let retry_hint =
+                    crate::proxy::balancer::LoadBalancer::parse_retry_delay_secs(&err_text);
+                state.balancer.record_rate_limit_hit(
                     &account.id,
                     429,
-                    &format!("HTTP 429: {}", error_msg),
+                    cooldown_secs,
+                    cooldown_jitter,
+                    Some(&format!("HTTP 429: {}", error_msg)),
+                    retry_hint,
                 );
+                if auto_rotate_fp {
+                    let mut cfg = state.config.write();
+                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
+                        acc.device_profile = Some(crate::config::DeviceProfile::generate());
+                        let _ = cfg.save();
+                    }
+                }
             } else if is_auth_error {
                 state.balancer.update_failure_reason(
                     &account.id,
@@ -1404,12 +1531,13 @@ async fn execute_chat_request(
                     &format!("HTTP {}: Auth failed ({})", status.as_u16(), error_msg),
                 );
             } else if status.is_server_error() {
-                state.balancer.record_failure_with_reason(
+                state.balancer.record_rate_limit_hit(
                     &account.id,
                     status.as_u16(),
                     cooldown_secs,
                     cooldown_jitter,
                     Some(&format!("HTTP {}: {}", status.as_u16(), error_msg)),
+                    None,
                 );
             }
 
@@ -2183,28 +2311,37 @@ async fn claude_messages(
         }
     };
 
-    let (resp, should_failover) =
+    let (mut resp, mut should_failover) =
         execute_claude_request(&state, &payload, &initial_account, &model, start_time).await;
 
-    if should_failover {
-        let next_acc_opt = {
-            let cfg = state.config.read();
-            state
-                .balancer
-                .select_account(&cfg, &model, Some(&session_id))
-                .ok()
-        };
+    if should_failover && state.config.read().failover_on_429 {
+        let mut excluded_ids = vec![initial_account.id.clone()];
+        let max_failovers = state.config.read().accounts.len().saturating_sub(1).min(8);
 
-        if let Some(next_acc) = next_acc_opt {
-            if next_acc.id != initial_account.id {
-                log::info!(
-                    "Claude Messages failover (429/Auth) from {} to {}",
-                    initial_account.name,
-                    next_acc.name
-                );
-                let (retry_resp, _) =
-                    execute_claude_request(&state, &payload, &next_acc, &model, start_time).await;
-                return retry_resp;
+        for _ in 0..max_failovers {
+            let next_acc_opt = {
+                let cfg = state.config.read();
+                state
+                    .balancer
+                    .select_account_excluding(&cfg, &model, Some(&session_id), &excluded_ids)
+                    .ok()
+            };
+
+            let Some(next_acc) = next_acc_opt else {
+                break;
+            };
+            excluded_ids.push(next_acc.id.clone());
+
+            log::info!(
+                "Claude Messages failover (429/Auth): rotating to {}",
+                next_acc.name
+            );
+            let (retry_resp, retry_failover) =
+                execute_claude_request(&state, &payload, &next_acc, &model, start_time).await;
+            resp = retry_resp;
+            should_failover = retry_failover;
+            if !should_failover {
+                break;
             }
         }
     }
@@ -2369,23 +2506,6 @@ async fn execute_claude_request(
                     res_opt = Some(r);
                     break;
                 } else if s == StatusCode::TOO_MANY_REQUESTS {
-                    // CRITICAL ANTI-BAN: Step up the backoff ladder and never hammer secondary endpoints
-                    if cooldown_429 {
-                        state.balancer.record_failure_with_reason(
-                            &account.id,
-                            429,
-                            cooldown_secs,
-                            cooldown_jitter,
-                            Some("HTTP 429: Too Many Requests (Rate limit / Quota exhausted)"),
-                        );
-                    }
-                    if auto_rotate_fp {
-                        let mut cfg = state.config.write();
-                        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
-                            acc.device_profile = Some(crate::config::DeviceProfile::generate());
-                            let _ = cfg.save();
-                        }
-                    }
                     res_opt = Some(r);
                     break;
                 } else {
@@ -2407,7 +2527,7 @@ async fn execute_claude_request(
         };
 
         let mut status = res.status();
-        let is_429 = status == StatusCode::TOO_MANY_REQUESTS;
+        let mut is_429 = status == StatusCode::TOO_MANY_REQUESTS;
         let mut is_auth_error =
             status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
 
@@ -2437,12 +2557,7 @@ async fn execute_claude_request(
                         .cfg_version
                         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-                    let retry_endpoints = if use_non_stream_generate {
-                        crate::proxy::antigravity::GENERATE_ENDPOINTS
-                    } else {
-                        crate::proxy::antigravity::STREAM_ENDPOINTS
-                    };
-                    for endpoint_url in retry_endpoints {
+                    for endpoint_url in endpoints {
                         let retry_headers = if use_non_stream_generate {
                             build_upstream_headers_json(
                                 &fresh_token,
@@ -2471,19 +2586,23 @@ async fn execute_claude_request(
                             )
                         };
 
-                        if let Ok(retry_res) = state
-                            .http_client
-                            .post(endpoint_url)
+                        if let Ok(retry_res) = client
+                            .post(*endpoint_url)
                             .headers(retry_headers)
                             .json(&payload_json)
                             .send()
                             .await
                         {
                             status = retry_res.status();
+                            is_429 = status == StatusCode::TOO_MANY_REQUESTS;
                             is_auth_error = status == StatusCode::UNAUTHORIZED
                                 || status == StatusCode::FORBIDDEN;
                             res = retry_res;
                             if status.is_success() {
+                                state.balancer.record_success(&account.id);
+                                break;
+                            }
+                            if is_429 {
                                 break;
                             }
                         }
@@ -2515,11 +2634,23 @@ async fn execute_claude_request(
             );
 
             if is_429 && cooldown_429 {
-                state.balancer.update_failure_reason(
+                let retry_hint =
+                    crate::proxy::balancer::LoadBalancer::parse_retry_delay_secs(&err_text);
+                state.balancer.record_rate_limit_hit(
                     &account.id,
                     429,
-                    &format!("HTTP 429: {}", error_msg),
+                    cooldown_secs,
+                    cooldown_jitter,
+                    Some(&format!("HTTP 429: {}", error_msg)),
+                    retry_hint,
                 );
+                if auto_rotate_fp {
+                    let mut cfg = state.config.write();
+                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
+                        acc.device_profile = Some(crate::config::DeviceProfile::generate());
+                        let _ = cfg.save();
+                    }
+                }
             } else if is_auth_error {
                 state.balancer.update_failure_reason(
                     &account.id,
@@ -2527,12 +2658,13 @@ async fn execute_claude_request(
                     &format!("HTTP {}: Auth failed ({})", status.as_u16(), error_msg),
                 );
             } else if status.is_server_error() {
-                state.balancer.record_failure_with_reason(
+                state.balancer.record_rate_limit_hit(
                     &account.id,
                     status.as_u16(),
                     cooldown_secs,
                     cooldown_jitter,
                     Some(&format!("HTTP {}: {}", status.as_u16(), error_msg)),
+                    None,
                 );
             }
 
@@ -2872,6 +3004,22 @@ pub fn format_amr_error_message(raw: &str, status: StatusCode, lang: &str, stand
         StatusCode::TOO_MANY_REQUESTS => {
             if lower_raw.contains("reset in") || lower_raw.contains("сброс через") {
                 raw.to_string()
+            } else if lower_raw.contains("cooling down") || lower_raw.contains("retry in") {
+                let retry_part = lower_raw
+                    .find("retry in ")
+                    .and_then(|pos| raw[pos + 9..].split([')', '.', ' ']).next())
+                    .map(|s| s.trim_end_matches('s'))
+                    .and_then(|s| s.parse::<u64>().ok());
+                match (lang.to_lowercase().as_str(), retry_part) {
+                    ("ru", Some(secs)) => format!("Все аккаунты на временной паузе после лимита (повтор через {}с).", secs),
+                    ("ru", None) => "Все аккаунты на временной паузе после лимита. Повторите запрос через несколько секунд.".to_string(),
+                    ("zh", Some(secs)) => format!("所有账号均处于临时冷却期（{} 秒后重试）。", secs),
+                    ("zh", None) => "所有账号均处于临时冷却期，请稍后重试。".to_string(),
+                    (_, Some(secs)) => format!("All upstream accounts are temporarily cooling down (retry in {}s).", secs),
+                    (_, None) => "All upstream accounts are temporarily cooling down. Please retry shortly.".to_string(),
+                }
+            } else if lower_raw.contains("quota exhausted") {
+                raw.to_string()
             } else {
                 match lang.to_lowercase().as_str() {
                     "ru" => "Все подключенные аккаунты исчерпали квоту запросов (HTTP 429). Повторите запрос позже.".to_string(),
@@ -2987,7 +3135,13 @@ pub async fn run_diagnostic_check(state: &AppState, model_id: &str) -> (u16, u64
     let acc_res = state.balancer.select_account(&cfg, model_id, None);
     let mut account = match acc_res {
         Ok(a) => a,
-        Err(e) => return (429, t0.elapsed().as_millis() as u64, format!("Routing failed: {}", e)),
+        Err(e) => {
+            let code = match e {
+                crate::proxy::balancer::RoutingError::NoAccounts => 503,
+                _ => 429,
+            };
+            return (code, t0.elapsed().as_millis() as u64, format!("Routing failed: {}", e));
+        }
     };
 
     let (target_model, _) = crate::proxy::router::resolve_model_with_effort(model_id, &account, None);

@@ -2117,4 +2117,161 @@ mod tests {
         assert_eq!(cfg.mcp_search_max_results, 5);
         assert!(cfg.check_updates_startup);
     }
+
+    #[test]
+    fn test_per_model_quota_not_blocked_by_other_exhausted_bucket() {
+        use amr::config::{AccountModelStatus, AppConfig, UpstreamAccount};
+        use amr::proxy::balancer::{LoadBalancer, RoutingError};
+
+        let balancer = LoadBalancer::new();
+        let mut cfg = AppConfig::default();
+
+        // Account has claude_percent = 0 (e.g. opus exhausted) and gemini_percent = 0 (e.g. pro exhausted),
+        // yet claude-sonnet-4-6 and gemini-3.8-flash still have remaining_fraction > 0 in available_models.
+        cfg.accounts.push(UpstreamAccount {
+            id: "acc-partial".into(),
+            name: "partial@example.com".into(),
+            provider: "antigravity".into(),
+            api_key: "ya29.test".into(),
+            is_active: true,
+            claude_percent: 0,
+            claude_weekly_percent: 0,
+            gemini_percent: 0,
+            gemini_weekly_percent: 0,
+            available_models: vec![
+                AccountModelStatus {
+                    id: "claude-sonnet-4-6".into(),
+                    remaining_fraction: 0.75,
+                    disabled: false,
+                    ..Default::default()
+                },
+                AccountModelStatus {
+                    id: "claude-opus-4-6-thinking".into(),
+                    remaining_fraction: 0.0,
+                    disabled: false,
+                    ..Default::default()
+                },
+                AccountModelStatus {
+                    id: "gemini-3.8-flash-medium".into(),
+                    remaining_fraction: 0.90,
+                    disabled: false,
+                    ..Default::default()
+                },
+                AccountModelStatus {
+                    id: "gemini-2.5-pro".into(),
+                    remaining_fraction: 0.0,
+                    disabled: false,
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        });
+
+        // Models with remaining_fraction > 0 must succeed!
+        assert!(balancer.select_account(&cfg, "claude-sonnet-4-6", None).is_ok());
+        assert!(balancer.select_account(&cfg, "gemini-3.8-flash", None).is_ok());
+
+        // Models actually at 0.0 must be rejected!
+        assert!(matches!(
+            balancer.select_account(&cfg, "claude-opus-4-6-thinking", None),
+            Err(RoutingError::ClaudeQuotaExhausted { .. })
+        ));
+        assert!(matches!(
+            balancer.select_account(&cfg, "gemini-2.5-pro", None),
+            Err(RoutingError::GeminiQuotaExhausted { .. })
+        ));
+    }
+
+    #[test]
+    fn test_gemini_does_not_fallback_to_claude_quota() {
+        use amr::config::{AppConfig, UpstreamAccount};
+        use amr::proxy::balancer::{LoadBalancer, RoutingError};
+
+        let balancer = LoadBalancer::new();
+        let mut cfg = AppConfig::default();
+        cfg.accounts.push(UpstreamAccount {
+            id: "acc-no-gem".into(),
+            api_key: "ya29.test".into(),
+            is_active: true,
+            claude_percent: 100,
+            claude_weekly_percent: 100,
+            gemini_percent: 0,
+            gemini_weekly_percent: 0,
+            ..Default::default()
+        });
+
+        let res = balancer.select_account(&cfg, "gemini-3.8-flash", None);
+        assert!(matches!(res, Err(RoutingError::GeminiQuotaExhausted { .. })));
+    }
+
+    #[test]
+    fn test_burst_coalescing_and_retry_delay_parsing() {
+        use amr::proxy::balancer::{HealthStage, LoadBalancer};
+
+        assert_eq!(
+            LoadBalancer::parse_retry_delay_secs(r#"{"error":{"details":[{"retryDelay":"4s"}]}}"#),
+            Some(4)
+        );
+        assert_eq!(
+            LoadBalancer::parse_retry_delay_secs("Your quota will reset after 12s"),
+            Some(12)
+        );
+
+        let balancer = LoadBalancer::new();
+        let acc = "burst-acc";
+        // 4 concurrent 429s from one parallel batch must NOT escalate to Quarantine immediately
+        for _ in 0..4 {
+            balancer.record_rate_limit_hit(acc, 429, 300, 0, Some("HTTP 429"), Some(3));
+        }
+        let health = balancer.get_detailed_health(acc);
+        assert_eq!(health.failure_count, 1);
+        assert_eq!(health.stage, HealthStage::SoftPause);
+    }
+
+    #[test]
+    fn test_select_account_excluding_for_failover() {
+        use amr::config::{AppConfig, UpstreamAccount};
+        use amr::proxy::balancer::LoadBalancer;
+
+        let balancer = LoadBalancer::new();
+        let mut cfg = AppConfig::default();
+        cfg.accounts.push(UpstreamAccount {
+            id: "a1".into(),
+            api_key: "tok1".into(),
+            is_active: true,
+            claude_percent: 100,
+            ..Default::default()
+        });
+        cfg.accounts.push(UpstreamAccount {
+            id: "a2".into(),
+            api_key: "tok2".into(),
+            is_active: true,
+            claude_percent: 80,
+            ..Default::default()
+        });
+
+        let first = balancer.select_account(&cfg, "claude-sonnet-4-6", None).unwrap();
+        assert_eq!(first.id, "a1");
+
+        let second = balancer
+            .select_account_excluding(&cfg, "claude-sonnet-4-6", None, std::slice::from_ref(&first.id))
+            .unwrap();
+        assert_eq!(second.id, "a2");
+    }
+
+    #[test]
+    fn test_format_amr_error_message_preserves_cooldown_and_reset() {
+        use amr::proxy::balancer::RoutingError;
+        use amr::proxy::server::format_amr_error_message;
+        use reqwest::StatusCode;
+
+        let cd = format!("{}", RoutingError::AllCoolingDown { retry_after_secs: 7 });
+        let formatted_ru = format_amr_error_message(&cd, StatusCode::TOO_MANY_REQUESTS, "ru", true);
+        assert!(formatted_ru.contains("7с"));
+        assert!(!formatted_ru.contains("исчерпали квоту"));
+
+        let q = format!("{}", RoutingError::ClaudeQuotaExhausted { reset: "in 2h 15m".into() });
+        let formatted_q = format_amr_error_message(&q, StatusCode::TOO_MANY_REQUESTS, "en", true);
+        assert!(formatted_q.contains("in 2h 15m"));
+    }
 }

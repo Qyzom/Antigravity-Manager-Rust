@@ -172,8 +172,8 @@ pub const GENERATE_ENDPOINTS: [&str; 2] = [
     "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:generateContent",
 ];
 
-pub fn normalize_antigravity_upstream_model(requested: &str) -> &'static str {
-    let lower = requested.to_lowercase();
+pub fn normalize_antigravity_upstream_model(requested: &str) -> String {
+    let lower = requested.trim().to_lowercase();
     let clean = lower
         .trim_end_matches("-no-thinking")
         .trim_end_matches(" (no-thinking)")
@@ -181,63 +181,70 @@ pub fn normalize_antigravity_upstream_model(requested: &str) -> &'static str {
         .trim_end_matches("-none");
 
     if clean == "gemini-3.8-flash-low" || clean == "gemini-3.8-flash (low)" {
-        "gemini-3.8-flash-low"
+        "gemini-3.8-flash-low".to_string()
     } else if clean == "gemini-3.8-flash-medium" || clean == "gemini-3.8-flash (medium)" {
-        "gemini-3.8-flash-medium"
+        "gemini-3.8-flash-medium".to_string()
     } else if clean == "gemini-3.8-flash-high" || clean == "gemini-3.8-flash (high)" {
-        "gemini-3.8-flash-high"
+        "gemini-3.8-flash-high".to_string()
     } else if clean == "gemini-3.8-flash-tiered" {
-        "gemini-3.8-flash-tiered"
+        "gemini-3.8-flash-tiered".to_string()
     } else if clean == "gemini-3.8-flash" {
-        "gemini-3.8-flash"
+        "gemini-3.8-flash".to_string()
     } else if clean.contains("claude-sonnet-4-6")
         || clean.contains("sonnet-4-6")
         || clean.contains("sonnet-4.6")
     {
-        "claude-sonnet-4-6"
+        "claude-sonnet-4-6".to_string()
     } else if clean.contains("claude-opus-4-6")
         || clean.contains("opus-4-6")
         || clean.contains("opus-4.6")
     {
-        "claude-opus-4-6-thinking"
+        "claude-opus-4-6-thinking".to_string()
     } else if clean.contains("opus") {
         if clean.contains("5-5") || clean.contains("5.5") {
-            "claude-opus-5-5-high"
+            "claude-opus-5-5-high".to_string()
         } else {
-            "claude-opus-4-6-thinking"
+            "claude-opus-4-6-thinking".to_string()
         }
     } else if clean.contains("claude") || clean.contains("sonnet") {
         if clean.contains("5-5") || clean.contains("5.5") {
-            "claude-sonnet-5-5-high"
+            "claude-sonnet-5-5-high".to_string()
         } else {
-            "claude-sonnet-4-6"
+            "claude-sonnet-4-6".to_string()
         }
     } else if clean.contains("argon") {
         if clean.ends_with("-low") || clean.ends_with(" (low)") {
-            "gemini-4-argon-low"
+            "gemini-4-argon-low".to_string()
         } else if clean.ends_with("-high") || clean.ends_with(" (high)") {
-            "gemini-4-argon-high"
+            "gemini-4-argon-high".to_string()
         } else if clean.ends_with("-medium") || clean.ends_with(" (medium)") {
-            "gemini-4-argon-medium"
+            "gemini-4-argon-medium".to_string()
         } else {
-            "gemini-4-argon"
+            "gemini-4-argon".to_string()
         }
     } else if clean.contains("image") || clean.contains("imagen") || clean.contains("dall-e") {
-        "gemini-3.1-flash-image"
+        "gemini-3.1-flash-image".to_string()
     } else if clean.contains("web-search") || clean.contains("google-search") {
-        "gemini-2.5-flash"
+        "gemini-2.5-flash".to_string()
     } else if clean.contains("whisper") || clean.contains("transcrib") {
-        "gemini-3.8-flash-medium"
+        "gemini-3.8-flash-medium".to_string()
+    } else if clean.starts_with("gpt-oss")
+        || clean.starts_with("gemini-3.1-pro")
+        || clean.starts_with("gemini-3-pro")
+        || clean.starts_with("gemini-3-flash")
+        || clean.starts_with("gemini-4-")
+    {
+        clean.to_string()
     } else if clean.contains("pro") {
-        "gemini-2.5-pro"
+        "gemini-2.5-pro".to_string()
     } else if clean.contains("gemini-2.5-flash") {
-        "gemini-2.5-flash"
+        "gemini-2.5-flash".to_string()
     } else if clean.contains("gemini-3.1-flash-lite") {
-        "gemini-3.1-flash-lite"
+        "gemini-3.1-flash-lite".to_string()
     } else if clean.contains("gemini-3.5-flash-lite") {
-        "gemini-3.5-flash-lite"
+        "gemini-3.5-flash-lite".to_string()
     } else {
-        "gemini-3.8-flash-medium"
+        "gemini-3.8-flash-medium".to_string()
     }
 }
 
@@ -624,7 +631,14 @@ pub async fn fetch_user_quota_summary(
                         let is_gemini = name.contains("gemini");
 
                         for bucket in group.buckets {
-                            let frac = bucket.remaining_fraction.unwrap_or(1.0);
+                            // In proto3 JSON, 0.0 is the default value and may be omitted while resetTime is present.
+                            let frac = bucket.remaining_fraction.unwrap_or_else(|| {
+                                if bucket.reset_time.is_some() {
+                                    0.0
+                                } else {
+                                    1.0
+                                }
+                            });
                             let b_id = bucket.bucket_id.as_deref().unwrap_or("").to_lowercase();
                             let win = bucket.window.as_deref().unwrap_or("").to_lowercase();
 
@@ -650,8 +664,11 @@ pub async fn fetch_user_quota_summary(
                                 }
                             }
 
-                            let is_weekly =
-                                b_id.contains("week") || win.contains("week") || total_hours > 12;
+                            let is_weekly = b_id.contains("week")
+                                || win.contains("week")
+                                || b_id.contains("7d")
+                                || win.contains("7d")
+                                || total_hours > 24;
 
                             if is_gemini {
                                 if is_weekly {
@@ -815,7 +832,15 @@ pub async fn fetch_account_models_and_quota(
                         let frac = entry
                             .quota_info
                             .as_ref()
-                            .and_then(|q| q.remaining_fraction)
+                            .map(|q| {
+                                q.remaining_fraction.unwrap_or_else(|| {
+                                    if disabled || q.reset_time.is_some() {
+                                        0.0
+                                    } else {
+                                        1.0
+                                    }
+                                })
+                            })
                             .unwrap_or(if disabled { 0.0 } else { 1.0 });
                         let reset_time = entry.quota_info.as_ref().and_then(|q| q.reset_time.clone());
 
@@ -957,7 +982,7 @@ pub fn build_web_search_payload(
         if lower.contains("2.5-flash") || lower.contains("argon") {
             normalize_antigravity_upstream_model(target_model)
         } else {
-            "gemini-2.5-flash"
+            "gemini-2.5-flash".to_string()
         }
     };
     let effective_query = match domain.map(str::trim).filter(|d| !d.is_empty()) {

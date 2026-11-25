@@ -2,6 +2,8 @@
 
 slint::include_modules!();
 
+mod instance;
+
 use amr::autostart::set_autostart;
 use amr::cli::CliArgs;
 use amr::config::{AppConfig, RoutingStrategy, UpstreamAccount};
@@ -65,21 +67,77 @@ fn is_newer_version(remote: &str, current: &str) -> bool {
     parse_ver(remote) > parse_ver(current)
 }
 
+#[cfg(windows)]
+fn focus_winit_hwnd_windows(w: &MainWindow) {
+    use i_slint_backend_winit::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use i_slint_backend_winit::WinitWindowAccessor;
+    use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, IsIconic,
+        SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
+    };
+
+    w.window().with_winit_window(|win| {
+        if let Ok(handle) = win.window_handle() {
+            if let RawWindowHandle::Win32(h) = handle.as_raw() {
+                let hwnd = h.hwnd.get() as windows_sys::Win32::Foundation::HWND;
+                unsafe {
+                    if IsIconic(hwnd) != 0 {
+                        ShowWindow(hwnd, SW_RESTORE);
+                    } else {
+                        ShowWindow(hwnd, SW_SHOW);
+                    }
+                    let fg = GetForegroundWindow();
+                    let cur_tid = GetCurrentThreadId();
+                    let fg_tid = if !fg.is_null() {
+                        GetWindowThreadProcessId(fg, std::ptr::null_mut())
+                    } else {
+                        0
+                    };
+                    if fg_tid != 0 && fg_tid != cur_tid {
+                        AttachThreadInput(cur_tid, fg_tid, 1);
+                        SetForegroundWindow(hwnd);
+                        BringWindowToTop(hwnd);
+                        AttachThreadInput(cur_tid, fg_tid, 0);
+                    } else {
+                        SetForegroundWindow(hwnd);
+                        BringWindowToTop(hwnd);
+                    }
+                }
+            }
+        }
+        win.focus_window();
+    });
+}
+
 pub fn show_and_focus_window(w: &MainWindow) {
     w.window().set_minimized(false);
     let _ = w.show();
     w.window().request_redraw();
+
+    #[cfg(not(windows))]
+    {
+        use i_slint_backend_winit::WinitWindowAccessor;
+        w.window().with_winit_window(|win| {
+            win.set_minimized(false);
+            win.set_visible(true);
+            win.focus_window();
+        });
+    }
+
     #[cfg(windows)]
-    unsafe {
-        use windows_sys::Win32::UI::WindowsAndMessaging::{
-            BringWindowToTop, FindWindowW, SetForegroundWindow, ShowWindow, SW_RESTORE,
-        };
-        let title: Vec<u16> = "AMR — Antigravity Manager Rust\0".encode_utf16().collect();
-        let hwnd = FindWindowW(std::ptr::null(), title.as_ptr());
-        if !hwnd.is_null() {
-            ShowWindow(hwnd, SW_RESTORE);
-            SetForegroundWindow(hwnd);
-            BringWindowToTop(hwnd);
+    {
+        use i_slint_backend_winit::WinitWindowAccessor;
+        if w.window().has_winit_window() {
+            focus_winit_hwnd_windows(w);
+        } else {
+            // When launched with --start-minimized, winit creates the HWND asynchronously on about_to_wait.
+            let weak = w.as_weak();
+            slint::Timer::single_shot(Duration::from_millis(40), move || {
+                if let Some(win_up) = weak.upgrade() {
+                    focus_winit_hwnd_windows(&win_up);
+                }
+            });
         }
     }
 }
@@ -90,12 +148,6 @@ pub fn hide_window_to_tray(w: &MainWindow) {
     #[cfg(target_os = "linux")]
     unsafe {
         libc::malloc_trim(0);
-    }
-    #[cfg(windows)]
-    unsafe {
-        use windows_sys::Win32::System::ProcessStatus::EmptyWorkingSet;
-        use windows_sys::Win32::System::Threading::GetCurrentProcess;
-        EmptyWorkingSet(GetCurrentProcess());
     }
 }
 
@@ -1013,6 +1065,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(target_dir) = args.take_screenshots.as_ref() {
         return capture_and_save_screenshots(target_dir);
     }
+
+    let mut single_instance_guard = match instance::acquire_single_instance(!args.start_minimized) {
+        instance::InstanceAcquireResult::Primary(guard) => Some(guard),
+        instance::InstanceAcquireResult::AlreadyRunning => {
+            log::info!("AMR is already running; signaled existing instance and exiting.");
+            return Ok(());
+        }
+    };
+
     let mut config = AppConfig::load();
     if let Some(port) = args.port {
         config.port = port;
@@ -1149,6 +1210,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bg_cfg = Arc::clone(&config_arc);
     let bg_ver = Arc::clone(&cfg_version);
     let bg_balancer = Arc::clone(&balancer_arc);
+    let bg_state = Arc::clone(&shared_app_state);
     let mut bg_stop_rx = stop_receiver.clone();
 
     tokio::spawn(async move {
@@ -1170,11 +1232,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             + Duration::from_secs(
                 AppConfig::calculate_jittered_secs(init_pool_mins, init_jitter) + 45,
             );
-
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()
-            .unwrap_or_default();
 
         loop {
             tokio::select! {
@@ -1219,12 +1276,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     cfg.accounts
                         .iter()
                         .find(|a| active_id.as_deref() == Some(&a.id) && a.is_active)
-                        .map(|a| (a.id.clone(), a.api_key.clone(), a.refresh_token.clone()))
+                        .cloned()
                 };
 
-                if let Some((id, mut token, refresh_tok)) = active_account_opt {
-                    let mut quota_res =
-                        antigravity::fetch_models_and_quota(&client, &token, None).await;
+                if let Some(acc_snapshot) = active_account_opt {
+                    let id = acc_snapshot.id.clone();
+                    let mut token = acc_snapshot.api_key.clone();
+                    let refresh_tok = acc_snapshot.refresh_token.clone();
+                    let pid = acc_snapshot.project_id.clone();
+                    let client = bg_state.get_client_for_account(&acc_snapshot);
+
+                    let mut quota_res = antigravity::fetch_account_models_and_quota(
+                        &client,
+                        &token,
+                        pid.as_deref(),
+                    )
+                    .await;
                     if quota_res.is_err() {
                         if let Some(ref rtok) = refresh_tok {
                             if let Ok(ref_res) = antigravity::refresh_token(&client, rtok).await {
@@ -1234,21 +1301,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id)
                                     {
                                         acc.api_key = token.clone();
+                                        if ref_res.refresh_token.is_some() {
+                                            acc.refresh_token = ref_res.refresh_token;
+                                        }
                                     }
                                     let _ = cfg.save();
                                 }
-                                quota_res =
-                                    antigravity::fetch_models_and_quota(&client, &token, None)
-                                        .await;
+                                quota_res = antigravity::fetch_account_models_and_quota(
+                                    &client,
+                                    &token,
+                                    pid.as_deref(),
+                                )
+                                .await;
                             }
                         }
                     }
 
                     match quota_res {
-                        Ok((models, used, limit, reset, detailed_quota)) => {
+                        Ok((acc_models, _models, used, limit, reset, detailed_quota)) => {
                             {
                                 let mut cfg = bg_cfg.write();
                                 if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id) {
+                                    acc.available_models = acc_models;
                                     acc.quota_used = used;
                                     acc.quota_limit = limit;
                                     acc.quota_reset = reset;
@@ -1269,15 +1343,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         acc.tier = "PRO".to_string();
                                     }
                                 }
-                                let clean: Vec<_> = models
-                                    .into_iter()
-                                    .filter(|x| {
-                                        !x.id.starts_with("chat_") && !x.id.contains("gemini-3.5")
-                                    })
-                                    .collect();
-                                if !clean.is_empty() {
-                                    cfg.models = clean;
-                                }
+                                cfg.rebuild_models_from_accounts();
                                 let _ = cfg.save();
                             }
                             bg_ver.fetch_add(1, Ordering::SeqCst);
@@ -1318,7 +1384,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     next_active_check += Duration::from_secs(45);
                 }
 
-                let pool_accounts: Vec<(String, String, Option<String>)> = {
+                let pool_accounts: Vec<UpstreamAccount> = {
                     let cfg = bg_cfg.read();
                     cfg.accounts
                         .iter()
@@ -1327,19 +1393,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 && active_id.as_deref() != Some(&a.id)
                                 && !(a.status == "ERROR" && a.refresh_token.is_none())
                         })
-                        .map(|a| (a.id.clone(), a.api_key.clone(), a.refresh_token.clone()))
+                        .cloned()
                         .collect()
                 };
 
-                for (id, mut token, refresh_tok) in pool_accounts {
+                for acc_snapshot in pool_accounts {
                     // Stagger pool account checks with randomized 3 to 7 second pauses to avoid bot-like bursting
                     tokio::time::sleep(Duration::from_millis(AppConfig::random_delay_ms(
                         3000, 7000,
                     )))
                     .await;
 
-                    let mut quota_res =
-                        antigravity::fetch_models_and_quota(&client, &token, None).await;
+                    let id = acc_snapshot.id.clone();
+                    let mut token = acc_snapshot.api_key.clone();
+                    let refresh_tok = acc_snapshot.refresh_token.clone();
+                    let pid = acc_snapshot.project_id.clone();
+                    let client = bg_state.get_client_for_account(&acc_snapshot);
+
+                    let mut quota_res = antigravity::fetch_account_models_and_quota(
+                        &client,
+                        &token,
+                        pid.as_deref(),
+                    )
+                    .await;
                     if quota_res.is_err() {
                         if let Some(ref rtok) = refresh_tok {
                             if let Ok(ref_res) = antigravity::refresh_token(&client, rtok).await {
@@ -1349,21 +1425,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id)
                                     {
                                         acc.api_key = token.clone();
+                                        if ref_res.refresh_token.is_some() {
+                                            acc.refresh_token = ref_res.refresh_token;
+                                        }
                                     }
                                     let _ = cfg.save();
                                 }
-                                quota_res =
-                                    antigravity::fetch_models_and_quota(&client, &token, None)
-                                        .await;
+                                quota_res = antigravity::fetch_account_models_and_quota(
+                                    &client,
+                                    &token,
+                                    pid.as_deref(),
+                                )
+                                .await;
                             }
                         }
                     }
 
                     match quota_res {
-                        Ok((_, used, limit, reset, detailed_quota)) => {
+                        Ok((acc_models, _models, used, limit, reset, detailed_quota)) => {
                             {
                                 let mut cfg = bg_cfg.write();
                                 if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id) {
+                                    acc.available_models = acc_models;
                                     acc.quota_used = used;
                                     acc.quota_limit = limit;
                                     acc.quota_reset = reset;
@@ -1384,6 +1467,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         acc.tier = "PRO".to_string();
                                     }
                                 }
+                                cfg.rebuild_models_from_accounts();
                                 let _ = cfg.save();
                             }
                             bg_ver.fetch_add(1, Ordering::SeqCst);
@@ -1413,100 +1497,112 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // Startup dynamic catalog & quota sync
+    // Startup dynamic catalog & quota sync across all active accounts
     let startup_cfg = Arc::clone(&config_arc);
     let startup_ver = Arc::clone(&cfg_version);
+    let startup_state = Arc::clone(&shared_app_state);
     tokio::spawn(async move {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(15))
-            .build()
-            .unwrap_or_default();
-
-        let (acc_id, token, refresh_tok, project_id) = {
+        let active_accounts: Vec<UpstreamAccount> = {
             let cfg = startup_cfg.read();
-            if let Some(acc) = cfg
-                .accounts
+            cfg.accounts
                 .iter()
-                .find(|a| a.is_active && !a.api_key.is_empty())
-            {
-                (
-                    acc.id.clone(),
-                    acc.api_key.clone(),
-                    acc.refresh_token.clone(),
-                    acc.project_id.clone(),
-                )
-            } else {
-                return;
-            }
+                .filter(|a| a.is_active && !a.api_key.is_empty())
+                .cloned()
+                .collect()
         };
 
-        let mut active_pid = project_id;
-        if active_pid.is_none() {
-            let (pid_opt, tier) = antigravity::fetch_project_and_tier(&client, &token).await;
-            if pid_opt.is_some() {
-                active_pid = pid_opt.clone();
-                let mut cfg = startup_cfg.write();
-                if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == acc_id) {
-                    acc.project_id = pid_opt;
-                    acc.tier = tier;
-                }
-                let _ = cfg.save();
-            }
+        if active_accounts.is_empty() {
+            return;
         }
 
-        log::info!("Synchronizing active upstream models on proxy launch...");
-        let mut res =
-            antigravity::fetch_account_models_and_quota(&client, &token, active_pid.as_deref()).await;
+        log::info!(
+            "Synchronizing {} active upstream account(s) on proxy launch...",
+            active_accounts.len()
+        );
 
-        if res.is_err() {
-            if let Some(ref rtok) = refresh_tok {
-                if let Ok(ref_res) = antigravity::refresh_token(&client, rtok).await {
-                    let new_tok = ref_res.access_token;
-                    {
-                        let mut cfg = startup_cfg.write();
-                        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == acc_id) {
-                            acc.api_key = new_tok.clone();
-                            if ref_res.refresh_token.is_some() {
-                                acc.refresh_token = ref_res.refresh_token;
-                            }
-                        }
-                        let _ = cfg.save();
-                    }
-                    res = antigravity::fetch_account_models_and_quota(
-                        &client,
-                        &new_tok,
-                        active_pid.as_deref(),
-                    )
+        for (idx, acc_snapshot) in active_accounts.into_iter().enumerate() {
+            if idx > 0 {
+                tokio::time::sleep(Duration::from_millis(AppConfig::random_delay_ms(400, 1200)))
                     .await;
-                }
             }
-        }
 
-        if let Ok((acc_models, _models, used, limit, reset, detailed_quota)) = res {
-            log::info!(
-                "Successfully synchronized {} upstream models from Google Antigravity on startup",
-                acc_models.len()
-            );
-            {
-                let mut cfg = startup_cfg.write();
-                if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == acc_id) {
-                    acc.available_models = acc_models;
-                    acc.quota_used = used;
-                    acc.quota_limit = limit;
-                    acc.quota_reset = reset;
-                    acc.claude_percent = detailed_quota.claude_percent;
-                    acc.claude_reset = detailed_quota.claude_reset;
-                    acc.claude_weekly_percent = detailed_quota.claude_weekly_percent;
-                    acc.claude_weekly_reset = detailed_quota.claude_weekly_reset;
-                    acc.gemini_percent = detailed_quota.gemini_percent;
-                    acc.gemini_reset = detailed_quota.gemini_reset;
-                    acc.gemini_weekly_percent = detailed_quota.gemini_weekly_percent;
-                    acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
+            let acc_id = acc_snapshot.id.clone();
+            let mut token = acc_snapshot.api_key.clone();
+            let refresh_tok = acc_snapshot.refresh_token.clone();
+            let mut active_pid = acc_snapshot.project_id.clone();
+            let client = startup_state.get_client_for_account(&acc_snapshot);
+
+            if active_pid.is_none() {
+                let (pid_opt, tier) = antigravity::fetch_project_and_tier(&client, &token).await;
+                if pid_opt.is_some() {
+                    active_pid = pid_opt.clone();
+                    let mut cfg = startup_cfg.write();
+                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == acc_id) {
+                        acc.project_id = pid_opt;
+                        acc.tier = tier;
+                    }
+                    let _ = cfg.save();
                 }
-                cfg.rebuild_models_from_accounts();
-                let _ = cfg.save();
             }
-            startup_ver.fetch_add(1, Ordering::SeqCst);
+
+            let mut res = antigravity::fetch_account_models_and_quota(
+                &client,
+                &token,
+                active_pid.as_deref(),
+            )
+            .await;
+
+            if res.is_err() {
+                if let Some(ref rtok) = refresh_tok {
+                    if let Ok(ref_res) = antigravity::refresh_token(&client, rtok).await {
+                        token = ref_res.access_token;
+                        {
+                            let mut cfg = startup_cfg.write();
+                            if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == acc_id) {
+                                acc.api_key = token.clone();
+                                if ref_res.refresh_token.is_some() {
+                                    acc.refresh_token = ref_res.refresh_token;
+                                }
+                            }
+                            let _ = cfg.save();
+                        }
+                        res = antigravity::fetch_account_models_and_quota(
+                            &client,
+                            &token,
+                            active_pid.as_deref(),
+                        )
+                        .await;
+                    }
+                }
+            }
+
+            if let Ok((acc_models, _models, used, limit, reset, detailed_quota)) = res {
+                log::info!(
+                    "Synchronized {} upstream models for {} on startup",
+                    acc_models.len(),
+                    acc_snapshot.name
+                );
+                {
+                    let mut cfg = startup_cfg.write();
+                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == acc_id) {
+                        acc.available_models = acc_models;
+                        acc.quota_used = used;
+                        acc.quota_limit = limit;
+                        acc.quota_reset = reset;
+                        acc.claude_percent = detailed_quota.claude_percent;
+                        acc.claude_reset = detailed_quota.claude_reset;
+                        acc.claude_weekly_percent = detailed_quota.claude_weekly_percent;
+                        acc.claude_weekly_reset = detailed_quota.claude_weekly_reset;
+                        acc.gemini_percent = detailed_quota.gemini_percent;
+                        acc.gemini_reset = detailed_quota.gemini_reset;
+                        acc.gemini_weekly_percent = detailed_quota.gemini_weekly_percent;
+                        acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
+                    }
+                    cfg.rebuild_models_from_accounts();
+                    let _ = cfg.save();
+                }
+                startup_ver.fetch_add(1, Ordering::SeqCst);
+            }
         }
     });
 
@@ -1590,7 +1686,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     TrayAction::Toggle => {
                         if let Some(w) = win_weak.upgrade() {
-                            let is_showing = vis.load(Ordering::SeqCst);
+                            use i_slint_backend_winit::WinitWindowAccessor;
+                            let is_showing = w
+                                .window()
+                                .with_winit_window(|win| {
+                                    win.is_visible().unwrap_or(true)
+                                        && !win.is_minimized().unwrap_or(false)
+                                })
+                                .unwrap_or_else(|| vis.load(Ordering::SeqCst));
                             if is_showing {
                                 hide_window_to_tray(&w);
                                 vis.store(false, Ordering::SeqCst);
@@ -1608,6 +1711,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ) {
             *tray_holder.borrow_mut() = Some(tray);
         }
+    }
+
+    if let Some(ref mut guard) = single_instance_guard {
+        let w_ipc = window_handle.clone();
+        let vis_ipc = Arc::clone(&is_window_visible);
+        guard.start_activation_listener(move || {
+            let win_weak = w_ipc.clone();
+            let vis = Arc::clone(&vis_ipc);
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(w) = win_weak.upgrade() {
+                    show_and_focus_window(&w);
+                    vis.store(true, Ordering::SeqCst);
+                }
+            });
+        });
     }
 
     #[cfg(target_os = "linux")]
@@ -3780,6 +3898,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             slint::CloseRequestResponse::HideWindow
         } else {
+            *tray_close.borrow_mut() = None;
             let _ = slint::quit_event_loop();
             slint::CloseRequestResponse::HideWindow
         }
@@ -3793,6 +3912,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     slint::run_event_loop_until_quit()?;
 
+    *tray_holder.borrow_mut() = None;
+    drop(single_instance_guard);
     let _ = stop_sender.send(true);
     if config_arc.read().clear_logs_on_exit {
         stats_arc.clear_logs();

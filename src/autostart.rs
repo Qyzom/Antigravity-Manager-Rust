@@ -29,10 +29,15 @@ pub fn set_autostart(enable: bool) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         let current_exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("amr.exe"));
-        let exe_str = current_exe.to_str().unwrap_or("amr.exe");
+        let exe_raw = current_exe.to_string_lossy();
+        let quoted_exe = if exe_raw.starts_with('"') {
+            exe_raw.to_string()
+        } else {
+            format!("\"{}\"", exe_raw)
+        };
         let auto = auto_launch::AutoLaunchBuilder::new()
             .set_app_name("AMR")
-            .set_app_path(exe_str)
+            .set_app_path(&quoted_exe)
             .set_args(&["--start-minimized"])
             .build();
 

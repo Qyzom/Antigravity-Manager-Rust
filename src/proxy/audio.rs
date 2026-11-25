@@ -122,7 +122,7 @@ pub(crate) fn wrap_pcm_in_wav(pcm_data: &[u8], sample_rate: u32, channels: u16, 
     wav
 }
 
-/// Shared non-streaming upstream executor for `v1internal:generateContent` with automatic OAuth refresh and balancer telemetry.
+/// Shared non-streaming upstream executor for `v1internal:generateContent` with automatic OAuth refresh, 429 failover, and balancer telemetry.
 pub(crate) async fn execute_generate_content(
     state: &AppState,
     model_hint: &str,
@@ -130,114 +130,220 @@ pub(crate) async fn execute_generate_content(
     build_payload: impl Fn(&UpstreamAccount) -> Value,
 ) -> Result<(Value, String), (StatusCode, String)> {
     let session_id = uuid::Uuid::new_v4().to_string();
-    let mut account = {
-        let cfg = state.config.read();
-        state
-            .balancer
-            .select_account(&cfg, model_hint, Some(&session_id))
-            .map_err(|e| {
-                (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    format!("No active account available: {}", e),
-                )
-            })?
-    };
+    let failover_enabled = state.config.read().failover_on_429;
+    let max_attempts = if failover_enabled { 5 } else { 1 };
+    let mut excluded_ids: Vec<String> = Vec::new();
+    let mut final_err: Option<(StatusCode, String)> = None;
 
-    let (
-        platform_str,
-        ide_ver,
-        spoof_arch,
-        spoof_channel,
-        spoof_go,
-        inject_app_meta,
-        lock_prod,
-        cooldown_429,
-        cooldown_secs,
-        cooldown_jitter,
-        auto_rotate_fp,
-    ) = {
-        let cfg = state.config.read();
-        (
-            cfg.resolved_platform(),
-            cfg.spoof_ide_version.clone(),
-            cfg.spoof_arch.clone(),
-            cfg.spoof_channel.clone(),
-            cfg.spoof_go_sdk,
-            cfg.inject_ide_metadata,
-            cfg.lock_production_endpoints,
-            cfg.cooldown_on_429,
-            cfg.cooldown_duration_secs,
-            cfg.cooldown_jitter_percent,
-            cfg.auto_rotate_fp_on_limit,
-        )
-    };
+    for _attempt in 0..max_attempts {
+        let mut account = {
+            let cfg = state.config.read();
+            match state.balancer.select_account_excluding(
+                &cfg,
+                model_hint,
+                Some(&session_id),
+                &excluded_ids,
+            ) {
+                Ok(acc) => acc,
+                Err(e) => {
+                    if let Some(prev) = final_err {
+                        return Err(prev);
+                    }
+                    let status = match e {
+                        crate::proxy::balancer::RoutingError::NoAccounts => StatusCode::SERVICE_UNAVAILABLE,
+                        _ => StatusCode::TOO_MANY_REQUESTS,
+                    };
+                    return Err((status, format!("{}", e)));
+                }
+            }
+        };
+        excluded_ids.push(account.id.clone());
 
-    let client = state.get_client_for_account(&account);
-    let (client_id, machine_id) = if let Some(ref dp) = account.device_profile {
-        (dp.dev_device_id.clone(), dp.machine_id.clone())
-    } else {
-        (
-            uuid::Uuid::new_v4().to_string(),
-            format!(
-                "{}{}",
-                uuid::Uuid::new_v4().simple(),
-                uuid::Uuid::new_v4().simple()
-            ),
-        )
-    };
-
-    let endpoints: &[&str] = if lock_prod {
-        &GENERATE_ENDPOINTS[..1]
-    } else {
-        &GENERATE_ENDPOINTS[..]
-    };
-
-    let payload = build_payload(&account);
-    let mut last_res: Option<reqwest::Response> = None;
-
-    for endpoint_url in endpoints {
-        let headers = build_upstream_headers_json(
-            &account.api_key,
-            &client_id,
-            &machine_id,
+        let (
             platform_str,
-            &ide_ver,
-            &spoof_arch,
-            &spoof_channel,
+            ide_ver,
+            spoof_arch,
+            spoof_channel,
             spoof_go,
             inject_app_meta,
-            target_model_for_headers,
-        );
+            lock_prod,
+            cooldown_429,
+            cooldown_secs,
+            cooldown_jitter,
+            auto_rotate_fp,
+        ) = {
+            let cfg = state.config.read();
+            (
+                cfg.resolved_platform(),
+                cfg.spoof_ide_version.clone(),
+                cfg.spoof_arch.clone(),
+                cfg.spoof_channel.clone(),
+                cfg.spoof_go_sdk,
+                cfg.inject_ide_metadata,
+                cfg.lock_production_endpoints,
+                cfg.cooldown_on_429,
+                cfg.cooldown_duration_secs,
+                cfg.cooldown_jitter_percent,
+                cfg.auto_rotate_fp_on_limit,
+            )
+        };
 
-        match client
-            .post(*endpoint_url)
-            .headers(headers)
-            .json(&payload)
-            .send()
-            .await
-        {
-            Ok(r) => {
-                let s = r.status();
-                if s.is_success() {
-                    state.balancer.record_success(&account.id);
-                    let parsed = r.json::<Value>().await.map_err(|e| {
-                        (
-                            StatusCode::BAD_GATEWAY,
-                            format!("Invalid JSON response from Antigravity upstream: {}", e),
-                        )
-                    })?;
-                    return Ok((parsed, account.name));
-                }
-                if s == StatusCode::TOO_MANY_REQUESTS {
-                    if cooldown_429 {
-                        state.balancer.record_failure_with_reason(
-                            &account.id,
-                            429,
-                            cooldown_secs,
-                            cooldown_jitter,
-                            Some("HTTP 429: Too Many Requests"),
-                        );
+        let client = state.get_client_for_account(&account);
+        let (client_id, machine_id) = if let Some(ref dp) = account.device_profile {
+            (dp.dev_device_id.clone(), dp.machine_id.clone())
+        } else {
+            (
+                uuid::Uuid::new_v4().to_string(),
+                format!(
+                    "{}{}",
+                    uuid::Uuid::new_v4().simple(),
+                    uuid::Uuid::new_v4().simple()
+                ),
+            )
+        };
+
+        let endpoints: &[&str] = if lock_prod {
+            &GENERATE_ENDPOINTS[..1]
+        } else {
+            &GENERATE_ENDPOINTS[..]
+        };
+
+        let payload = build_payload(&account);
+        let mut last_res: Option<reqwest::Response> = None;
+
+        for endpoint_url in endpoints {
+            let headers = build_upstream_headers_json(
+                &account.api_key,
+                &client_id,
+                &machine_id,
+                platform_str,
+                &ide_ver,
+                &spoof_arch,
+                &spoof_channel,
+                spoof_go,
+                inject_app_meta,
+                target_model_for_headers,
+            );
+
+            match client
+                .post(*endpoint_url)
+                .headers(headers)
+                .json(&payload)
+                .send()
+                .await
+            {
+                Ok(r) => {
+                    let s = r.status();
+                    if s.is_success() {
+                        state.balancer.record_success(&account.id);
+                        let parsed = r.json::<Value>().await.map_err(|e| {
+                            (
+                                StatusCode::BAD_GATEWAY,
+                                format!("Invalid JSON response from Antigravity upstream: {}", e),
+                            )
+                        })?;
+                        return Ok((parsed, account.name));
                     }
+                    last_res = Some(r);
+                    if s == StatusCode::TOO_MANY_REQUESTS {
+                        break;
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+
+        // Automatic OAuth token refresh on 401/403
+        if let Some(ref res_ref) = last_res {
+            let s = res_ref.status();
+            if (s == StatusCode::UNAUTHORIZED || s == StatusCode::FORBIDDEN)
+                && account.refresh_token.is_some()
+            {
+                if let Some(ref rt) = account.refresh_token {
+                    if let Ok(tok_res) =
+                        crate::proxy::antigravity::refresh_token(&state.http_client, rt).await
+                    {
+                        let fresh_token = tok_res.access_token;
+                        {
+                            let mut cfg = state.config.write();
+                            if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
+                                acc.api_key = fresh_token.clone();
+                                if tok_res.refresh_token.is_some() {
+                                    acc.refresh_token = tok_res.refresh_token.clone();
+                                }
+                                acc.status = "ACTIVE".to_string();
+                                acc.error_message = None;
+                            }
+                            let _ = cfg.save();
+                        }
+                        state
+                            .cfg_version
+                            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        account.api_key = fresh_token;
+
+                        for endpoint_url in endpoints {
+                            let headers = build_upstream_headers_json(
+                                &account.api_key,
+                                &client_id,
+                                &machine_id,
+                                platform_str,
+                                &ide_ver,
+                                &spoof_arch,
+                                &spoof_channel,
+                                spoof_go,
+                                inject_app_meta,
+                                target_model_for_headers,
+                            );
+                            if let Ok(retry_res) = client
+                                .post(*endpoint_url)
+                                .headers(headers)
+                                .json(&payload)
+                                .send()
+                                .await
+                            {
+                                if retry_res.status().is_success() {
+                                    state.balancer.record_success(&account.id);
+                                    let parsed = retry_res.json::<Value>().await.map_err(|e| {
+                                        (
+                                            StatusCode::BAD_GATEWAY,
+                                            format!(
+                                                "Invalid JSON response from Antigravity upstream: {}",
+                                                e
+                                            ),
+                                        )
+                                    })?;
+                                    return Ok((parsed, account.name));
+                                }
+                                let rs = retry_res.status();
+                                last_res = Some(retry_res);
+                                if rs == StatusCode::TOO_MANY_REQUESTS {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        match last_res {
+            Some(r) => {
+                let status = r.status();
+                let raw_err = r.text().await.unwrap_or_default();
+                let clean_msg = extract_clean_error_message(&raw_err);
+                let is_429 = status == StatusCode::TOO_MANY_REQUESTS;
+                let is_auth = status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
+
+                if is_429 && cooldown_429 {
+                    let retry_hint = crate::proxy::balancer::LoadBalancer::parse_retry_delay_secs(&raw_err);
+                    state.balancer.record_rate_limit_hit(
+                        &account.id,
+                        429,
+                        cooldown_secs,
+                        cooldown_jitter,
+                        Some(&format!("HTTP 429: {}", clean_msg)),
+                        retry_hint,
+                    );
                     if auto_rotate_fp {
                         let mut cfg = state.config.write();
                         if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
@@ -245,96 +351,27 @@ pub(crate) async fn execute_generate_content(
                             let _ = cfg.save();
                         }
                     }
-                    last_res = Some(r);
-                    break;
                 }
-                last_res = Some(r);
+
+                final_err = Some((status, format!("Google Antigravity Upstream Error: {}", clean_msg)));
+                if (is_429 || is_auth) && failover_enabled {
+                    continue;
+                }
+                return Err(final_err.unwrap());
             }
-            Err(_) => continue,
-        }
-    }
-
-    // Automatic OAuth token refresh on 401/403
-    if let Some(ref res_ref) = last_res {
-        let s = res_ref.status();
-        if (s == StatusCode::UNAUTHORIZED || s == StatusCode::FORBIDDEN)
-            && account.refresh_token.is_some()
-        {
-            if let Some(ref rt) = account.refresh_token {
-                if let Ok(tok_res) =
-                    crate::proxy::antigravity::refresh_token(&state.http_client, rt).await
-                {
-                    let fresh_token = tok_res.access_token;
-                    {
-                        let mut cfg = state.config.write();
-                        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
-                            acc.api_key = fresh_token.clone();
-                            if tok_res.refresh_token.is_some() {
-                                acc.refresh_token = tok_res.refresh_token.clone();
-                            }
-                            acc.status = "ACTIVE".to_string();
-                            acc.error_message = None;
-                        }
-                        let _ = cfg.save();
-                    }
-                    state
-                        .cfg_version
-                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    account.api_key = fresh_token;
-
-                    for endpoint_url in endpoints {
-                        let headers = build_upstream_headers_json(
-                            &account.api_key,
-                            &client_id,
-                            &machine_id,
-                            platform_str,
-                            &ide_ver,
-                            &spoof_arch,
-                            &spoof_channel,
-                            spoof_go,
-                            inject_app_meta,
-                            target_model_for_headers,
-                        );
-                        if let Ok(retry_res) = client
-                            .post(*endpoint_url)
-                            .headers(headers)
-                            .json(&payload)
-                            .send()
-                            .await
-                        {
-                            if retry_res.status().is_success() {
-                                state.balancer.record_success(&account.id);
-                                let parsed = retry_res.json::<Value>().await.map_err(|e| {
-                                    (
-                                        StatusCode::BAD_GATEWAY,
-                                        format!(
-                                            "Invalid JSON response from Antigravity upstream: {}",
-                                            e
-                                        ),
-                                    )
-                                })?;
-                                return Ok((parsed, account.name));
-                            }
-                            last_res = Some(retry_res);
-                        }
-                    }
-                }
+            None => {
+                return Err((
+                    StatusCode::BAD_GATEWAY,
+                    "Network error reaching Antigravity upstream".to_string(),
+                ));
             }
         }
     }
 
-    match last_res {
-        Some(r) => {
-            let status = r.status();
-            let raw_err = r.text().await.unwrap_or_default();
-            let clean_msg = extract_clean_error_message(&raw_err);
-            Err((status, format!("Google Antigravity Upstream Error: {}", clean_msg)))
-        }
-        None => Err((
-            StatusCode::BAD_GATEWAY,
-            "Network error reaching Antigravity upstream".to_string(),
-        )),
-    }
+    Err(final_err.unwrap_or((
+        StatusCode::BAD_GATEWAY,
+        "Network error reaching Antigravity upstream".to_string(),
+    )))
 }
 
 fn error_response(status: StatusCode, message: String, code: &str) -> Response {

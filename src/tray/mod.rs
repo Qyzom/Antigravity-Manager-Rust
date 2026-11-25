@@ -60,22 +60,40 @@ impl SystemTray {
             }));
 
             let cb_tray = std::sync::Arc::clone(&action_cb);
+            let tray_epoch = std::time::Instant::now();
+            let last_dblclick_ms = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+            let last_toggle_ms = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
             tray_icon::TrayIconEvent::set_event_handler(Some(
-                move |event: tray_icon::TrayIconEvent| match event {
-                    tray_icon::TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } => {
-                        cb_tray(TrayAction::Toggle);
+                move |event: tray_icon::TrayIconEvent| {
+                    let now_ms = tray_epoch.elapsed().as_millis() as u64;
+                    match event {
+                        tray_icon::TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } => {
+                            // On Windows, a double-click emits Click(Up) -> DoubleClick -> Click(Up).
+                            // Suppress the second Click(Up) so it never immediately re-hides the window.
+                            let dbl_ms = last_dblclick_ms.load(std::sync::atomic::Ordering::Relaxed);
+                            if dbl_ms > 0 && now_ms.saturating_sub(dbl_ms) < 350 {
+                                return;
+                            }
+                            let prev_toggle = last_toggle_ms.swap(now_ms, std::sync::atomic::Ordering::Relaxed);
+                            if prev_toggle > 0 && now_ms.saturating_sub(prev_toggle) < 350 {
+                                cb_tray(TrayAction::Show);
+                            } else {
+                                cb_tray(TrayAction::Toggle);
+                            }
+                        }
+                        tray_icon::TrayIconEvent::DoubleClick {
+                            button: MouseButton::Left,
+                            ..
+                        } => {
+                            last_dblclick_ms.store(now_ms, std::sync::atomic::Ordering::Relaxed);
+                            cb_tray(TrayAction::Show);
+                        }
+                        _ => {}
                     }
-                    tray_icon::TrayIconEvent::DoubleClick {
-                        button: MouseButton::Left,
-                        ..
-                    } => {
-                        cb_tray(TrayAction::Show);
-                    }
-                    _ => {}
                 },
             ));
 
