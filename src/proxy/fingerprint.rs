@@ -1,4 +1,4 @@
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use wreq::header::{HeaderMap, HeaderName, HeaderValue};
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
@@ -69,7 +69,7 @@ pub fn apply_fingerprint(headers: &mut HeaderMap, profile_name: &str) {
         profile.user_agent
     };
     if let Ok(ua_val) = HeaderValue::from_str(ua_str) {
-        headers.insert(reqwest::header::USER_AGENT, ua_val);
+        headers.insert(wreq::header::USER_AGENT, ua_val);
     }
     for (k, v) in profile.extra_headers {
         if let (Ok(h_key), Ok(h_val)) = (

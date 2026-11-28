@@ -1148,7 +1148,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proxy_running = Arc::new(AtomicBool::new(false));
 
     // Shared AppState for server and direct UI actions (diagnostics, MCP, proxy testing)
-    let shared_http_client = reqwest::Client::builder()
+    let shared_http_client = wreq::Client::builder()
+        .emulation(wreq_util::Emulation::Chrome136)
         .tcp_nodelay(true)
         .tcp_keepalive(Some(Duration::from_secs(30)))
         .pool_idle_timeout(Some(Duration::from_secs(90)))
@@ -1836,10 +1837,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let v_clone = Arc::clone(&v_add);
 
             tokio::spawn(async move {
-                let mut builder = reqwest::Client::builder()
+                let mut builder = wreq::Client::builder()
+                    .emulation(wreq_util::Emulation::Chrome136)
                     .timeout(std::time::Duration::from_secs(30));
                 if let Some(ref p_url) = proxy_opt {
-                    if let Ok(p) = reqwest::Proxy::all(p_url) {
+                    if let Ok(p) = wreq::Proxy::all(p_url) {
                         builder = builder.proxy(p);
                     }
                 }
@@ -2368,7 +2370,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let lang_for_async = lang_code.clone();
         let latest_tag_async = Arc::clone(&latest_tag_for_click);
         tokio::spawn(async move {
-            let client = reqwest::Client::builder()
+            let client = wreq::Client::builder()
+                .emulation(wreq_util::Emulation::Chrome136)
                 .timeout(std::time::Duration::from_secs(5))
                 .build()
                 .unwrap_or_default();
@@ -2432,7 +2435,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let latest_tag_startup = Arc::clone(&latest_tag_for_startup);
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(2)).await;
-            let client = reqwest::Client::builder()
+            let client = wreq::Client::builder()
+                .emulation(wreq_util::Emulation::Chrome136)
                 .timeout(Duration::from_secs(5))
                 .build()
                 .unwrap_or_default();

@@ -183,7 +183,7 @@ pub fn emit_smooth_chunks(text: &str) -> Vec<&str> {
 }
 
 pub fn process_claude_to_openai_stream(
-    mut upstream_stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
+    mut upstream_stream: Pin<Box<dyn Stream<Item = Result<Bytes, wreq::Error>> + Send>>,
     stream_id: String,
     model_name: String,
     log_ctx: Option<StreamLoggingContext>,
@@ -351,7 +351,7 @@ pub fn process_claude_to_openai_stream(
 }
 
 pub fn process_antigravity_to_openai_stream(
-    mut upstream_stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
+    mut upstream_stream: Pin<Box<dyn Stream<Item = Result<Bytes, wreq::Error>> + Send>>,
     stream_id: String,
     model_name: String,
     log_ctx: Option<StreamLoggingContext>,
@@ -617,7 +617,7 @@ fn claude_block_stop_sse(block_index: usize) -> Bytes {
 }
 
 pub fn process_antigravity_to_claude_stream(
-    mut upstream_stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
+    mut upstream_stream: Pin<Box<dyn Stream<Item = Result<Bytes, wreq::Error>> + Send>>,
     stream_id: String,
     model_name: String,
     log_ctx: Option<StreamLoggingContext>,
@@ -928,7 +928,7 @@ pub fn process_antigravity_to_claude_stream(
 }
 
 pub fn pass_through_stream(
-    mut upstream_stream: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
+    mut upstream_stream: Pin<Box<dyn Stream<Item = Result<Bytes, wreq::Error>> + Send>>,
     log_ctx: Option<StreamLoggingContext>,
 ) -> impl Stream<Item = Result<Bytes, std::io::Error>> {
     async_stream::stream! {

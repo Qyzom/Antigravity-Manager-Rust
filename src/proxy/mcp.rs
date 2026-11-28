@@ -323,7 +323,7 @@ async fn execute_mcp_fetch_url(_state: &AppState, url_str: &str) -> String {
         );
     };
 
-    let parsed = match reqwest::Url::parse(&target_url) {
+    let parsed = match url::Url::parse(&target_url) {
         Ok(u) => u,
         Err(_) => {
             return format!(
@@ -351,9 +351,10 @@ async fn execute_mcp_fetch_url(_state: &AppState, url_str: &str) -> String {
             );
         }
 
-        let Some(host) = current_url.host_str() else {
+        let Some(host_str) = current_url.host_str() else {
             return format!("URL has no host: '{}'", current_url);
         };
+        let host = host_str.to_string();
         if host.eq_ignore_ascii_case("localhost")
             || host.ends_with(".local")
             || host.ends_with(".internal")
@@ -368,7 +369,7 @@ async fn execute_mcp_fetch_url(_state: &AppState, url_str: &str) -> String {
         };
 
         // Async DNS resolution + IP pinning per hop to prevent SSRF & DNS-rebinding TOCTOU
-        let addresses: Vec<_> = match tokio::net::lookup_host((host, port)).await {
+        let addresses: Vec<_> = match tokio::net::lookup_host((host.as_str(), port)).await {
             Ok(addrs) => addrs.collect(),
             Err(e) => return format!("Could not resolve URL host '{}': {}", host, e),
         };
@@ -380,10 +381,11 @@ async fn execute_mcp_fetch_url(_state: &AppState, url_str: &str) -> String {
             );
         }
 
-        let client = match reqwest::Client::builder()
+        let client = match wreq::Client::builder()
+            .emulation(wreq_util::Emulation::Chrome136)
             .no_proxy()
-            .resolve_to_addrs(host, &addresses)
-            .redirect(reqwest::redirect::Policy::none())
+            .resolve_to_addrs(host.clone(), addresses)
+            .redirect(wreq::redirect::Policy::none())
             .timeout(std::time::Duration::from_secs(15))
             .build()
         {
@@ -397,7 +399,7 @@ async fn execute_mcp_fetch_url(_state: &AppState, url_str: &str) -> String {
         };
 
         match client
-            .get(current_url.clone())
+            .get(current_url.as_str())
             .header(
                 "User-Agent",
                 "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
@@ -410,7 +412,7 @@ async fn execute_mcp_fetch_url(_state: &AppState, url_str: &str) -> String {
                 if hop == 5 {
                     return format!("Error fetching '{}': Too many redirects", target_url);
                 }
-                let Some(loc) = resp.headers().get(reqwest::header::LOCATION).and_then(|v| v.to_str().ok()) else {
+                let Some(loc) = resp.headers().get(wreq::header::LOCATION).and_then(|v| v.to_str().ok()) else {
                     return format!("Error fetching '{}': Redirect missing Location header", target_url);
                 };
                 current_url = match current_url.join(loc) {
@@ -429,13 +431,15 @@ async fn execute_mcp_fetch_url(_state: &AppState, url_str: &str) -> String {
     }
 
     match final_resp {
-        Some(mut resp) => {
+        Some(resp) => {
             if resp.status().is_success() {
+                use futures_util::StreamExt;
                 const MAX_BYTES: usize = 2 * 1024 * 1024; // 2 MiB limit
                 let mut body = Vec::new();
-                loop {
-                    match resp.chunk().await {
-                        Ok(Some(chunk)) => {
+                let mut stream = resp.bytes_stream();
+                while let Some(chunk_res) = stream.next().await {
+                    match chunk_res {
+                        Ok(chunk) => {
                             if body.len() + chunk.len() > MAX_BYTES {
                                 return format!(
                                     "Error: Web page content at '{}' exceeds the 2 MiB size limit.",
@@ -444,7 +448,6 @@ async fn execute_mcp_fetch_url(_state: &AppState, url_str: &str) -> String {
                             }
                             body.extend_from_slice(&chunk);
                         }
-                        Ok(None) => break,
                         Err(e) => {
                             return format!("Error reading response from '{}': {}", target_url, e);
                         }

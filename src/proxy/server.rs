@@ -23,16 +23,16 @@ pub struct AppState {
     pub config: Arc<parking_lot::RwLock<AppConfig>>,
     pub stats: Arc<ProxyStats>,
     pub balancer: Arc<crate::proxy::balancer::LoadBalancer>,
-    pub http_client: reqwest::Client,
+    pub http_client: wreq::Client,
     pub cfg_version: Arc<std::sync::atomic::AtomicU64>,
-    pub proxy_clients: Arc<parking_lot::RwLock<std::collections::HashMap<String, reqwest::Client>>>,
+    pub proxy_clients: Arc<parking_lot::RwLock<std::collections::HashMap<String, wreq::Client>>>,
 }
 
 impl AppState {
     pub fn get_client_for_account(
         &self,
         account: &crate::config::UpstreamAccount,
-    ) -> reqwest::Client {
+    ) -> wreq::Client {
         let p_trim = account.proxy_url.as_deref().unwrap_or("").trim();
         let cache_key = format!("{}|{}", account.id, p_trim);
         {
@@ -41,7 +41,16 @@ impl AppState {
                 return c.clone();
             }
         }
-        let mut builder = reqwest::Client::builder()
+        let emulation_profiles = [
+            wreq_util::Emulation::Chrome134,
+            wreq_util::Emulation::Chrome135,
+            wreq_util::Emulation::Chrome136,
+        ];
+        let hash = account.id.bytes().fold(0usize, |acc, b| acc.wrapping_mul(31).wrapping_add(b as usize));
+        let emulation = emulation_profiles[hash % emulation_profiles.len()];
+
+        let mut builder = wreq::Client::builder()
+            .emulation(emulation)
             .tcp_nodelay(true)
             .tcp_keepalive(Some(std::time::Duration::from_secs(30)))
             .pool_idle_timeout(Some(std::time::Duration::from_secs(90)))
@@ -49,7 +58,7 @@ impl AppState {
             .timeout(std::time::Duration::from_secs(120));
 
         if !p_trim.is_empty() {
-            if let Ok(proxy) = reqwest::Proxy::all(p_trim) {
+            if let Ok(proxy) = wreq::Proxy::all(p_trim) {
                 builder = builder.proxy(proxy);
             }
         }
@@ -160,16 +169,16 @@ pub fn build_upstream_headers_with_accept(
     _inject_app_meta: bool,
     target_model: &str,
     accept_header: &str,
-) -> reqwest::header::HeaderMap {
-    let mut req_headers = reqwest::header::HeaderMap::new();
+) -> wreq::header::HeaderMap {
+    let mut req_headers = wreq::header::HeaderMap::new();
     if let Ok(v) = format!("Bearer {}", token.trim()).parse() {
-        req_headers.insert(reqwest::header::AUTHORIZATION, v);
+        req_headers.insert(wreq::header::AUTHORIZATION, v);
     }
     if let Ok(v) = accept_header.parse() {
-        req_headers.insert(reqwest::header::ACCEPT, v);
+        req_headers.insert(wreq::header::ACCEPT, v);
     }
     if let Ok(v) = "application/json".parse() {
-        req_headers.insert(reqwest::header::CONTENT_TYPE, v);
+        req_headers.insert(wreq::header::CONTENT_TYPE, v);
     }
 
     let ua = crate::proxy::antigravity::get_official_hub_user_agent_with_meta(
@@ -178,7 +187,7 @@ pub fn build_upstream_headers_with_accept(
         Some(spoof_arch),
     );
     if let Ok(v) = ua.parse() {
-        req_headers.insert(reqwest::header::USER_AGENT, v);
+        req_headers.insert(wreq::header::USER_AGENT, v);
     }
 
     if target_model.to_lowercase().contains("claude") {
@@ -202,7 +211,7 @@ pub fn build_upstream_headers(
     spoof_go: bool,
     inject_app_meta: bool,
     target_model: &str,
-) -> reqwest::header::HeaderMap {
+) -> wreq::header::HeaderMap {
     build_upstream_headers_with_accept(
         token,
         client_id,
@@ -230,7 +239,7 @@ pub fn build_upstream_headers_json(
     spoof_go: bool,
     inject_app_meta: bool,
     target_model: &str,
-) -> reqwest::header::HeaderMap {
+) -> wreq::header::HeaderMap {
     build_upstream_headers_with_accept(
         token,
         client_id,
@@ -1478,7 +1487,7 @@ async fn execute_chat_request(
             let cfg = state.config.read();
             (cfg.resolved_platform(), cfg.spoof_ide_version.clone())
         };
-        let payload_json = crate::proxy::antigravity::build_antigravity_payload_with_meta(
+        let mut payload_json = crate::proxy::antigravity::build_antigravity_payload_with_meta(
             payload,
             &target_model,
             account.project_id.as_deref(),
@@ -1503,6 +1512,7 @@ async fn execute_chat_request(
                 ),
             )
         };
+        crate::proxy::antigravity::bind_request_id_to_device(&mut payload_json, &machine_id);
 
         let (
             spoof_go,
@@ -2051,7 +2061,7 @@ async fn execute_chat_request(
         }
     } else if account.provider == "anthropic" {
         let claude_req = convert_openai_to_claude(payload, &target_model, reasoning_effort);
-        let mut req_headers = reqwest::header::HeaderMap::new();
+        let mut req_headers = wreq::header::HeaderMap::new();
         if let Ok(v) = account.api_key.parse() {
             req_headers.insert("x-api-key", v);
         }
@@ -2305,7 +2315,7 @@ async fn execute_chat_request(
             }
         }
 
-        let mut req_headers = reqwest::header::HeaderMap::new();
+        let mut req_headers = wreq::header::HeaderMap::new();
         if let Ok(v) = format!("Bearer {}", account.api_key.trim()).parse() {
             req_headers.insert("authorization", v);
         }
@@ -2655,7 +2665,7 @@ async fn execute_claude_request(
             let cfg = state.config.read();
             (cfg.resolved_platform(), cfg.spoof_ide_version.clone())
         };
-        let payload_json =
+        let mut payload_json =
             crate::proxy::antigravity::build_antigravity_payload_from_claude_with_meta(
                 payload,
                 &target_model,
@@ -2681,6 +2691,7 @@ async fn execute_claude_request(
                 ),
             )
         };
+        crate::proxy::antigravity::bind_request_id_to_device(&mut payload_json, &machine_id);
 
         let (
             spoof_go,
@@ -3186,7 +3197,7 @@ async fn execute_claude_request(
         }
     } else {
         // Direct Anthropic API pass-through
-        let mut req_headers = reqwest::header::HeaderMap::new();
+        let mut req_headers = wreq::header::HeaderMap::new();
         if let Ok(v) = account.api_key.parse() {
             req_headers.insert("x-api-key", v);
         }
@@ -3356,8 +3367,9 @@ pub async fn test_proxy_connection(proxy_url: &str) -> Result<u64, String> {
     if clean.is_empty() {
         return Err("Proxy URL is empty".to_string());
     }
-    let proxy = reqwest::Proxy::all(clean).map_err(|e| format!("Invalid proxy URL: {}", e))?;
-    let client = reqwest::Client::builder()
+    let proxy = wreq::Proxy::all(clean).map_err(|e| format!("Invalid proxy URL: {}", e))?;
+    let client = wreq::Client::builder()
+        .emulation(wreq_util::Emulation::Chrome136)
         .proxy(proxy)
         .timeout(std::time::Duration::from_secs(5))
         .build()
@@ -3440,7 +3452,7 @@ pub async fn run_diagnostic_check(state: &AppState, model_id: &str) -> (u16, u64
     let client = state.get_client_for_account(&account);
 
     if account.provider == "anthropic" {
-        let mut req_headers = reqwest::header::HeaderMap::new();
+        let mut req_headers = wreq::header::HeaderMap::new();
         if let Ok(v) = account.api_key.trim().parse() {
             req_headers.insert("x-api-key", v);
         }
@@ -3466,7 +3478,7 @@ pub async fn run_diagnostic_check(state: &AppState, model_id: &str) -> (u16, u64
             Err(e) => (502, t0.elapsed().as_millis() as u64, format!("Network error: {}", e)),
         };
     } else if account.provider != "antigravity" {
-        let mut req_headers = reqwest::header::HeaderMap::new();
+        let mut req_headers = wreq::header::HeaderMap::new();
         if let Ok(v) = format!("Bearer {}", account.api_key.trim()).parse() {
             req_headers.insert("authorization", v);
         }

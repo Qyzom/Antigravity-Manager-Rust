@@ -9,7 +9,7 @@ mod tests {
         resolve_model, ReasoningEffort,
     };
     use amr::proxy::stats::ProxyStats;
-    use reqwest::header::HeaderMap;
+    use wreq::header::HeaderMap;
     use serde_json::Value;
 
     #[test]
@@ -1260,7 +1260,7 @@ mod tests {
         stats.total_tokens.store(500_000, Ordering::Relaxed);
         let config = Arc::new(parking_lot::RwLock::new(AppConfig::default()));
         let balancer = Arc::new(amr::proxy::balancer::LoadBalancer::new());
-        let http_client = reqwest::Client::new();
+        let http_client = wreq::Client::new();
         let cfg_version = Arc::new(std::sync::atomic::AtomicU64::new(1));
         let proxy_clients = Arc::new(parking_lot::RwLock::new(std::collections::HashMap::new()));
 
@@ -1938,7 +1938,7 @@ mod tests {
     #[test]
     fn test_format_amr_error_message_disabled_model_preserved() {
         use amr::proxy::server::format_amr_error_message;
-        use reqwest::StatusCode;
+        use wreq::StatusCode;
 
         // When a model is disabled, the message contains 'disabled' and must NOT be replaced with OAuth failure
         let raw_disabled = "Model 'gemini-exp' is disabled by administrator in settings.";
@@ -2087,7 +2087,7 @@ mod tests {
     #[test]
     fn test_format_amr_error_message_comprehensive() {
         use amr::proxy::server::format_amr_error_message;
-        use reqwest::StatusCode;
+        use wreq::StatusCode;
 
         // 404 Not Found
         let err_404_ru = format_amr_error_message("", StatusCode::NOT_FOUND, "ru", true);
@@ -2275,7 +2275,7 @@ mod tests {
     fn test_format_amr_error_message_preserves_cooldown_and_reset() {
         use amr::proxy::balancer::RoutingError;
         use amr::proxy::server::format_amr_error_message;
-        use reqwest::StatusCode;
+        use wreq::StatusCode;
 
         let cd = format!("{}", RoutingError::AllCoolingDown { retry_after_secs: 7 });
         let formatted_ru = format_amr_error_message(&cd, StatusCode::TOO_MANY_REQUESTS, "ru", true);
@@ -2338,8 +2338,8 @@ mod tests {
         let rocket_pos = sse_payload.find('🚀').unwrap();
         let split_at = rocket_pos + 2;
 
-        let chunk1 = Ok::<Bytes, reqwest::Error>(Bytes::copy_from_slice(&raw_bytes[..split_at]));
-        let chunk2 = Ok::<Bytes, reqwest::Error>(Bytes::copy_from_slice(&raw_bytes[split_at..]));
+        let chunk1 = Ok::<Bytes, wreq::Error>(Bytes::copy_from_slice(&raw_bytes[..split_at]));
+        let chunk2 = Ok::<Bytes, wreq::Error>(Bytes::copy_from_slice(&raw_bytes[split_at..]));
         let upstream = Box::pin(futures_util::stream::iter(vec![chunk1, chunk2]));
 
         let mut out_stream = Box::pin(process_antigravity_to_openai_stream(

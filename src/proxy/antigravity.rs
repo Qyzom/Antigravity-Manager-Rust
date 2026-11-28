@@ -442,7 +442,7 @@ pub fn get_oauth_authorization_url(port: u16) -> String {
 }
 
 pub async fn exchange_code(
-    client: &reqwest::Client,
+    client: &wreq::Client,
     code: &str,
     redirect_uri: &str,
 ) -> Result<GoogleTokenResponse, String> {
@@ -450,7 +450,7 @@ pub async fn exchange_code(
 }
 
 pub async fn exchange_code_with_ua(
-    client: &reqwest::Client,
+    client: &wreq::Client,
     code: &str,
     redirect_uri: &str,
     user_agent_override: Option<&str>,
@@ -487,14 +487,14 @@ pub async fn exchange_code_with_ua(
 }
 
 pub async fn refresh_token(
-    client: &reqwest::Client,
+    client: &wreq::Client,
     refresh_token: &str,
 ) -> Result<GoogleTokenResponse, String> {
     refresh_token_with_ua(client, refresh_token, None).await
 }
 
 pub async fn refresh_token_with_ua(
-    client: &reqwest::Client,
+    client: &wreq::Client,
     refresh_token: &str,
     user_agent_override: Option<&str>,
 ) -> Result<GoogleTokenResponse, String> {
@@ -529,14 +529,14 @@ pub async fn refresh_token_with_ua(
 }
 
 pub async fn fetch_user_info(
-    client: &reqwest::Client,
+    client: &wreq::Client,
     access_token: &str,
 ) -> Result<GoogleUserInfo, String> {
     fetch_user_info_with_ua(client, access_token, None).await
 }
 
 pub async fn fetch_user_info_with_ua(
-    client: &reqwest::Client,
+    client: &wreq::Client,
     access_token: &str,
     user_agent_override: Option<&str>,
 ) -> Result<GoogleUserInfo, String> {
@@ -562,19 +562,25 @@ pub async fn fetch_user_info_with_ua(
 }
 
 pub async fn fetch_project_and_tier(
-    client: &reqwest::Client,
+    client: &wreq::Client,
     access_token: &str,
 ) -> (Option<String>, String) {
     fetch_project_and_tier_with_ua(client, access_token, None).await
 }
 
 pub async fn fetch_project_and_tier_with_ua(
-    client: &reqwest::Client,
+    client: &wreq::Client,
     access_token: &str,
     user_agent_override: Option<&str>,
 ) -> (Option<String>, String) {
+    let platform = match std::env::consts::OS {
+        "windows" => "WINDOWS",
+        "macos" => "MACOS",
+        "linux" => "LINUX",
+        _ => "PLATFORM_UNSPECIFIED",
+    };
     let meta = serde_json::json!({
-        "metadata": { "ideType": "ANTIGRAVITY", "pluginType": "GEMINI" }
+        "metadata": { "ideType": "ANTIGRAVITY", "platform": platform, "pluginType": "GEMINI" }
     });
 
     let mut project_id: Option<String> = None;
@@ -675,14 +681,14 @@ pub struct DetailedQuotaInfo {
 }
 
 pub async fn fetch_user_quota_summary(
-    client: &reqwest::Client,
+    client: &wreq::Client,
     access_token: &str,
 ) -> DetailedQuotaInfo {
     fetch_user_quota_summary_with_ua(client, access_token, None).await
 }
 
 pub async fn fetch_user_quota_summary_with_ua(
-    client: &reqwest::Client,
+    client: &wreq::Client,
     access_token: &str,
     user_agent_override: Option<&str>,
 ) -> DetailedQuotaInfo {
@@ -843,7 +849,7 @@ pub async fn fetch_user_quota_summary_with_ua(
 }
 
 pub async fn fetch_models_and_quota(
-    client: &reqwest::Client,
+    client: &wreq::Client,
     access_token: &str,
     project_id: Option<&str>,
 ) -> Result<(Vec<ModelCatalogItem>, u64, u64, String, DetailedQuotaInfo), String> {
@@ -853,7 +859,7 @@ pub async fn fetch_models_and_quota(
 }
 
 pub async fn fetch_account_models_and_quota(
-    client: &reqwest::Client,
+    client: &wreq::Client,
     access_token: &str,
     project_id: Option<&str>,
 ) -> Result<
@@ -871,7 +877,7 @@ pub async fn fetch_account_models_and_quota(
 }
 
 pub async fn fetch_account_models_and_quota_with_ua(
-    client: &reqwest::Client,
+    client: &wreq::Client,
     access_token: &str,
     project_id: Option<&str>,
     user_agent_override: Option<&str>,
@@ -1795,6 +1801,28 @@ pub fn build_antigravity_payload_with_meta(
         "userAgent": "antigravity",
         "requestType": request_type,
     })
+}
+
+/// Binds the `conv` segment of `payload["requestId"]` deterministically to the account's
+/// `machine_id` (first 8 hex chars) so upstream telemetry sees a consistent device-to-account
+/// correlation without exposing synthetic HTTP headers.
+pub fn bind_request_id_to_device(payload: &mut Value, machine_id: &str) {
+    let hex_prefix: String = machine_id
+        .chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .take(8)
+        .collect();
+    if hex_prefix.len() < 8 {
+        return;
+    }
+    if let Some(req_id) = payload.get("requestId").and_then(|v| v.as_str()).map(str::to_string) {
+        let mut parts: Vec<&str> = req_id.split('/').collect();
+        if parts.len() == 5 && parts[1].len() >= 8 {
+            let bound_conv = format!("{}{}", hex_prefix.to_ascii_lowercase(), &parts[1][8..]);
+            parts[1] = &bound_conv;
+            payload["requestId"] = Value::String(parts.join("/"));
+        }
+    }
 }
 
 pub fn build_antigravity_payload_from_claude(

@@ -22,7 +22,7 @@ jobs:
       - name: Install Linux system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev
+          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev cmake clang libclang-dev perl nasm
 
       - name: Build AMR Release
         run: cargo build --release --bin amr
@@ -64,7 +64,7 @@ jobs:
       - name: Install Linux system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev
+          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev cmake clang libclang-dev perl nasm
 
       - name: Build AMR ARM64 Release
         run: cargo build --release --bin amr

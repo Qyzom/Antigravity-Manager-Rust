@@ -209,7 +209,7 @@ pub(crate) async fn execute_generate_content(
         };
 
         let payload = build_payload(&account);
-        let mut last_res: Option<reqwest::Response> = None;
+        let mut last_res: Option<wreq::Response> = None;
 
         for endpoint_url in endpoints {
             let headers = build_upstream_headers_json(
