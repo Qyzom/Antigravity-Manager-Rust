@@ -573,14 +573,8 @@ pub async fn fetch_project_and_tier_with_ua(
     access_token: &str,
     user_agent_override: Option<&str>,
 ) -> (Option<String>, String) {
-    let platform = match std::env::consts::OS {
-        "windows" => "WINDOWS",
-        "macos" => "MACOS",
-        "linux" => "LINUX",
-        _ => "PLATFORM_UNSPECIFIED",
-    };
     let meta = serde_json::json!({
-        "metadata": { "ideType": "ANTIGRAVITY", "platform": platform, "pluginType": "GEMINI" }
+        "metadata": { "ideType": "ANTIGRAVITY", "platform": "PLATFORM_UNSPECIFIED", "pluginType": "GEMINI" }
     });
 
     let mut project_id: Option<String> = None;
@@ -1801,6 +1795,55 @@ pub fn build_antigravity_payload_with_meta(
         "userAgent": "antigravity",
         "requestType": request_type,
     })
+}
+
+/// Folds `request.systemInstruction` into `request.contents` as a leading user turn
+/// to bypass upstream WAF 429 rejections on third-party agent system prompts.
+/// Returns `true` if `systemInstruction` was present and folded.
+pub fn fold_system_instruction_into_contents(payload: &mut Value) -> bool {
+    let Some(req_obj) = payload.get_mut("request").and_then(|v| v.as_object_mut()) else {
+        return false;
+    };
+    let Some(sys_instr) = req_obj.remove("systemInstruction") else {
+        return false;
+    };
+    let sys_parts = sys_instr
+        .get("parts")
+        .and_then(|p| p.as_array())
+        .cloned()
+        .unwrap_or_default();
+    if sys_parts.is_empty() {
+        return false;
+    }
+
+    let mut wrapped_parts = Vec::with_capacity(sys_parts.len() + 2);
+    wrapped_parts.push(serde_json::json!({ "text": "[System Instructions]" }));
+    wrapped_parts.extend(sys_parts);
+    wrapped_parts.push(serde_json::json!({ "text": "[End System Instructions]\n" }));
+
+    let contents = req_obj
+        .entry("contents")
+        .or_insert_with(|| serde_json::json!([]));
+    if let Some(arr) = contents.as_array_mut() {
+        if let Some(first) = arr.first_mut() {
+            if first.get("role").and_then(|r| r.as_str()) == Some("user") {
+                if let Some(parts) = first.get_mut("parts").and_then(|p| p.as_array_mut()) {
+                    wrapped_parts.append(parts);
+                    *parts = wrapped_parts;
+                    return true;
+                }
+            }
+        }
+        arr.insert(
+            0,
+            serde_json::json!({
+                "role": "user",
+                "parts": wrapped_parts
+            }),
+        );
+        return true;
+    }
+    false
 }
 
 /// Binds the `conv` segment of `payload["requestId"]` deterministically to the account's

@@ -156,6 +156,37 @@ pub(crate) async fn refresh_account_token_and_save(
     Some(fresh_token)
 }
 
+/// Sends an upstream request and, on HTTP 429, folds `systemInstruction` into `contents`
+/// once to bypass upstream WAF rejections of third-party agent system prompts.
+async fn post_upstream_with_waf_retry(
+    client: &wreq::Client,
+    endpoint_url: &str,
+    headers: wreq::header::HeaderMap,
+    payload_json: &mut Value,
+) -> Result<wreq::Response, wreq::Error> {
+    let resp = client
+        .post(endpoint_url)
+        .headers(headers.clone())
+        .json(payload_json)
+        .send()
+        .await?;
+    if resp.status() == StatusCode::TOO_MANY_REQUESTS
+        && crate::proxy::antigravity::fold_system_instruction_into_contents(payload_json)
+    {
+        log::info!(
+            "[WAF-429] Folding systemInstruction into contents and retrying {}",
+            endpoint_url
+        );
+        return client
+            .post(endpoint_url)
+            .headers(headers)
+            .json(payload_json)
+            .send()
+            .await;
+    }
+    Ok(resp)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn build_upstream_headers_with_accept(
     token: &str,
@@ -918,7 +949,7 @@ async fn gemini_content(
         let (target_model, _) =
             crate::proxy::router::resolve_model_with_effort(&requested_model, &account, None);
 
-        let payload_json = crate::proxy::mappers::gemini::build_antigravity_from_gemini(
+        let mut payload_json = crate::proxy::mappers::gemini::build_antigravity_from_gemini(
             &payload,
             &target_model,
             account.project_id.as_deref(),
@@ -985,12 +1016,13 @@ async fn gemini_content(
                 )
             };
 
-            match client
-                .post(endpoint_url)
-                .headers(headers_to_use)
-                .json(&payload_json)
-                .send()
-                .await
+            match post_upstream_with_waf_retry(
+                &client,
+                endpoint_url,
+                headers_to_use,
+                &mut payload_json,
+            )
+            .await
             {
                 Ok(res) => {
                     let s = res.status();
@@ -1590,12 +1622,13 @@ async fn execute_chat_request(
                 )
             };
 
-            if let Ok(r) = client
-                .post(*endpoint_url)
-                .headers(req_headers)
-                .json(&payload_json)
-                .send()
-                .await
+            if let Ok(r) = post_upstream_with_waf_retry(
+                &client,
+                endpoint_url,
+                req_headers,
+                &mut payload_json,
+            )
+            .await
             {
                 let s = r.status();
                 if s.is_success() {
@@ -2769,12 +2802,13 @@ async fn execute_claude_request(
                 )
             };
 
-            if let Ok(r) = client
-                .post(*endpoint_url)
-                .headers(req_headers)
-                .json(&payload_json)
-                .send()
-                .await
+            if let Ok(r) = post_upstream_with_waf_retry(
+                &client,
+                endpoint_url,
+                req_headers,
+                &mut payload_json,
+            )
+            .await
             {
                 let s = r.status();
                 if s.is_success() {

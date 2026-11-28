@@ -2439,4 +2439,38 @@ mod tests {
         assert_eq!(blocks[0]["type"], "tool_result");
         assert_eq!(blocks[1]["tool_use_id"], "call_2");
     }
+
+    #[test]
+    fn test_fold_system_instruction_into_contents() {
+        let mut payload = serde_json::json!({
+            "project": "aicode-consumers",
+            "model": "gemini-4-hydrogen-medium",
+            "request": {
+                "systemInstruction": {
+                    "role": "user",
+                    "parts": [{ "text": "You are an AI agent powered by DeepSeek Harness." }]
+                },
+                "contents": [
+                    { "role": "user", "parts": [{ "text": "hi" }] }
+                ]
+            }
+        });
+
+        assert!(amr::proxy::antigravity::fold_system_instruction_into_contents(&mut payload));
+        assert!(payload["request"].get("systemInstruction").is_none());
+        let contents = payload["request"]["contents"].as_array().unwrap();
+        assert_eq!(contents.len(), 1);
+        assert_eq!(contents[0]["role"], "user");
+        let parts = contents[0]["parts"].as_array().unwrap();
+        assert_eq!(parts.len(), 4);
+        assert_eq!(parts[0]["text"], "[System Instructions]");
+        assert_eq!(
+            parts[1]["text"],
+            "You are an AI agent powered by DeepSeek Harness."
+        );
+        assert_eq!(parts[3]["text"], "hi");
+
+        // Second call is a no-op since systemInstruction was already removed
+        assert!(!amr::proxy::antigravity::fold_system_instruction_into_contents(&mut payload));
+    }
 }
