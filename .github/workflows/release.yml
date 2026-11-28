@@ -128,12 +128,7 @@ jobs:
 
       - name: Build AMR x86_64
         shell: pwsh
-        run: |
-          cargo build --release --target x86_64-pc-windows-msvc --bin amr 2>&1 | Tee-Object -FilePath win_x64.log
-          if ($LASTEXITCODE -ne 0) {
-            Get-Content win_x64.log -Tail 120 | Out-File -FilePath win_x64_err.txt -Encoding utf8
-            exit $LASTEXITCODE
-          }
+        run: cargo build --release --target x86_64-pc-windows-msvc --bin amr
 
       - name: Setup MSVC ARM64 environment
         uses: ilammy/msvc-dev-cmd@v1
@@ -156,15 +151,12 @@ jobs:
           fi
 
       - name: Upload Windows Portable EXEs
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: windows-artifacts
-          if-no-files-found: ignore
           path: |
             AMR-*-x86_64.exe
             AMR-*-arm64.exe
-            win_x64_err.txt
 
   create-release:
     name: Publish GitHub Release (AppImage, DEB, RPM, EXE)

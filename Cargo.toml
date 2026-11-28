@@ -54,6 +54,7 @@ libc = "0.2"
 auto-launch = "0.5"
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
+    "Win32_Security",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Shell",
     "Win32_Storage_FileSystem",
