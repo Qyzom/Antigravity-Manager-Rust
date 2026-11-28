@@ -2448,19 +2448,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let h_conn_sync = window_handle.clone();
     main_window.on_sync_connector_now(move |id_slint| {
         let id = id_slint.to_string();
-        {
-            let cfg = c_conn_sync.read();
-            let _ = amr::connectors::sync_connector(&id, &cfg, true);
-            if let Some(h) = h_conn_sync.upgrade() {
-                refresh_connectors_ui(&h, &cfg);
-                h.set_conn_sync_flash_id(id.clone().into());
+        if let Some(h) = h_conn_sync.upgrade() {
+            if h.get_conn_syncing_id().as_str() == id {
+                return;
             }
+            h.set_conn_sync_flash_id("".into());
+            h.set_conn_syncing_id(id.clone().into());
         }
-        let h_timer = h_conn_sync.clone();
+        let c_task = Arc::clone(&c_conn_sync);
+        let h_task = h_conn_sync.clone();
         tokio::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(420)).await;
+            let cfg_snapshot = c_task.read().clone();
+            let id_sync = id.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                let _ = amr::connectors::sync_connector(&id_sync, &cfg_snapshot, true);
+            })
+            .await;
+
+            let id_done = id.clone();
+            let c_ui = Arc::clone(&c_task);
+            let h_done = h_task.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(h) = h_done.upgrade() {
+                    if h.get_conn_syncing_id().as_str() == id_done {
+                        h.set_conn_syncing_id("".into());
+                    }
+                    let cfg = c_ui.read();
+                    refresh_connectors_ui(&h, &cfg);
+                    h.set_conn_sync_flash_id(id_done.into());
+                }
+            });
+
             tokio::time::sleep(tokio::time::Duration::from_millis(1400)).await;
             let _ = slint::invoke_from_event_loop(move || {
-                if let Some(h) = h_timer.upgrade() {
+                if let Some(h) = h_task.upgrade() {
                     if h.get_conn_sync_flash_id().as_str() == id {
                         h.set_conn_sync_flash_id("".into());
                     }

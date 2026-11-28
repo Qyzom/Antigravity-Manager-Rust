@@ -653,6 +653,7 @@ export component MainWindow inherits Window {
     in-out property <bool> show_connectors_tab: true;
     in-out property <bool> show_mcp_test_dialog: false;
     in-out property <string> conn_sync_flash_id: "";
+    in-out property <string> conn_syncing_id: "";
     in-out property <[ConnectorItemData]> connectors_list: [];
     callback toggle_connector(string, bool);
     callback sync_connector_now(string);
@@ -1897,7 +1898,7 @@ export component MainWindow inherits Window {
                                         spacing: 6px;
                                         LineEdit {
                                             horizontal-stretch: 1;
-                                            height: 28px;
+                                            height: 34px;
                                             font-size: 11px;
                                             text: root.master_api_key;
                                             input-type: root.master_key_visible ? InputType.text : InputType.password;
@@ -1905,19 +1906,19 @@ export component MainWindow inherits Window {
                                         ActionButton {
                                             text: root.master_key_visible ? root.i18n.btn_hide_key : root.i18n.btn_show_key;
                                             is_primary: false;
-                                            custom_height: 28px;
+                                            custom_height: 34px;
                                             clicked => { root.master_key_visible = !root.master_key_visible; }
                                         }
                                         ActionButton {
                                             text: root.master_key_status_text != "" ? root.master_key_status_text : root.i18n.btn_copy_key;
                                             is_primary: true;
-                                            custom_height: 28px;
+                                            custom_height: 34px;
                                             clicked => { root.copy_master_key(); }
                                         }
                                         ActionButton {
                                             text: root.i18n.btn_regenerate_key;
                                             is_danger: true;
-                                            custom_height: 28px;
+                                            custom_height: 34px;
                                             clicked => { root.regenerate_master_key(); }
                                         }
                                     }
@@ -3671,8 +3672,11 @@ export component MainWindow inherits Window {
                                         if conn.enabled: VerticalLayout {
                                             alignment: center;
                                             ActionButton {
-                                                text: root.conn_sync_flash_id == conn.id ? root.i18n.conn_status_synced : root.i18n.conn_btn_sync_now;
+                                                text: root.conn_syncing_id == conn.id
+                                                    ? root.i18n.lbl_updating
+                                                    : (root.conn_sync_flash_id == conn.id ? root.i18n.conn_status_synced : root.i18n.conn_btn_sync_now);
                                                 is_accent: root.conn_sync_flash_id == conn.id;
+                                                is_disabled: root.conn_syncing_id == conn.id;
                                                 custom_height: 28px;
                                                 clicked => { root.sync_connector_now(conn.id); }
                                             }
