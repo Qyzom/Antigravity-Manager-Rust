@@ -51,6 +51,14 @@ pub enum ClaudeContentBlock {
         thinking: String,
         signature: Option<String>,
     },
+    #[serde(rename = "tool_use")]
+    ToolUse {
+        id: String,
+        name: String,
+        input: Value,
+    },
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

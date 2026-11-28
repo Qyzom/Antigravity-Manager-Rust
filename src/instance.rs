@@ -58,7 +58,7 @@ fn try_signal_existing(port_file: &PathBuf, show_window: bool) -> bool {
         if let Ok(n) = stream.read(&mut buf) {
             return &buf[..n] == b"AMR_OK\n";
         }
-        return true;
+        return false;
     }
     false
 }

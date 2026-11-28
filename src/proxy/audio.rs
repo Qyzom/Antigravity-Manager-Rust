@@ -259,26 +259,7 @@ pub(crate) async fn execute_generate_content(
             if (s == StatusCode::UNAUTHORIZED || s == StatusCode::FORBIDDEN)
                 && account.refresh_token.is_some()
             {
-                if let Some(ref rt) = account.refresh_token {
-                    if let Ok(tok_res) =
-                        crate::proxy::antigravity::refresh_token(&state.http_client, rt).await
-                    {
-                        let fresh_token = tok_res.access_token;
-                        {
-                            let mut cfg = state.config.write();
-                            if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
-                                acc.api_key = fresh_token.clone();
-                                if tok_res.refresh_token.is_some() {
-                                    acc.refresh_token = tok_res.refresh_token.clone();
-                                }
-                                acc.status = "ACTIVE".to_string();
-                                acc.error_message = None;
-                            }
-                            let _ = cfg.save();
-                        }
-                        state
-                            .cfg_version
-                            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if let Some(fresh_token) = crate::proxy::server::refresh_account_token_and_save(state, &account).await {
                         account.api_key = fresh_token;
 
                         for endpoint_url in endpoints {
@@ -322,7 +303,6 @@ pub(crate) async fn execute_generate_content(
                             }
                         }
                     }
-                }
             }
         }
 

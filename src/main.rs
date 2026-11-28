@@ -4086,7 +4086,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 let logs = s_timer.get_recent_logs();
-                if logs.len() != logs_model.row_count() {
+                let newest_id = logs.first().map(|l| l.id.as_str()).unwrap_or("");
+                let current_first_id = if logs_model.row_count() > 0 {
+                    logs_model.row_data(0).map(|r| r.id.to_string()).unwrap_or_default()
+                } else {
+                    String::new()
+                };
+                if logs.len() != logs_model.row_count() || newest_id != current_first_id {
                     logs_model.set_vec(
                         logs.into_iter()
                             .map(|l| LogEntryData {

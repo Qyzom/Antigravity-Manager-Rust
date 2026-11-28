@@ -93,21 +93,24 @@ pub fn parse_model_and_reasoning(
     raw_model: &str,
     native_effort: Option<&str>,
 ) -> (String, Option<ReasoningEffort>) {
-    let lower = raw_model.trim().to_lowercase();
+    let trimmed = raw_model.trim();
 
-    // Check for effort suffix in model name across all common formats
+    // Check for effort suffix in model name across all common formats using char boundaries
     let (base_clean, suffix_effort) = {
         let mut matched = None;
         for &(suffix, eff) in REASONING_SUFFIXES {
-            if lower.ends_with(suffix) {
-                let base = raw_model[..raw_model.len() - suffix.len()]
-                    .trim()
-                    .to_string();
-                matched = Some((base, eff));
-                break;
+            if trimmed.len() >= suffix.len() {
+                let split_idx = trimmed.len() - suffix.len();
+                if trimmed.is_char_boundary(split_idx)
+                    && trimmed[split_idx..].eq_ignore_ascii_case(suffix)
+                {
+                    let base = trimmed[..split_idx].trim().to_string();
+                    matched = Some((base, eff));
+                    break;
+                }
             }
         }
-        matched.unwrap_or_else(|| (raw_model.to_string(), None))
+        matched.unwrap_or_else(|| (trimmed.to_string(), None))
     };
 
     let resolved_effort = suffix_effort.or_else(|| {
@@ -371,12 +374,71 @@ pub fn convert_openai_to_claude(
     target_model: &str,
     effort: Option<ReasoningEffort>,
 ) -> ClaudeMessageRequest {
-    let mut claude_messages = Vec::new();
-    let mut system_prompt = None;
+    let mut claude_messages: Vec<ClaudeMessage> = Vec::new();
+    let mut system_parts: Vec<String> = Vec::new();
 
     for msg in &req.messages {
-        if msg.role == "system" {
-            system_prompt = Some(msg.content.clone());
+        if msg.role == "system" || msg.role == "developer" {
+            let txt = match &msg.content {
+                Value::String(s) => s.clone(),
+                Value::Array(arr) => arr
+                    .iter()
+                    .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                other => other.to_string(),
+            };
+            if !txt.trim().is_empty() {
+                system_parts.push(txt);
+            }
+        } else if msg.role == "tool" {
+            let tool_use_id = msg.tool_call_id.clone().unwrap_or_default();
+            let content_val = match &msg.content {
+                Value::String(s) => Value::String(s.clone()),
+                other => Value::String(other.to_string()),
+            };
+            let tool_res = serde_json::json!({
+                "type": "tool_result",
+                "tool_use_id": tool_use_id,
+                "content": content_val
+            });
+            if let Some(last) = claude_messages.last_mut() {
+                if last.role == "user" {
+                    if let Value::Array(ref mut arr) = last.content {
+                        arr.push(tool_res);
+                        continue;
+                    }
+                }
+            }
+            claude_messages.push(ClaudeMessage {
+                role: "user".to_string(),
+                content: Value::Array(vec![tool_res]),
+            });
+        } else if msg.role == "assistant" && msg.tool_calls.as_ref().is_some_and(|tc| !tc.is_empty()) {
+            let mut blocks: Vec<Value> = Vec::new();
+            if let Value::String(s) = &msg.content {
+                if !s.is_empty() {
+                    blocks.push(serde_json::json!({ "type": "text", "text": s }));
+                }
+            }
+            if let Some(tcs) = &msg.tool_calls {
+                for tc in tcs {
+                    let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("toolu_0");
+                    let name = tc.pointer("/function/name").and_then(|v| v.as_str()).unwrap_or("tool");
+                    let args_str = tc.pointer("/function/arguments").and_then(|v| v.as_str()).unwrap_or("{}");
+                    let input: Value = serde_json::from_str(args_str).unwrap_or_else(|_| serde_json::json!({}));
+                    blocks.push(serde_json::json!({
+                        "type": "tool_use",
+                        "id": id,
+                        "name": name,
+                        "input": input
+                    }));
+                }
+            }
+            claude_messages.push(ClaudeMessage {
+                role: "assistant".to_string(),
+                content: Value::Array(blocks),
+            });
         } else {
             claude_messages.push(ClaudeMessage {
                 role: if msg.role == "assistant" {
@@ -388,6 +450,12 @@ pub fn convert_openai_to_claude(
             });
         }
     }
+
+    let system_prompt = if system_parts.is_empty() {
+        None
+    } else {
+        Some(Value::String(system_parts.join("\n\n")))
+    };
 
     let is_thinking_capable = target_model.contains("3-7")
         || target_model.contains("claude-3-7")
@@ -442,15 +510,41 @@ pub fn convert_openai_to_claude(
 pub fn convert_claude_response_to_openai(resp: &ClaudeMessageResponse) -> OpenAIChatResponse {
     let mut full_text = String::new();
     let mut thinking_text = None;
+    let mut tool_calls: Vec<Value> = Vec::new();
 
     for block in &resp.content {
         match block {
             ClaudeContentBlock::Text { text } => full_text.push_str(text),
             ClaudeContentBlock::Thinking { thinking, .. } => {
-                thinking_text = Some(thinking.clone());
+                let entry = thinking_text.get_or_insert_with(String::new);
+                entry.push_str(thinking);
             }
+            ClaudeContentBlock::ToolUse { id, name, input } => {
+                let args_str = serde_json::to_string(input).unwrap_or_else(|_| "{}".to_string());
+                tool_calls.push(serde_json::json!({
+                    "id": id,
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": args_str
+                    }
+                }));
+            }
+            ClaudeContentBlock::Unknown => {}
         }
     }
+
+    let finish_reason = if !tool_calls.is_empty() {
+        Some("tool_calls".to_string())
+    } else {
+        match resp.stop_reason.as_deref() {
+            Some("end_turn") => Some("stop".to_string()),
+            Some("max_tokens") => Some("length".to_string()),
+            Some("tool_use") => Some("tool_calls".to_string()),
+            Some(other) => Some(other.to_string()),
+            None => Some("stop".to_string()),
+        }
+    };
 
     let cached = resp.usage.cache_read_input_tokens.unwrap_or(0);
     OpenAIChatResponse {
@@ -467,11 +561,15 @@ pub fn convert_claude_response_to_openai(resp: &ClaudeMessageResponse) -> OpenAI
                 reasoning_content: thinking_text,
                 refusal: None,
                 name: None,
-                tool_calls: None,
+                tool_calls: if tool_calls.is_empty() {
+                    None
+                } else {
+                    Some(tool_calls)
+                },
                 tool_call_id: None,
             },
             logprobs: None,
-            finish_reason: resp.stop_reason.clone().or(Some("stop".to_string())),
+            finish_reason,
         }],
         usage: Some(OpenAIUsage {
             prompt_tokens: resp.usage.input_tokens,

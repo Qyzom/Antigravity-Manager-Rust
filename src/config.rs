@@ -934,10 +934,7 @@ impl AppConfig {
                         .unwrap_or(0);
 
                     for acc in &mut cfg.accounts {
-                        if acc.added_at.is_none()
-                            || acc.added_at.unwrap_or(0) < now_ts.saturating_sub(30 * 86400)
-                            || acc.added_at.unwrap_or(0) < 1740000000
-                        {
+                        if acc.added_at.is_none() || acc.added_at.unwrap_or(0) < 1740000000 {
                             acc.added_at = Some(now_ts);
                         }
                         if acc.claude_percent > 0 || acc.tier.to_lowercase() == "pro" {
@@ -973,7 +970,13 @@ impl AppConfig {
                     }
 
                     return cfg;
+                } else {
+                    log::error!("Failed to parse config at {:?}; preserving existing file on disk", path);
+                    return Self::default();
                 }
+            } else {
+                log::error!("Failed to read config at {:?}; preserving existing file on disk", path);
+                return Self::default();
             }
         }
         let default_cfg = Self::default();
@@ -1196,7 +1199,7 @@ impl AppConfig {
                 // Find active account with greatest remaining quota percentage
                 self.accounts
                     .iter()
-                    .filter(|a| a.is_active && a.status == "Active")
+                    .filter(|a| a.is_active && a.status.eq_ignore_ascii_case("ACTIVE"))
                     .max_by_key(|a| a.claude_percent.max(a.gemini_percent))
                     .or_else(|| self.accounts.iter().find(|a| a.is_active))
             }

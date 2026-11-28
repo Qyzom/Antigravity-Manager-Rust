@@ -1,11 +1,25 @@
 use chrono::Local;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::OnceLock;
+
+fn log_file_mutex() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn run_blocking_io(task: impl FnOnce() + Send + 'static) {
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        handle.spawn_blocking(task);
+    } else {
+        task();
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogItem {
@@ -181,11 +195,14 @@ impl ProxyStats {
             max_latency_ms: self.max_latency_ms.load(Ordering::Relaxed),
         };
         let path = Self::stats_file_path();
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
         if let Ok(json) = serde_json::to_string_pretty(&s) {
-            let _ = std::fs::write(&path, json);
+            run_blocking_io(move || {
+                let _guard = log_file_mutex().lock();
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::write(&path, json);
+            });
         }
     }
 
@@ -378,19 +395,22 @@ impl ProxyStats {
 
             // Write to disk logs.jsonl with 50 MB rotation cap to prevent disk exhaustion
             let log_path = Self::logs_file_path();
-            if let Some(parent) = log_path.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            if let Ok(meta) = std::fs::metadata(&log_path) {
-                if meta.len() > 50 * 1024 * 1024 {
-                    let backup = log_path.with_extension("jsonl.old");
-                    let _ = std::fs::rename(&log_path, backup);
-                }
-            }
-            if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) {
-                if let Ok(line) = serde_json::to_string(&item) {
-                    let _ = writeln!(file, "{}", line);
-                }
+            if let Ok(line) = serde_json::to_string(&item) {
+                run_blocking_io(move || {
+                    let _guard = log_file_mutex().lock();
+                    if let Some(parent) = log_path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    if let Ok(meta) = std::fs::metadata(&log_path) {
+                        if meta.len() > 50 * 1024 * 1024 {
+                            let backup = log_path.with_extension("jsonl.old");
+                            let _ = std::fs::rename(&log_path, backup);
+                        }
+                    }
+                    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) {
+                        let _ = writeln!(file, "{}", line);
+                    }
+                });
             }
 
             // Write to in-memory ring buffer

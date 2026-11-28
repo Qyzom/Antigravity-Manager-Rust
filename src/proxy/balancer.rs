@@ -364,10 +364,7 @@ impl LoadBalancer {
         }
 
         // Immediately unbind all sessions pinned to this account so next requests failover without delay
-        {
-            let mut bindings = self.session_bindings.write();
-            bindings.retain(|_, (acc_id, _)| acc_id != account_id);
-        }
+        self.clear_session_bindings(account_id);
 
         self.failover_rotations.fetch_add(1, Ordering::Relaxed);
     }
@@ -379,6 +376,12 @@ impl LoadBalancer {
             record.last_status_code = Some(status_code);
             record.last_failure_reason = Some(reason.to_string());
         }
+    }
+
+    /// Clear all pinned sessions pointing to a specific account (e.g. on 401/403).
+    pub fn clear_session_bindings(&self, account_id: &str) {
+        let mut bindings = self.session_bindings.write();
+        bindings.retain(|_, (acc_id, _)| acc_id != account_id);
     }
 
     /// Manually or automatically reset an account from quarantine/cooldown back to Healthy
@@ -710,14 +713,19 @@ impl LoadBalancer {
 
         let account_model_pct = |a: &UpstreamAccount| -> i32 {
             if !is_virtual && !a.available_models.is_empty() {
+                let (resolved_target, _) =
+                    crate::proxy::router::resolve_model_with_effort(target_model, a, None);
+                let resolved_canon = AppConfig::canonical_catalog_id(&resolved_target);
                 if let Some(best) = a
                     .available_models
                     .iter()
                     .filter(|m| {
+                        let m_canon = AppConfig::canonical_catalog_id(&m.id);
                         !m.disabled
                             && (m.id.eq_ignore_ascii_case(target_model)
-                                || AppConfig::canonical_catalog_id(&m.id)
-                                    .eq_ignore_ascii_case(&target_canon))
+                                || m_canon.eq_ignore_ascii_case(&target_canon)
+                                || m.id.eq_ignore_ascii_case(&resolved_target)
+                                || m_canon.eq_ignore_ascii_case(&resolved_canon))
                     })
                     .map(|m| (m.remaining_fraction * 100.0).round() as i32)
                     .max()

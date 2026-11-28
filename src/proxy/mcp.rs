@@ -306,7 +306,7 @@ async fn execute_mcp_web_search(state: &AppState, payload: &Value) -> String {
     }
 }
 
-async fn execute_mcp_fetch_url(state: &AppState, url_str: &str) -> String {
+async fn execute_mcp_fetch_url(_state: &AppState, url_str: &str) -> String {
     let clean_url = url_str.trim();
     if clean_url.is_empty() {
         return "Empty URL provided.".to_string();
@@ -337,63 +337,99 @@ async fn execute_mcp_fetch_url(state: &AppState, url_str: &str) -> String {
         return format!("Invalid or unsupported URL scheme/credentials for '{}'.", target_url);
     }
 
-    let Some(host) = parsed.host_str() else {
-        return format!("URL has no host: '{}'", target_url);
-    };
-    let Some(port) = parsed.port_or_known_default() else {
-        return format!("URL has no port: '{}'", target_url);
-    };
+    let mut current_url = parsed;
+    let mut final_resp = None;
 
-    // DNS resolution & public address verification to protect against SSRF
-    let addresses: Vec<_> = match tokio::net::lookup_host((host, port)).await {
-        Ok(addrs) => addrs.collect(),
-        Err(e) => return format!("Could not resolve URL host '{}': {}", host, e),
-    };
+    for hop in 0..=5 {
+        if !matches!(current_url.scheme(), "http" | "https")
+            || !current_url.username().is_empty()
+            || current_url.password().is_some()
+        {
+            return format!(
+                "Invalid or unsupported URL scheme/credentials for '{}'.",
+                current_url
+            );
+        }
 
-    if addresses.is_empty() || addresses.iter().any(|a| !is_public_address(a.ip())) {
-        return format!("Security error: URL '{}' resolves to a private, loopback, or non-public address.", target_url);
+        let Some(host) = current_url.host_str() else {
+            return format!("URL has no host: '{}'", current_url);
+        };
+        if host.eq_ignore_ascii_case("localhost")
+            || host.ends_with(".local")
+            || host.ends_with(".internal")
+        {
+            return format!(
+                "Security error: URL '{}' targets a local/internal host.",
+                current_url
+            );
+        }
+        let Some(port) = current_url.port_or_known_default() else {
+            return format!("URL has no port: '{}'", current_url);
+        };
+
+        // Async DNS resolution + IP pinning per hop to prevent SSRF & DNS-rebinding TOCTOU
+        let addresses: Vec<_> = match tokio::net::lookup_host((host, port)).await {
+            Ok(addrs) => addrs.collect(),
+            Err(e) => return format!("Could not resolve URL host '{}': {}", host, e),
+        };
+
+        if addresses.is_empty() || addresses.iter().any(|a| !is_public_address(a.ip())) {
+            return format!(
+                "Security error: URL '{}' resolves to a private, loopback, or non-public address.",
+                current_url
+            );
+        }
+
+        let client = match reqwest::Client::builder()
+            .no_proxy()
+            .resolve_to_addrs(host, &addresses)
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(std::time::Duration::from_secs(15))
+            .build()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                return format!(
+                    "Security error: failed to initialize isolated HTTP client: {}",
+                    e
+                )
+            }
+        };
+
+        match client
+            .get(current_url.clone())
+            .header(
+                "User-Agent",
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+            )
+            .header("Accept", "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8")
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_redirection() => {
+                if hop == 5 {
+                    return format!("Error fetching '{}': Too many redirects", target_url);
+                }
+                let Some(loc) = resp.headers().get(reqwest::header::LOCATION).and_then(|v| v.to_str().ok()) else {
+                    return format!("Error fetching '{}': Redirect missing Location header", target_url);
+                };
+                current_url = match current_url.join(loc) {
+                    Ok(u) => u,
+                    Err(e) => return format!("Invalid redirect URL '{}': {}", loc, e),
+                };
+            }
+            Ok(resp) => {
+                final_resp = Some(resp);
+                break;
+            }
+            Err(e) => {
+                return format!("Failed to reach '{}': {}", target_url, e);
+            }
+        }
     }
 
-    let client = match reqwest::Client::builder()
-        .no_proxy()
-        .resolve_to_addrs(host, &addresses)
-        .redirect(reqwest::redirect::Policy::custom(|attempt| {
-            if attempt.previous().len() >= 5 {
-                return attempt.error("Too many redirects");
-            }
-            let next_url = attempt.url();
-            if !matches!(next_url.scheme(), "http" | "https") {
-                return attempt.error("Unsupported redirect scheme");
-            }
-            if let Some(h) = next_url.host_str() {
-                if let Ok(ip) = h.parse::<std::net::IpAddr>() {
-                    if !is_public_address(ip) {
-                        return attempt.error("Redirect to non-public IP rejected");
-                    }
-                } else if h.eq_ignore_ascii_case("localhost") {
-                    return attempt.error("Redirect to localhost rejected");
-                }
-            }
-            attempt.follow()
-        }))
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => state.http_client.clone(),
-    };
-
-    match client
-        .get(parsed)
-        .header(
-            "User-Agent",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-        )
-        .header("Accept", "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8")
-        .send()
-        .await
-    {
-        Ok(mut resp) => {
+    match final_resp {
+        Some(mut resp) => {
             if resp.status().is_success() {
                 const MAX_BYTES: usize = 2 * 1024 * 1024; // 2 MiB limit
                 let mut body = Vec::new();
@@ -427,7 +463,7 @@ async fn execute_mcp_fetch_url(state: &AppState, url_str: &str) -> String {
                 format!("Failed to fetch URL {}: HTTP {}", target_url, resp.status())
             }
         }
-        Err(e) => format!("Error connecting to URL {}: {}", target_url, e),
+        None => format!("Error connecting to URL {}: no response received", target_url),
     }
 }
 

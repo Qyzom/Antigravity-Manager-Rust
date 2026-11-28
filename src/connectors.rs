@@ -493,6 +493,11 @@ fn build_codex_mcp_block(config: &AppConfig) -> String {
 }
 
 fn strip_managed_block(raw: &str, start_marker: &str, end_marker: &str) -> String {
+    let start_pos = raw.lines().position(|l| l.trim() == start_marker);
+    let end_pos = raw.lines().position(|l| l.trim() == end_marker);
+    if !matches!((start_pos, end_pos), (Some(s), Some(e)) if s < e) {
+        return raw.to_string();
+    }
     let mut out = String::new();
     let mut inside = false;
     for line in raw.lines() {

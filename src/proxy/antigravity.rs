@@ -30,15 +30,17 @@ pub fn record_thought_signature(call_id: &str, tool_name: &str, sig: &str) {
         return;
     }
     let mut cache = get_signature_cache().write();
-    while cache.order.len() >= 1000 {
-        if let Some(oldest) = cache.order.pop_front() {
-            cache.by_call_id.remove(&oldest);
-            cache.call_id_to_name.remove(&oldest);
-        } else {
-            break;
+    if !cache.by_call_id.contains_key(call_id) {
+        while cache.order.len() >= 1000 {
+            if let Some(oldest) = cache.order.pop_front() {
+                cache.by_call_id.remove(&oldest);
+                cache.call_id_to_name.remove(&oldest);
+            } else {
+                break;
+            }
         }
+        cache.order.push_back(call_id.to_string());
     }
-    cache.order.push_back(call_id.to_string());
     cache.by_call_id.insert(call_id.to_string(), sig.to_string());
     if !tool_name.is_empty() {
         cache.call_id_to_name.insert(call_id.to_string(), tool_name.to_string());
@@ -391,8 +393,33 @@ fn url_encode(input: &str) -> String {
     encoded
 }
 
+static OAUTH_STATES: OnceLock<parking_lot::Mutex<std::collections::VecDeque<String>>> = OnceLock::new();
+
+pub fn generate_oauth_state() -> String {
+    let state = uuid::Uuid::new_v4().simple().to_string();
+    let q = OAUTH_STATES.get_or_init(|| parking_lot::Mutex::new(std::collections::VecDeque::new()));
+    let mut guard = q.lock();
+    while guard.len() >= 32 {
+        guard.pop_front();
+    }
+    guard.push_back(state.clone());
+    state
+}
+
+pub fn consume_oauth_state(state: &str) -> bool {
+    let q = OAUTH_STATES.get_or_init(|| parking_lot::Mutex::new(std::collections::VecDeque::new()));
+    let mut guard = q.lock();
+    if let Some(pos) = guard.iter().position(|s| s == state) {
+        guard.remove(pos);
+        true
+    } else {
+        false
+    }
+}
+
 pub fn get_oauth_authorization_url(port: u16) -> String {
     let redirect_uri = format!("http://127.0.0.1:{}/oauth/callback", port);
+    let state = generate_oauth_state();
     let scopes = [
         "openid",
         "https://www.googleapis.com/auth/cloud-platform",
@@ -405,11 +432,12 @@ pub fn get_oauth_authorization_url(port: u16) -> String {
     .join(" ");
 
     format!(
-        "{}?client_id={}&redirect_uri={}&response_type=code&scope={}&access_type=offline&prompt=consent",
+        "{}?client_id={}&redirect_uri={}&response_type=code&scope={}&state={}&access_type=offline&prompt=consent",
         GOOGLE_AUTH_URL,
         get_google_client_id(),
         url_encode(&redirect_uri),
-        url_encode(&scopes)
+        url_encode(&scopes),
+        url_encode(&state)
     )
 }
 
@@ -451,6 +479,14 @@ pub async fn refresh_token(
     client: &reqwest::Client,
     refresh_token: &str,
 ) -> Result<GoogleTokenResponse, String> {
+    refresh_token_with_ua(client, refresh_token, None).await
+}
+
+pub async fn refresh_token_with_ua(
+    client: &reqwest::Client,
+    refresh_token: &str,
+    user_agent_override: Option<&str>,
+) -> Result<GoogleTokenResponse, String> {
     let cid = get_google_client_id();
     let csec = get_google_client_secret();
     let params = [
@@ -460,7 +496,9 @@ pub async fn refresh_token(
         ("grant_type", "refresh_token"),
     ];
 
-    let ua = get_official_hub_user_agent();
+    let ua = user_agent_override
+        .map(|s| s.to_string())
+        .unwrap_or_else(get_official_hub_user_agent);
     let resp = client
         .post(GOOGLE_TOKEN_URL)
         .header("User-Agent", &ua)
@@ -1521,6 +1559,11 @@ pub fn build_antigravity_payload_with_meta(
             if current_max <= budget {
                 gen_config["maxOutputTokens"] = serde_json::json!(budget + 1024);
             }
+            if upstream_model.contains("claude") {
+                if let Some(obj) = gen_config.as_object_mut() {
+                    obj.remove("temperature");
+                }
+            }
         }
     }
 
@@ -1898,6 +1941,11 @@ pub fn build_antigravity_payload_from_claude_with_meta(
             if current_max <= budget {
                 gen_config["maxOutputTokens"] = serde_json::json!(budget + 1024);
             }
+            if upstream_model.contains("claude") {
+                if let Some(obj) = gen_config.as_object_mut() {
+                    obj.remove("temperature");
+                }
+            }
         }
     }
 
@@ -1997,9 +2045,14 @@ pub fn convert_antigravity_response_to_claude(raw: &Value, model: &str) -> Value
     let actual = raw.get("response").unwrap_or(raw);
     let mut text_parts = String::new();
     let mut thinking_parts = String::new();
+    let mut tool_use_blocks: Vec<Value> = Vec::new();
+    let mut finish_reason_raw: Option<&str> = None;
 
     if let Some(candidates) = actual.get("candidates").and_then(|c| c.as_array()) {
         for candidate in candidates {
+            if let Some(fr) = candidate.get("finishReason").and_then(|f| f.as_str()) {
+                finish_reason_raw = Some(fr);
+            }
             if let Some(parts) = candidate
                 .get("content")
                 .and_then(|c| c.get("parts"))
@@ -2010,7 +2063,30 @@ pub fn convert_antigravity_response_to_claude(raw: &Value, model: &str) -> Value
                         .get("thought")
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false);
-                    if let Some(txt) = part.get("text").and_then(|t| t.as_str()) {
+                    if let Some(fc) = part.get("functionCall") {
+                        let name = fc.get("name").and_then(|n| n.as_str()).unwrap_or("tool");
+                        let args_val = fc.get("args").cloned().unwrap_or(serde_json::json!({}));
+                        let call_id = fc
+                            .get("id")
+                            .and_then(|i| i.as_str())
+                            .map(|s| s.to_string())
+                            .unwrap_or_else(|| format!("toolu_{}", uuid::Uuid::new_v4().simple()));
+                        if let Some(sig) = part
+                            .get("thoughtSignature")
+                            .or_else(|| part.get("thought_signature"))
+                            .or_else(|| candidate.get("thoughtSignature"))
+                            .or_else(|| candidate.get("thought_signature"))
+                            .and_then(|s| s.as_str())
+                        {
+                            record_thought_signature(&call_id, name, sig);
+                        }
+                        tool_use_blocks.push(serde_json::json!({
+                            "type": "tool_use",
+                            "id": call_id,
+                            "name": name,
+                            "input": args_val
+                        }));
+                    } else if let Some(txt) = part.get("text").and_then(|t| t.as_str()) {
                         if is_thought {
                             thinking_parts.push_str(txt);
                         } else {
@@ -2037,10 +2113,21 @@ pub fn convert_antigravity_response_to_claude(raw: &Value, model: &str) -> Value
             "thinking": thinking_parts
         }));
     }
-    content_blocks.push(serde_json::json!({
-        "type": "text",
-        "text": text_parts
-    }));
+    if !text_parts.is_empty() || tool_use_blocks.is_empty() {
+        content_blocks.push(serde_json::json!({
+            "type": "text",
+            "text": text_parts
+        }));
+    }
+    content_blocks.extend(tool_use_blocks.iter().cloned());
+
+    let stop_reason = if !tool_use_blocks.is_empty() {
+        "tool_use"
+    } else if finish_reason_raw == Some("MAX_TOKENS") {
+        "max_tokens"
+    } else {
+        "end_turn"
+    };
 
     let mut prompt_tok = 50;
     let mut cand_tok = 150;
@@ -2071,7 +2158,7 @@ pub fn convert_antigravity_response_to_claude(raw: &Value, model: &str) -> Value
         "role": "assistant",
         "content": content_blocks,
         "model": model,
-        "stop_reason": "end_turn",
+        "stop_reason": stop_reason,
         "stop_sequence": null,
         "usage": usage_obj
     })

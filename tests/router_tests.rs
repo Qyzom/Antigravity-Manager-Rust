@@ -1273,11 +1273,21 @@ mod tests {
             proxy_clients,
         };
 
+        let master_key = config.read().master_api_key.clone();
         let app = create_proxy_router(state);
+
+        // 0. Unauthenticated request is rejected with 401
+        let req_unauth = Request::builder()
+            .uri("/v1/dashboard/billing/subscription")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let resp_unauth = app.clone().oneshot(req_unauth).await.unwrap();
+        assert_eq!(resp_unauth.status(), StatusCode::UNAUTHORIZED);
 
         // 1. Subscription query
         let req_sub = Request::builder()
             .uri("/v1/dashboard/billing/subscription")
+            .header("authorization", format!("Bearer {}", master_key))
             .body(axum::body::Body::empty())
             .unwrap();
         let resp_sub = app.clone().oneshot(req_sub).await.unwrap();
@@ -1286,6 +1296,7 @@ mod tests {
         // 2. Usage query
         let req_usage = Request::builder()
             .uri("/v1/dashboard/billing/usage")
+            .header("authorization", format!("Bearer {}", master_key))
             .body(axum::body::Body::empty())
             .unwrap();
         let resp_usage = app.clone().oneshot(req_usage).await.unwrap();
@@ -1295,6 +1306,7 @@ mod tests {
         config.write().enable_billing_emulation = false;
         let req_off = Request::builder()
             .uri("/v1/dashboard/billing/subscription")
+            .header("authorization", format!("Bearer {}", master_key))
             .body(axum::body::Body::empty())
             .unwrap();
         let resp_off = app.oneshot(req_off).await.unwrap();
@@ -2273,5 +2285,79 @@ mod tests {
         let q = format!("{}", RoutingError::ClaudeQuotaExhausted { reset: "in 2h 15m".into() });
         let formatted_q = format_amr_error_message(&q, StatusCode::TOO_MANY_REQUESTS, "en", true);
         assert!(formatted_q.contains("in 2h 15m"));
+    }
+
+    #[test]
+    fn test_claude_tool_use_response_conversion() {
+        use amr::proxy::antigravity::convert_antigravity_response_to_claude;
+
+        let raw = serde_json::json!({
+            "response": {
+                "candidates": [{
+                    "content": {
+                        "parts": [{
+                            "functionCall": {
+                                "id": "call_123",
+                                "name": "read_file",
+                                "args": { "path": "Cargo.toml" }
+                            },
+                            "thoughtSignature": "sig_abc"
+                        }]
+                    },
+                    "finishReason": "STOP"
+                }],
+                "usageMetadata": {
+                    "promptTokenCount": 42,
+                    "candidatesTokenCount": 18
+                }
+            }
+        });
+
+        let claude_resp = convert_antigravity_response_to_claude(&raw, "claude-sonnet-4-6");
+        assert_eq!(claude_resp["stop_reason"], "tool_use");
+        let content = claude_resp["content"].as_array().unwrap();
+        assert_eq!(content.len(), 1);
+        assert_eq!(content[0]["type"], "tool_use");
+        assert_eq!(content[0]["id"], "call_123");
+        assert_eq!(content[0]["name"], "read_file");
+        assert_eq!(content[0]["input"]["path"], "Cargo.toml");
+    }
+
+    #[tokio::test]
+    async fn test_sse_stream_preserves_split_multibyte_utf8() {
+        use amr::proxy::stream::process_antigravity_to_openai_stream;
+        use bytes::Bytes;
+        use futures_util::StreamExt;
+
+        let sse_payload = concat!(
+            "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Привет 🚀 мир\"}]},\"finishReason\":\"STOP\"}]}\n\n",
+            "data: [DONE]\n\n"
+        );
+        let raw_bytes = sse_payload.as_bytes();
+        // Split right in the middle of the 4-byte emoji '🚀'
+        let rocket_pos = sse_payload.find('🚀').unwrap();
+        let split_at = rocket_pos + 2;
+
+        let chunk1 = Ok::<Bytes, reqwest::Error>(Bytes::copy_from_slice(&raw_bytes[..split_at]));
+        let chunk2 = Ok::<Bytes, reqwest::Error>(Bytes::copy_from_slice(&raw_bytes[split_at..]));
+        let upstream = Box::pin(futures_util::stream::iter(vec![chunk1, chunk2]));
+
+        let mut out_stream = Box::pin(process_antigravity_to_openai_stream(
+            upstream,
+            "chatcmpl-test".to_string(),
+            "gemini-3.8-flash-medium".to_string(),
+            None,
+        ));
+
+        let mut collected = String::new();
+        while let Some(item) = out_stream.next().await {
+            let b = item.unwrap();
+            collected.push_str(&String::from_utf8_lossy(&b));
+        }
+        assert!(
+            collected.contains("Привет ") && collected.contains("🚀 мир"),
+            "Expected intact UTF-8 in stream output, got: {}",
+            collected
+        );
     }
 }

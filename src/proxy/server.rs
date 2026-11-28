@@ -33,34 +33,104 @@ impl AppState {
         &self,
         account: &crate::config::UpstreamAccount,
     ) -> reqwest::Client {
-        if let Some(ref p_url) = account.proxy_url {
-            let p_trim = p_url.trim();
-            if !p_trim.is_empty() {
-                {
-                    let r = self.proxy_clients.read();
-                    if let Some(c) = r.get(p_trim) {
-                        return c.clone();
-                    }
-                }
-                if let Ok(proxy) = reqwest::Proxy::all(p_trim) {
-                    if let Ok(c) = reqwest::Client::builder()
-                        .proxy(proxy)
-                        .tcp_nodelay(true)
-                        .tcp_keepalive(Some(std::time::Duration::from_secs(30)))
-                        .pool_idle_timeout(Some(std::time::Duration::from_secs(90)))
-                        .pool_max_idle_per_host(32)
-                        .timeout(std::time::Duration::from_secs(120))
-                        .build()
-                    {
-                        let mut w = self.proxy_clients.write();
-                        w.insert(p_trim.to_string(), c.clone());
-                        return c;
-                    }
-                }
+        let p_trim = account.proxy_url.as_deref().unwrap_or("").trim();
+        let cache_key = format!("{}|{}", account.id, p_trim);
+        {
+            let r = self.proxy_clients.read();
+            if let Some(c) = r.get(&cache_key) {
+                return c.clone();
             }
+        }
+        let mut builder = reqwest::Client::builder()
+            .tcp_nodelay(true)
+            .tcp_keepalive(Some(std::time::Duration::from_secs(30)))
+            .pool_idle_timeout(Some(std::time::Duration::from_secs(90)))
+            .pool_max_idle_per_host(32)
+            .timeout(std::time::Duration::from_secs(120));
+
+        if !p_trim.is_empty() {
+            if let Ok(proxy) = reqwest::Proxy::all(p_trim) {
+                builder = builder.proxy(proxy);
+            }
+        }
+
+        if let Ok(c) = builder.build() {
+            let mut w = self.proxy_clients.write();
+            if w.len() >= 64 {
+                w.clear();
+            }
+            w.insert(cache_key, c.clone());
+            return c;
         }
         self.http_client.clone()
     }
+}
+
+fn refresh_singleflight_lock(account_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+    static LOCKS: std::sync::OnceLock<
+        parking_lot::Mutex<std::collections::HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    > = std::sync::OnceLock::new();
+    let map = LOCKS.get_or_init(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
+    let mut guard = map.lock();
+    guard
+        .entry(account_id.to_string())
+        .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+        .clone()
+}
+
+pub(crate) async fn refresh_account_token_and_save(
+    state: &AppState,
+    account: &crate::config::UpstreamAccount,
+) -> Option<String> {
+    let lock = refresh_singleflight_lock(&account.id);
+    let _singleflight = lock.lock().await;
+
+    // Check if another concurrent task already refreshed the token while we waited
+    {
+        let cfg = state.config.read();
+        if let Some(current) = cfg.accounts.iter().find(|a| a.id == account.id) {
+            if !current.api_key.is_empty() && current.api_key != account.api_key {
+                return Some(current.api_key.clone());
+            }
+        }
+    }
+
+    let rt = account.refresh_token.as_deref()?;
+    let client = state.get_client_for_account(account);
+    let ua = {
+        let cfg = state.config.read();
+        crate::proxy::antigravity::get_official_hub_user_agent_with_meta(
+            Some(cfg.resolved_platform()),
+            Some(&cfg.spoof_ide_version),
+            Some(&cfg.spoof_arch),
+        )
+    };
+    let tok_res = crate::proxy::antigravity::refresh_token_with_ua(&client, rt, Some(&ua))
+        .await
+        .ok()?;
+    let fresh_token = tok_res.access_token;
+    {
+        let mut cfg = state.config.write();
+        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
+            acc.api_key = fresh_token.clone();
+            if tok_res.refresh_token.is_some() {
+                acc.refresh_token = tok_res.refresh_token;
+            }
+            acc.status = "ACTIVE".to_string();
+            acc.error_message = None;
+        }
+    }
+    let config_arc = state.config.clone();
+    tokio::task::spawn_blocking(move || {
+        static SAVE_LOCK: std::sync::OnceLock<parking_lot::Mutex<()>> = std::sync::OnceLock::new();
+        let _save_guard = SAVE_LOCK.get_or_init(|| parking_lot::Mutex::new(())).lock();
+        let snapshot = config_arc.read().clone();
+        let _ = snapshot.save();
+    });
+    state
+        .cfg_version
+        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    Some(fresh_token)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -162,6 +232,102 @@ pub fn build_upstream_headers_json(
     )
 }
 
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+async fn require_master_api_key(
+    State(state): State<AppState>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let path = req.uri().path();
+    if req.method() == axum::http::Method::OPTIONS
+        || path == "/health"
+        || path == "/health/"
+        || path == "/oauth/callback"
+    {
+        return next.run(req).await;
+    }
+
+    let expected_key = state.config.read().master_api_key.trim().to_string();
+    if expected_key.is_empty() {
+        return next.run(req).await;
+    }
+
+    let headers = req.headers();
+    let mut provided_key: Option<&str> = None;
+
+    if let Some(auth) = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()) {
+        let trimmed = auth.trim();
+        if let Some(bearer) = trimmed.strip_prefix("Bearer ").or_else(|| trimmed.strip_prefix("bearer ")) {
+            provided_key = Some(bearer.trim());
+        }
+    }
+    if provided_key.is_none() {
+        if let Some(k) = headers.get("x-api-key").and_then(|v| v.to_str().ok()) {
+            provided_key = Some(k.trim());
+        }
+    }
+    if provided_key.is_none() {
+        if let Some(k) = headers.get("x-goog-api-key").and_then(|v| v.to_str().ok()) {
+            provided_key = Some(k.trim());
+        }
+    }
+
+    let query_key = if provided_key.is_none() {
+        req.uri().query().and_then(|q| {
+            q.split('&')
+                .filter_map(|pair| pair.split_once('='))
+                .find(|(k, _)| *k == "key")
+                .map(|(_, v)| v.to_string())
+        })
+    } else {
+        None
+    };
+
+    let candidate = provided_key.or(query_key.as_deref());
+    if let Some(k) = candidate {
+        if constant_time_eq(k.as_bytes(), expected_key.as_bytes()) {
+            return next.run(req).await;
+        }
+    }
+
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(json!({
+            "error": {
+                "message": "Invalid or missing AMR Master API Key.",
+                "type": "authentication_error",
+                "code": "invalid_api_key"
+            }
+        })),
+    )
+        .into_response()
+}
+
+fn is_allowed_local_origin(origin: &str) -> bool {
+    const EXACT_PREFIXES: &[&str] = &[
+        "http://localhost",
+        "https://localhost",
+        "http://127.0.0.1",
+        "https://127.0.0.1",
+        "http://[::1]",
+        "https://[::1]",
+        "tauri://localhost",
+    ];
+    EXACT_PREFIXES.iter().any(|&p| {
+        origin == p || origin.strip_prefix(p).is_some_and(|rest| rest.starts_with(':'))
+    })
+}
+
 pub fn create_proxy_router(state: AppState) -> Router {
     Router::new()
         .route("/health", get(health_check))
@@ -215,17 +381,72 @@ pub fn create_proxy_router(state: AppState) -> Router {
         .route("/usage", get(billing_usage))
         .route("/usage/", get(billing_usage))
         .route("/oauth/callback", get(oauth_callback))
-        .layer(CorsLayer::permissive())
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            require_master_api_key,
+        ))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(tower_http::cors::AllowOrigin::predicate(|origin, _| {
+                    is_allowed_local_origin(origin.to_str().unwrap_or(""))
+                }))
+                .allow_methods(tower_http::cors::Any)
+                .allow_headers(tower_http::cors::Any),
+        )
         .layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024))
         .with_state(state)
+}
+
+fn escape_html(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for c in input.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#x27;"),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 async fn oauth_callback(
     State(state): State<AppState>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> impl IntoResponse {
+) -> Response {
     let port = state.config.read().port;
     let redirect_uri = format!("http://127.0.0.1:{}/oauth/callback", port);
+
+    let Some(oauth_state) = params.get("state").filter(|s| !s.trim().is_empty()) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            axum::response::Html(
+                "<!DOCTYPE html><html><body style='background:#09090b;color:#f87171;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh'><h2>OAuth Error: missing state parameter</h2></body></html>".to_string()
+            ),
+        )
+            .into_response();
+    };
+    if !crate::proxy::antigravity::consume_oauth_state(oauth_state) {
+        return (
+            StatusCode::BAD_REQUEST,
+            axum::response::Html(
+                "<!DOCTYPE html><html><body style='background:#09090b;color:#f87171;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh'><h2>OAuth Error: invalid or expired state</h2></body></html>".to_string()
+            ),
+        )
+            .into_response();
+    }
+
+    let Some(code) = params.get("code").filter(|c| !c.trim().is_empty()) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            axum::response::Html(
+                "<!DOCTYPE html><html><body style='background:#09090b;color:#f87171;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh'><h2>OAuth Error: missing authorization code</h2></body></html>".to_string()
+            ),
+        )
+            .into_response();
+    };
 
     let (
         access_token,
@@ -239,112 +460,63 @@ async fn oauth_callback(
         models,
         detailed_quota,
         project_id_opt,
-    ) = if let Some(code) = params.get("code") {
-        match crate::proxy::antigravity::exchange_code(&state.http_client, code, &redirect_uri)
-            .await
-        {
-            Ok(token_resp) => {
-                let acc_token = token_resp.access_token;
-                let ref_token = token_resp.refresh_token;
-                let email = token_resp
-                    .id_token
-                    .as_deref()
-                    .and_then(crate::proxy::antigravity::extract_email_from_jwt)
-                    .unwrap_or_else(|| {
-                        futures_util::FutureExt::now_or_never(
-                            crate::proxy::antigravity::fetch_user_info(
-                                &state.http_client,
-                                &acc_token,
-                            ),
-                        )
-                        .and_then(|r| r.ok())
-                        .map(|i| i.email)
-                        .unwrap_or_else(|| "antigravity.user@gmail.com".to_string())
-                    });
-                let (project_id, tier) = crate::proxy::antigravity::fetch_project_and_tier(
+    ) = match crate::proxy::antigravity::exchange_code(&state.http_client, code, &redirect_uri).await
+    {
+        Ok(token_resp) => {
+            let acc_token = token_resp.access_token;
+            let ref_token = token_resp.refresh_token;
+            let email = match token_resp
+                .id_token
+                .as_deref()
+                .and_then(crate::proxy::antigravity::extract_email_from_jwt)
+            {
+                Some(e) => e,
+                None => crate::proxy::antigravity::fetch_user_info(
                     &state.http_client,
                     &acc_token,
                 )
-                .await;
-                let (acc_models, models, used, limit, reset, det) =
-                    match crate::proxy::antigravity::fetch_account_models_and_quota(
-                        &state.http_client,
-                        &acc_token,
-                        project_id.as_deref(),
-                    )
-                    .await
-                    {
-                        Ok(res) => (res.0, Some(res.1), res.2, res.3, res.4, res.5),
-                        Err(_) => {
-                            let det = crate::proxy::antigravity::fetch_user_quota_summary(
-                                &state.http_client,
-                                &acc_token,
-                            )
-                            .await;
-                            (Vec::new(), None, 0, 100_000, "in 4h 00m".to_string(), det)
-                        }
-                    };
-                (
-                    acc_token, ref_token, email, tier, used, limit, reset, acc_models, models, det, project_id,
+                .await
+                .map(|i| i.email)
+                .unwrap_or_else(|_| "antigravity.user@gmail.com".to_string()),
+            };
+            let (project_id, tier) = crate::proxy::antigravity::fetch_project_and_tier(
+                &state.http_client,
+                &acc_token,
+            )
+            .await;
+            let (acc_models, models, used, limit, reset, det) =
+                match crate::proxy::antigravity::fetch_account_models_and_quota(
+                    &state.http_client,
+                    &acc_token,
+                    project_id.as_deref(),
                 )
-            }
-            Err(e) => {
-                log::warn!("OAuth exchange error: {}", e);
-                let raw_token = params
-                    .get("token")
-                    .cloned()
-                    .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
-                let det = crate::proxy::antigravity::DetailedQuotaInfo {
-                    claude_percent: 100,
-                    claude_reset: "in 4h 00m".to_string(),
-                    claude_weekly_percent: 100,
-                    claude_weekly_reset: "in 7d 00h".to_string(),
-                    gemini_percent: 100,
-                    gemini_reset: "in 4h 00m".to_string(),
-                    gemini_weekly_percent: 100,
-                    gemini_weekly_reset: "in 7d 00h".to_string(),
+                .await
+                {
+                    Ok(res) => (res.0, Some(res.1), res.2, res.3, res.4, res.5),
+                    Err(_) => {
+                        let det = crate::proxy::antigravity::fetch_user_quota_summary(
+                            &state.http_client,
+                            &acc_token,
+                        )
+                        .await;
+                        (Vec::new(), None, 0, 100_000, "in 4h 00m".to_string(), det)
+                    }
                 };
-                (
-                    raw_token,
-                    None,
-                    "antigravity.user@gmail.com".to_string(),
-                    "PRO".to_string(),
-                    0,
-                    100_000,
-                    "in 4h 00m".to_string(),
-                    Vec::new(),
-                    None,
-                    det,
-                    None,
-                )
-            }
+            (
+                acc_token, ref_token, email, tier, used, limit, reset, acc_models, models, det, project_id,
+            )
         }
-    } else {
-        let raw_token = params
-            .get("token")
-            .or_else(|| params.get("access_token"))
-            .cloned()
-            .unwrap_or_else(|| uuid::Uuid::new_v4().simple().to_string());
-        let email = params
-            .get("email")
-            .cloned()
-            .unwrap_or_else(|| "antigravity.user@gmail.com".to_string());
-        let det =
-            crate::proxy::antigravity::fetch_user_quota_summary(&state.http_client, &raw_token)
-                .await;
-        (
-            raw_token,
-            None,
-            email,
-            "PRO".to_string(),
-            0,
-            100_000,
-            "in 4h 00m".to_string(),
-            Vec::new(),
-            None,
-            det,
-            None,
-        )
+        Err(e) => {
+            log::warn!("OAuth exchange error: {}", e);
+            return (
+                StatusCode::BAD_GATEWAY,
+                axum::response::Html(format!(
+                    "<!DOCTYPE html><html><body style='background:#09090b;color:#f87171;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh'><h2>OAuth exchange failed</h2><p>{}</p></body></html>",
+                    escape_html(&e)
+                )),
+            )
+                .into_response();
+        }
     };
 
     // Add or update account in config
@@ -450,10 +622,11 @@ async fn oauth_callback(
         </body>
         </html>
     "#,
-        email,
-        tier,
+        escape_html(&email),
+        escape_html(&tier),
         env!("CARGO_PKG_VERSION")
     ))
+    .into_response()
 }
 
 async fn health_check() -> impl IntoResponse {
@@ -825,30 +998,8 @@ async fn gemini_content(
                     } else if (s == StatusCode::UNAUTHORIZED || s == StatusCode::FORBIDDEN)
                         && account.refresh_token.is_some()
                     {
-                        if let Some(ref rt) = account.refresh_token {
-                            if let Ok(tok_res) =
-                                crate::proxy::antigravity::refresh_token(&state.http_client, rt)
-                                    .await
-                            {
-                                let fresh = tok_res.access_token;
-                                req_token = fresh.clone();
-                                {
-                                    let mut cfg = state.config.write();
-                                    if let Some(acc) =
-                                        cfg.accounts.iter_mut().find(|a| a.id == account.id)
-                                    {
-                                        acc.api_key = fresh.clone();
-                                        if tok_res.refresh_token.is_some() {
-                                            acc.refresh_token = tok_res.refresh_token;
-                                        }
-                                        acc.status = "ACTIVE".to_string();
-                                        acc.error_message = None;
-                                    }
-                                    let _ = cfg.save();
-                                }
-                                state
-                                    .cfg_version
-                                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        if let Some(fresh) = refresh_account_token_and_save(&state, &account).await {
+                            req_token = fresh;
 
                                 let retry_headers = if use_stream_endpoint {
                                     build_upstream_headers(
@@ -914,7 +1065,6 @@ async fn gemini_content(
                                     }
                                 }
                             }
-                        }
                     } else {
                         let err_body = res.text().await.unwrap_or_default();
                         last_status = s;
@@ -1414,32 +1564,12 @@ async fn execute_chat_request(
             status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
 
         // If auth error occurred and account has a refresh token, automatically refresh on the fly and retry!
-        if is_auth_error {
-            if let Some(ref rt) = account.refresh_token {
-                log::info!(
-                    "Upstream token expired for {}, attempting automatic refresh",
-                    account.name
-                );
-                if let Ok(tok_res) =
-                    crate::proxy::antigravity::refresh_token(&state.http_client, rt).await
-                {
-                    let fresh_token = tok_res.access_token;
-                    {
-                        let mut cfg = state.config.write();
-                        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
-                            acc.api_key = fresh_token.clone();
-                            if tok_res.refresh_token.is_some() {
-                                acc.refresh_token = tok_res.refresh_token;
-                            }
-                            acc.status = "ACTIVE".to_string();
-                            acc.error_message = None;
-                        }
-                        let _ = cfg.save();
-                    }
-                    state
-                        .cfg_version
-                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
+        if is_auth_error && account.refresh_token.is_some() {
+            log::info!(
+                "Upstream token expired for {}, attempting automatic refresh",
+                account.name
+            );
+            if let Some(fresh_token) = refresh_account_token_and_save(state, account).await {
                     for endpoint_url in endpoints {
                         let retry_headers = if use_non_stream_generate {
                             build_upstream_headers_json(
@@ -1490,7 +1620,6 @@ async fn execute_chat_request(
                             }
                         }
                     }
-                }
             }
         }
 
@@ -1535,6 +1664,7 @@ async fn execute_chat_request(
                     }
                 }
             } else if is_auth_error {
+                state.balancer.clear_session_bindings(&account.id);
                 state.balancer.update_failure_reason(
                     &account.id,
                     status.as_u16(),
@@ -1846,8 +1976,8 @@ async fn execute_chat_request(
         apply_fingerprint(&mut req_headers, &account.fingerprint);
 
         let upstream_url = format!("{}/v1/messages", account.base_url.trim_end_matches('/'));
-        let res = match state
-            .http_client
+        let client = state.get_client_for_account(account);
+        let res = match client
             .post(&upstream_url)
             .headers(req_headers)
             .json(&claude_req)
@@ -1910,6 +2040,7 @@ async fn execute_chat_request(
                     &format!("HTTP 429: {}", error_msg),
                 );
             } else if is_auth_error {
+                state.balancer.clear_session_bindings(&account.id);
                 state.balancer.update_failure_reason(
                     &account.id,
                     status.as_u16(),
@@ -2095,8 +2226,8 @@ async fn execute_chat_request(
             "{}/v1/chat/completions",
             account.base_url.trim_end_matches('/')
         );
-        let res = match state
-            .http_client
+        let client = state.get_client_for_account(account);
+        let res = match client
             .post(&upstream_url)
             .headers(req_headers)
             .json(&forward_payload)
@@ -2551,32 +2682,12 @@ async fn execute_claude_request(
         let mut is_auth_error =
             status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
 
-        if is_auth_error {
-            if let Some(ref rt) = account.refresh_token {
-                log::info!(
-                    "Claude token expired for {}, attempting automatic refresh",
-                    account.name
-                );
-                if let Ok(tok_res) =
-                    crate::proxy::antigravity::refresh_token(&state.http_client, rt).await
-                {
-                    let fresh_token = tok_res.access_token;
-                    {
-                        let mut cfg = state.config.write();
-                        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == account.id) {
-                            acc.api_key = fresh_token.clone();
-                            if tok_res.refresh_token.is_some() {
-                                acc.refresh_token = tok_res.refresh_token;
-                            }
-                            acc.status = "ACTIVE".to_string();
-                            acc.error_message = None;
-                        }
-                        let _ = cfg.save();
-                    }
-                    state
-                        .cfg_version
-                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
+        if is_auth_error && account.refresh_token.is_some() {
+            log::info!(
+                "Claude token expired for {}, attempting automatic refresh",
+                account.name
+            );
+            if let Some(fresh_token) = refresh_account_token_and_save(state, account).await {
                     for endpoint_url in endpoints {
                         let retry_headers = if use_non_stream_generate {
                             build_upstream_headers_json(
@@ -2627,7 +2738,6 @@ async fn execute_claude_request(
                             }
                         }
                     }
-                }
             }
         }
 
@@ -2672,6 +2782,7 @@ async fn execute_claude_request(
                     }
                 }
             } else if is_auth_error {
+                state.balancer.clear_session_bindings(&account.id);
                 state.balancer.update_failure_reason(
                     &account.id,
                     status.as_u16(),
@@ -2946,8 +3057,8 @@ async fn execute_claude_request(
         apply_fingerprint(&mut req_headers, &account.fingerprint);
 
         let upstream_url = format!("{}/v1/messages", account.base_url.trim_end_matches('/'));
-        let res = match state
-            .http_client
+        let client = state.get_client_for_account(account);
+        let res = match client
             .post(&upstream_url)
             .headers(req_headers)
             .json(payload)
@@ -3268,19 +3379,7 @@ pub async fn run_diagnostic_check(state: &AppState, model_id: &str) -> (u16, u64
                     state.balancer.record_success(&account.id);
                     return (status, latency, "OK: Model is responsive and healthy".to_string());
                 } else if (status == 401 || status == 403) && account.refresh_token.is_some() {
-                    if let Some(ref rt) = account.refresh_token {
-                        if let Ok(tok_res) = crate::proxy::antigravity::refresh_token(&state.http_client, rt).await {
-                            let fresh_token = tok_res.access_token;
-                            {
-                                let mut cfg_w = state.config.write();
-                                if let Some(acc) = cfg_w.accounts.iter_mut().find(|a| a.id == account.id) {
-                                    acc.api_key = fresh_token.clone();
-                                    if tok_res.refresh_token.is_some() {
-                                        acc.refresh_token = tok_res.refresh_token.clone();
-                                    }
-                                }
-                                let _ = cfg_w.save();
-                            }
+                    if let Some(fresh_token) = refresh_account_token_and_save(state, &account).await {
                             account.api_key = fresh_token;
                             let retry_headers = if is_chat {
                                 build_upstream_headers(
@@ -3321,7 +3420,6 @@ pub async fn run_diagnostic_check(state: &AppState, model_id: &str) -> (u16, u64
                                 }
                             }
                         }
-                    }
                     return (status, latency, format!("Upstream HTTP {}: Authentication failed", status));
                 } else {
                     let err_text = resp.text().await.unwrap_or_default();
