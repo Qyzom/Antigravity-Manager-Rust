@@ -44,17 +44,29 @@ fn refresh_connectors_ui(ui: &MainWindow, config: &AppConfig) {
             "cline" => t.conn_cline_desc.clone(),
             _ => String::new(),
         };
-        let status = amr::connectors::check_connector_status(desc.id, config);
-        let (status_text, status_kind) = match status {
-            amr::connectors::ConnectorSyncStatus::Synced => (t.conn_status_synced.clone(), "synced"),
-            amr::connectors::ConnectorSyncStatus::Outdated => {
-                (t.conn_status_outdated.clone(), "outdated")
-            }
-            amr::connectors::ConnectorSyncStatus::NotSynced => {
-                (t.conn_status_not_synced.clone(), "not_synced")
-            }
-            amr::connectors::ConnectorSyncStatus::Error(e) => {
-                (format!("{}: {}", t.conn_status_error, e), "error")
+        let (status_text, status_kind) = if !enabled {
+            (t.conn_status_not_synced.clone(), "not_synced")
+        } else {
+            let status = match amr::connectors::check_connector_status(desc.id, config) {
+                amr::connectors::ConnectorSyncStatus::Outdated => {
+                    match amr::connectors::sync_connector(desc.id, config, true) {
+                        Ok(()) => amr::connectors::ConnectorSyncStatus::Synced,
+                        Err(e) => amr::connectors::ConnectorSyncStatus::Error(e),
+                    }
+                }
+                other => other,
+            };
+            match status {
+                amr::connectors::ConnectorSyncStatus::Synced => (t.conn_status_synced.clone(), "synced"),
+                amr::connectors::ConnectorSyncStatus::Outdated => {
+                    (t.conn_status_outdated.clone(), "outdated")
+                }
+                amr::connectors::ConnectorSyncStatus::NotSynced => {
+                    (t.conn_status_not_synced.clone(), "not_synced")
+                }
+                amr::connectors::ConnectorSyncStatus::Error(e) => {
+                    (format!("{}: {}", t.conn_status_error, e), "error")
+                }
             }
         };
         items.push(ConnectorItemData {
@@ -972,7 +984,102 @@ fn capture_and_save_screenshots(target_dir: &str) -> Result<(), Box<dyn std::err
     ];
     main_window.set_accounts(Rc::new(VecModel::from(accounts)).into());
 
-    let models = get_display_models(&AppConfig::default());
+    main_window.set_master_api_key("sk-amr-v110-demo-master-key-98765432".into());
+    main_window.set_master_key_visible(false);
+
+    let models = vec![
+        ModelItemData {
+            id: "claude-opus-4-6-thinking".into(),
+            display_name: "Claude Opus 4.6 (Thinking)".into(),
+            provider: "anthropic".into(),
+            tier: "PRO".into(),
+            is_enabled: true,
+            supports_thinking: true,
+            modality: "chat".into(),
+            availability_status: "ACTIVE".into(),
+            quota_percent: 100,
+            notice: "".into(),
+            available_accounts_count: 2,
+        },
+        ModelItemData {
+            id: "claude-sonnet-4-6-thinking".into(),
+            display_name: "Claude Sonnet 4.6 (Thinking)".into(),
+            provider: "anthropic".into(),
+            tier: "PRO".into(),
+            is_enabled: true,
+            supports_thinking: true,
+            modality: "chat".into(),
+            availability_status: "ACTIVE".into(),
+            quota_percent: 100,
+            notice: "".into(),
+            available_accounts_count: 2,
+        },
+        ModelItemData {
+            id: "claude-haiku-4-5".into(),
+            display_name: "Claude Haiku 4.5".into(),
+            provider: "anthropic".into(),
+            tier: "FREE".into(),
+            is_enabled: true,
+            supports_thinking: false,
+            modality: "chat".into(),
+            availability_status: "ACTIVE".into(),
+            quota_percent: 100,
+            notice: "".into(),
+            available_accounts_count: 2,
+        },
+        ModelItemData {
+            id: "gemini-3.8-pro".into(),
+            display_name: "Gemini 3.8 Pro".into(),
+            provider: "google".into(),
+            tier: "PRO".into(),
+            is_enabled: true,
+            supports_thinking: true,
+            modality: "chat".into(),
+            availability_status: "ACTIVE".into(),
+            quota_percent: 91,
+            notice: "".into(),
+            available_accounts_count: 2,
+        },
+        ModelItemData {
+            id: "gemini-3.8-flash".into(),
+            display_name: "Gemini 3.8 Flash".into(),
+            provider: "google".into(),
+            tier: "FREE".into(),
+            is_enabled: true,
+            supports_thinking: true,
+            modality: "chat".into(),
+            availability_status: "ACTIVE".into(),
+            quota_percent: 91,
+            notice: "".into(),
+            available_accounts_count: 2,
+        },
+        ModelItemData {
+            id: "gemini-3.5-transcribe".into(),
+            display_name: "Gemini 3.5 Transcribe (STT)".into(),
+            provider: "google".into(),
+            tier: "FREE".into(),
+            is_enabled: true,
+            supports_thinking: false,
+            modality: "audio".into(),
+            availability_status: "ACTIVE".into(),
+            quota_percent: 91,
+            notice: "".into(),
+            available_accounts_count: 2,
+        },
+        ModelItemData {
+            id: "web-search".into(),
+            display_name: "Google Web Search Grounding".into(),
+            provider: "google".into(),
+            tier: "FREE".into(),
+            is_enabled: true,
+            supports_thinking: false,
+            modality: "search".into(),
+            availability_status: "ACTIVE".into(),
+            quota_percent: 100,
+            notice: "".into(),
+            available_accounts_count: 2,
+        },
+    ];
     main_window.set_models(Rc::new(VecModel::from(models)).into());
 
     let logs = vec![
@@ -1019,8 +1126,57 @@ fn capture_and_save_screenshots(target_dir: &str) -> Result<(), Box<dyn std::err
     ];
     main_window.set_log_entries(Rc::new(VecModel::from(logs)).into());
 
-    // Stats tab metrics (zeros when no live stats)
-    refresh_connectors_ui(&main_window, &AppConfig::default());
+    let t = get_translations(Language::En);
+    let demo_connectors: Vec<ConnectorItemData> = amr::connectors::CONNECTORS
+        .iter()
+        .map(|desc| {
+            let enabled = matches!(
+                desc.id,
+                "opencode_api" | "opencode_mcp" | "claude_code_api" | "claude_code_mcp"
+            );
+            let path_str = match desc.id {
+                "opencode_api" | "opencode_mcp" => "~/.config/opencode/opencode.json",
+                "claude_code_api" => "~/.claude/settings.json",
+                "claude_code_mcp" => "~/.claude.json",
+                "codex_api" | "codex_mcp" => "~/.codex/config.toml",
+                "gemini_cli_api" | "gemini_cli_mcp" => "~/.gemini/settings.json",
+                "deepseek_harness" => "~/.deepseek/config.json",
+                "cursor" => "~/.cursor/mcp.json",
+                "cline" => "~/.cline/mcp_settings.json",
+                _ => "-",
+            };
+            let description = match desc.id {
+                "opencode_api" => t.conn_opencode_desc.clone(),
+                "opencode_mcp" => format!("MCP ({}) -> opencode.json", desc.category),
+                "claude_code_api" => t.conn_claude_code_desc.clone(),
+                "claude_code_mcp" => format!("MCP ({}) -> ~/.claude.json", desc.category),
+                "codex_api" => t.conn_codex_desc.clone(),
+                "codex_mcp" => format!("MCP ({}) -> config.toml", desc.category),
+                "gemini_cli_api" => t.conn_gemini_cli_desc.clone(),
+                "gemini_cli_mcp" => format!("MCP ({}) -> settings.json", desc.category),
+                "deepseek_harness" => t.conn_deepseek_harness_desc.clone(),
+                "cursor" => t.conn_cursor_desc.clone(),
+                "cline" => t.conn_cline_desc.clone(),
+                _ => String::new(),
+            };
+            let (status_text, status_kind) = if enabled {
+                (t.conn_status_synced.clone(), "synced")
+            } else {
+                (t.conn_status_not_synced.clone(), "not_synced")
+            };
+            ConnectorItemData {
+                id: desc.id.into(),
+                name: desc.name.into(),
+                category: desc.category.into(),
+                description: description.into(),
+                config_path: path_str.into(),
+                enabled,
+                status_text: status_text.into(),
+                status_kind: status_kind.into(),
+            }
+        })
+        .collect();
+    main_window.set_connectors_list(ModelRc::new(VecModel::from(demo_connectors)));
 
     main_window.set_stat_prompt_tokens("42,840".into());
     main_window.set_stat_completion_tokens("18,410".into());

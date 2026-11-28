@@ -1897,25 +1897,27 @@ export component MainWindow inherits Window {
                                         spacing: 6px;
                                         LineEdit {
                                             horizontal-stretch: 1;
+                                            height: 28px;
+                                            font-size: 11px;
                                             text: root.master_api_key;
                                             input-type: root.master_key_visible ? InputType.text : InputType.password;
                                         }
                                         ActionButton {
                                             text: root.master_key_visible ? root.i18n.btn_hide_key : root.i18n.btn_show_key;
                                             is_primary: false;
-                                            custom_height: 26px;
+                                            custom_height: 28px;
                                             clicked => { root.master_key_visible = !root.master_key_visible; }
                                         }
                                         ActionButton {
                                             text: root.master_key_status_text != "" ? root.master_key_status_text : root.i18n.btn_copy_key;
                                             is_primary: true;
-                                            custom_height: 26px;
+                                            custom_height: 28px;
                                             clicked => { root.copy_master_key(); }
                                         }
                                         ActionButton {
                                             text: root.i18n.btn_regenerate_key;
                                             is_danger: true;
-                                            custom_height: 26px;
+                                            custom_height: 28px;
                                             clicked => { root.regenerate_master_key(); }
                                         }
                                     }
