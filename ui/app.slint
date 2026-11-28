@@ -3608,22 +3608,6 @@ export component MainWindow inherits Window {
                     if root.active_tab == 8: VerticalLayout {
                         spacing: 12px;
 
-                        VerticalLayout {
-                            spacing: 4px;
-                            Text {
-                                text: root.i18n.connectors_title;
-                                font-size: 16px;
-                                font-weight: 700;
-                                color: #ffffff;
-                            }
-                            Text {
-                                text: root.i18n.connectors_subtitle;
-                                font-size: 11px;
-                                color: #71717a;
-                                wrap: word-wrap;
-                            }
-                        }
-
                         for conn in root.connectors_list: Rectangle {
                             background: conn.enabled ? #141916 : #141418;
                             border-radius: 10px;

@@ -275,7 +275,9 @@ async fn sync_account_quota_and_models(
         configured_ua_for_config(&cfg)
     };
 
-    if ensure_project_id && pid.is_none() {
+    if ensure_project_id
+        && (pid.is_none() || pid.as_deref() == Some("aicode-consumers"))
+    {
         let (pid_opt, tier) =
             antigravity::fetch_project_and_tier_with_ua(&client, &token, Some(&ua)).await;
         if pid_opt.is_some() {
@@ -313,6 +315,22 @@ async fn sync_account_quota_and_models(
                     }
                     let _ = cfg.save();
                 }
+                if ensure_project_id
+                    && (pid.is_none() || pid.as_deref() == Some("aicode-consumers"))
+                {
+                    let (pid_opt, tier) =
+                        antigravity::fetch_project_and_tier_with_ua(&client, &token, Some(&ua))
+                            .await;
+                    if pid_opt.is_some() {
+                        pid = pid_opt.clone();
+                        let mut cfg = app_state.config.write();
+                        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == acc_id) {
+                            acc.project_id = pid_opt;
+                            acc.tier = tier;
+                        }
+                        let _ = cfg.save();
+                    }
+                }
                 quota_res = antigravity::fetch_account_models_and_quota_with_ua(
                     &client,
                     &token,
@@ -342,7 +360,11 @@ async fn sync_account_quota_and_models(
                     acc.gemini_weekly_percent = detailed_quota.gemini_weekly_percent;
                     acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
                     acc.error_message = None;
-                    acc.status = "ACTIVE".to_string();
+                    acc.status = if acc.is_active {
+                        "ACTIVE".to_string()
+                    } else {
+                        "DISABLED".to_string()
+                    };
                     if detailed_quota.claude_percent > 0 {
                         acc.tier = "PRO".to_string();
                     }
@@ -3511,8 +3533,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         cfg.accounts.iter().filter(|a| a.is_active).count() as i32,
                     );
                     drop(cfg);
+                    let w_conn_sync = w_timer.clone();
                     tokio::task::spawn_blocking(move || {
                         amr::connectors::sync_all_enabled(&cfg_for_sync);
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(w_ui) = w_conn_sync.upgrade() {
+                                refresh_connectors_ui(&w_ui, &cfg_for_sync);
+                            }
+                        });
                     });
                 }
 

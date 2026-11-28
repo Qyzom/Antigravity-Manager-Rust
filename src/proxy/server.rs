@@ -1021,18 +1021,20 @@ async fn gemini_content(
                         }
                         break;
                     } else if s == StatusCode::UNAUTHORIZED || s == StatusCode::FORBIDDEN {
-                        let mut skip_refresh = false;
+                        state.balancer.clear_probing(&account.id);
+                        let mut pre_err_body: Option<String> = None;
                         if s == StatusCode::FORBIDDEN {
                             let err_body = res.text().await.unwrap_or_default();
                             if is_non_retryable_auth_block(s, &err_body) {
-                                skip_refresh = true;
                                 last_status = s;
                                 last_err = format!("HTTP {}: {}", s.as_u16(), err_body);
                                 hit_auth = true;
                                 state.balancer.clear_session_bindings(&account.id);
+                                break;
                             }
+                            pre_err_body = Some(err_body);
                         }
-                        if !skip_refresh && account.refresh_token.is_some() {
+                        if account.refresh_token.is_some() {
                             if let Some(fresh) = refresh_account_token_and_save(&state, &account).await {
                                 req_token = fresh;
 
@@ -1098,16 +1100,31 @@ async fn gemini_content(
                                     {
                                         hit_auth = true;
                                         state.balancer.clear_session_bindings(&account.id);
+                                        break;
                                     }
                                 }
+                            } else {
+                                last_status = s;
+                                last_err = match pre_err_body {
+                                    Some(b) if !b.is_empty() => format!("HTTP {}: {}", s.as_u16(), b),
+                                    _ => format!("HTTP {}: Authentication failed (token refresh failed)", s.as_u16()),
+                                };
+                                hit_auth = true;
+                                state.balancer.clear_session_bindings(&account.id);
+                                break;
                             }
-                        } else if !skip_refresh {
+                        } else {
                             last_status = s;
-                            last_err = format!("HTTP {}: Authentication failed", s.as_u16());
+                            last_err = match pre_err_body {
+                                Some(b) if !b.is_empty() => format!("HTTP {}: {}", s.as_u16(), b),
+                                _ => format!("HTTP {}: Authentication failed", s.as_u16()),
+                            };
                             hit_auth = true;
                             state.balancer.clear_session_bindings(&account.id);
+                            break;
                         }
                     } else {
+                        state.balancer.clear_probing(&account.id);
                         let err_body = res.text().await.unwrap_or_default();
                         last_status = s;
                         last_err = format!("HTTP {}: {}", s.as_u16(), err_body);
@@ -1117,6 +1134,7 @@ async fn gemini_content(
                     }
                 }
                 Err(e) => {
+                    state.balancer.clear_probing(&account.id);
                     last_err = format!("Network error: {}", e);
                 }
             }
@@ -2193,6 +2211,7 @@ async fn execute_chat_request(
         }
 
         if is_streaming {
+            state.balancer.record_success(&account.id);
             let stream_id = format!("chatcmpl-{}", uuid::Uuid::new_v4().simple());
             let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
             let log_ctx = StreamLoggingContext {

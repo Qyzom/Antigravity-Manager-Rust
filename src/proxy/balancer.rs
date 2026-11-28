@@ -382,6 +382,11 @@ impl LoadBalancer {
         }
     }
 
+    /// Release a single-probe reservation when a trial probe finishes with a non-429/non-5xx error (e.g. network/401/403/400).
+    pub fn clear_probing(&self, account_id: &str) {
+        self.probing_in_flight.write().remove(account_id);
+    }
+
     /// Clear all pinned sessions pointing to a specific account (e.g. on 401/403).
     pub fn clear_session_bindings(&self, account_id: &str) {
         let mut bindings = self.session_bindings.write();
@@ -779,21 +784,21 @@ impl LoadBalancer {
             healthy_accounts
         };
 
-        // 3. Routing strategy overrides (e.g. strict Failover)
-        if config.routing_strategy == RoutingStrategy::Failover {
-            if let Some(active_id) = &config.active_account_id {
-                if let Some(acc) = pool.iter().find(|a| &a.id == active_id) {
-                    return Ok(acc.clone());
-                }
-            }
-            return pool.first().cloned().ok_or(RoutingError::NoAccounts);
-        }
-
-        // 4. Cache Affinity Evaluation
+        // 3. Unified selection across Failover, Cache Affinity, and Fallback so single-probe & pin rules apply consistently
         let ttl_secs = config.session_sticky_ttl_secs;
         let mode = config.cache_affinity_mode;
+        let mut chosen_acc: Option<UpstreamAccount> = None;
+        let mut skip_pin_update = false;
 
-        if let Some(sid) = session_id {
+        if config.routing_strategy == RoutingStrategy::Failover {
+            if let Some(active_id) = &config.active_account_id {
+                chosen_acc = pool.iter().find(|a| &a.id == active_id).cloned();
+            }
+            if chosen_acc.is_none() {
+                chosen_acc = pool.first().cloned();
+            }
+            skip_pin_update = true;
+        } else if let Some(sid) = session_id {
             // Check existing session pin
             let existing_pin = {
                 let bindings = self.session_bindings.read();
@@ -805,22 +810,17 @@ impl LoadBalancer {
 
                 if elapsed_secs < ttl_secs {
                     if let Some(bound_acc) = pool.iter().find(|a| a.id == bound_id) {
-                        // Account is alive and eligible. Now check mode rules:
                         let bound_rem = account_model_pct(bound_acc).max(0) as u64;
 
                         match mode {
                             CacheAffinityMode::CacheFirst => {
-                                // Strictly stick to the same account as long as it has remaining quota
                                 if bound_rem > 0 {
                                     self.cache_hits.fetch_add(1, Ordering::Relaxed);
-                                    let mut bindings = self.session_bindings.write();
-                                    bindings.insert(sid.to_string(), (bound_id, now));
-                                    return Ok(bound_acc.clone());
+                                    chosen_acc = Some(bound_acc.clone());
                                 }
                             }
                             CacheAffinityMode::Balanced => {
                                 if bound_rem > 0 {
-                                    // Sticky to session, but check if another account has significantly higher quota
                                     let max_other_rem = pool
                                         .iter()
                                         .filter(|a| a.id != bound_id)
@@ -830,20 +830,14 @@ impl LoadBalancer {
 
                                     let delta = max_other_rem.saturating_sub(bound_rem);
                                     if (delta as u32) < config.quota_imbalance_threshold {
-                                        // Within threshold: stick to account to maximize prompt caching!
                                         self.cache_hits.fetch_add(1, Ordering::Relaxed);
-                                        let mut bindings = self.session_bindings.write();
-                                        bindings.insert(sid.to_string(), (bound_id, now));
-                                        return Ok(bound_acc.clone());
+                                        chosen_acc = Some(bound_acc.clone());
                                     } else {
-                                        // Imbalance exceeded: smoothly rotate to level out quota
                                         self.failover_rotations.fetch_add(1, Ordering::Relaxed);
                                     }
                                 }
                             }
-                            CacheAffinityMode::AggressiveSpread => {
-                                // Do not stick: level out on every request
-                            }
+                            CacheAffinityMode::AggressiveSpread => {}
                         }
                     }
                 }
@@ -851,31 +845,59 @@ impl LoadBalancer {
         }
 
         // 5. Fallback selection when no pin exists or pin was rotated
-        let chosen_acc = match config.routing_strategy {
-            RoutingStrategy::RoundRobin => {
-                let idx = (self.rr_counter.fetch_add(1, Ordering::Relaxed) as usize) % pool.len();
-                pool[idx].clone()
-            }
-            RoutingStrategy::QuotaAware | RoutingStrategy::Failover => {
-                // Select account with maximum remaining percentage for this model/family
-                pool.into_iter()
+        let chosen_acc = match chosen_acc {
+            Some(acc) => acc,
+            None => match config.routing_strategy {
+                RoutingStrategy::RoundRobin => {
+                    let idx = (self.rr_counter.fetch_add(1, Ordering::Relaxed) as usize) % pool.len();
+                    pool[idx].clone()
+                }
+                RoutingStrategy::QuotaAware | RoutingStrategy::Failover => pool
+                    .iter()
                     .max_by_key(|a| account_model_pct(a))
-                    .ok_or(RoutingError::NoAccounts)?
-            }
+                    .cloned()
+                    .ok_or(RoutingError::NoAccounts)?,
+            },
         };
 
-        // Mark probing slot if this account is under trial probe
-        if probing_ids.contains(&chosen_acc.id) {
-            self.probing_in_flight
-                .write()
-                .insert(chosen_acc.id.clone(), now);
-        }
+        // Atomically claim single-probe slot if this account is under trial probe (prevents TOCTOU race)
+        let chosen_acc = if probing_ids.contains(&chosen_acc.id) {
+            let mut in_flight = self.probing_in_flight.write();
+            let already_taken = in_flight
+                .get(&chosen_acc.id)
+                .is_some_and(|t| now.duration_since(*t).as_secs() < 30);
+            if already_taken {
+                if let Some(alt) = pool.into_iter().find(|a| {
+                    a.id != chosen_acc.id
+                        && (!probing_ids.contains(&a.id)
+                            || !in_flight
+                                .get(&a.id)
+                                .is_some_and(|t| now.duration_since(*t).as_secs() < 30))
+                }) {
+                    if probing_ids.contains(&alt.id) {
+                        in_flight.insert(alt.id.clone(), now);
+                    }
+                    alt
+                } else {
+                    return Err(RoutingError::AllCoolingDown {
+                        retry_after_secs: 1,
+                    });
+                }
+            } else {
+                in_flight.insert(chosen_acc.id.clone(), now);
+                chosen_acc
+            }
+        } else {
+            chosen_acc
+        };
 
         // Pin session to chosen account if session_id is present and not AggressiveSpread
-        if let Some(sid) = session_id {
-            if mode != CacheAffinityMode::AggressiveSpread {
-                let mut bindings = self.session_bindings.write();
-                bindings.insert(sid.to_string(), (chosen_acc.id.clone(), now));
+        if !skip_pin_update {
+            if let Some(sid) = session_id {
+                if mode != CacheAffinityMode::AggressiveSpread {
+                    let mut bindings = self.session_bindings.write();
+                    bindings.insert(sid.to_string(), (chosen_acc.id.clone(), now));
+                }
             }
         }
 

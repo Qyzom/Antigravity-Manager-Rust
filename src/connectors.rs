@@ -215,6 +215,7 @@ fn atomic_write(path: &Path, content: &[u8]) -> Result<(), String> {
 }
 
 fn strip_jsonc(input: &str) -> String {
+    let input = input.trim_start_matches('\u{FEFF}');
     let mut out = String::with_capacity(input.len());
     let chars: Vec<char> = input.chars().collect();
     let mut i = 0;

@@ -896,8 +896,9 @@ pub async fn fetch_account_models_and_quota_with_ua(
     let ua = user_agent_override
         .map(|s| s.to_string())
         .unwrap_or_else(get_official_hub_user_agent);
+    let mut last_err_detail = "Could not fetch models from upstream Antigravity endpoints".to_string();
     for endpoint in FETCH_MODELS_ENDPOINTS {
-        if let Ok(resp) = client
+        match client
             .post(endpoint)
             .header("User-Agent", &ua)
             .bearer_auth(access_token)
@@ -905,8 +906,10 @@ pub async fn fetch_account_models_and_quota_with_ua(
             .send()
             .await
         {
-            if resp.status().is_success() {
-                if let Ok(data) = resp.json::<FetchModelsResponse>().await {
+            Ok(resp) => {
+                let status = resp.status();
+                if status.is_success() {
+                    if let Ok(data) = resp.json::<FetchModelsResponse>().await {
                     let mut recommended_order: HashMap<String, usize> = HashMap::new();
                     let mut idx = 0usize;
                     for sort in &data.agent_model_sorts {
@@ -1085,11 +1088,18 @@ pub async fn fetch_account_models_and_quota_with_ua(
                         ));
                     }
                 }
+                } else {
+                    let body = resp.text().await.unwrap_or_default();
+                    last_err_detail = format!("Upstream HTTP {}: {}", status.as_u16(), extract_clean_error_message(&body));
+                }
+            }
+            Err(e) => {
+                last_err_detail = format!("Network error fetching models: {}", e);
             }
         }
     }
 
-    Err("Could not fetch models from upstream Antigravity endpoints".to_string())
+    Err(last_err_detail)
 }
 
 pub const WEB_SEARCH_SYSTEM_INSTRUCTION: &str = "You are a search engine bot. You will be given a query from a user. Your task is to search the web for relevant information that will help the user. You MUST perform a web search. Do not respond or interact with the user, please respond as if they typed the query into a search bar.";

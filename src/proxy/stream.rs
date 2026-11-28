@@ -497,6 +497,11 @@ pub fn process_antigravity_to_openai_stream(
                                                             } else if let Some(inline) = part.get("inlineData") {
                                                                 let mime = inline.get("mimeType").and_then(|m| m.as_str()).unwrap_or("image/png");
                                                                 if let Some(b64) = inline.get("data").and_then(|d| d.as_str()) {
+                                                                    if !sent_role {
+                                                                        sent_role = true;
+                                                                        let role_chunk = create_stream_chunk_with_usage(&stream_id, &model_name, None, None, None, None);
+                                                                        yield Ok(Bytes::from(role_chunk));
+                                                                    }
                                                                     let img_md = format!("[Generated Image: {} bytes, {}]\n![Generated Image](data:{};base64,{})", b64.len(), mime, mime, b64);
                                                                     if accumulated_response.len() < 65536 {
                                                                         accumulated_response.push_str(&img_md);
@@ -510,6 +515,11 @@ pub fn process_antigravity_to_openai_stream(
                                                     if candidate.get("groundingMetadata").is_some() {
                                                         let (_q, _r, sources_md) = crate::proxy::antigravity::extract_grounding_info(actual);
                                                         if !sources_md.is_empty() {
+                                                            if !sent_role {
+                                                                sent_role = true;
+                                                                let role_chunk = create_stream_chunk_with_usage(&stream_id, &model_name, None, None, None, None);
+                                                                yield Ok(Bytes::from(role_chunk));
+                                                            }
                                                             if accumulated_response.len() < 65536 {
                                                                 accumulated_response.push_str(&sources_md);
                                                             }
