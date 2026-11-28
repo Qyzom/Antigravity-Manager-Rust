@@ -172,7 +172,10 @@ pub fn active_chat_models(config: &AppConfig) -> Vec<(String, String)> {
         .models
         .iter()
         .filter(|m| m.is_enabled && !m.id.is_empty() && !is_non_chat_model(&m.id))
-        .filter(|m| !config.hide_unavailable_models || !is_model_unavailable(m))
+        .filter(|m| {
+            !config.hide_unavailable_models
+                || (m.availability_status != "disabled" && m.available_accounts_count > 0)
+        })
         .map(|m| {
             let name = if m.display_name.trim().is_empty() {
                 m.id.clone()
@@ -330,10 +333,34 @@ fn build_opencode_amr_provider(config: &AppConfig) -> Value {
         let mut model_obj = Map::new();
         model_obj.insert("name".to_string(), Value::String(display_name));
 
-        let supports_thinking = config
-            .models
-            .iter()
-            .find(|m| m.id == id)
+        let catalog_item = config.models.iter().find(|m| m.id == id);
+        let (ctx_limit, out_limit) = match catalog_item {
+            Some(m) => {
+                let ctx = if m.max_tokens > 0 {
+                    m.max_tokens
+                } else if id.contains("gemini") {
+                    1_048_576
+                } else {
+                    200_000
+                };
+                let out = if m.max_output_tokens > 0 {
+                    m.max_output_tokens
+                } else {
+                    65_536
+                };
+                (ctx, out)
+            }
+            None => (
+                if id.contains("gemini") { 1_048_576 } else { 200_000 },
+                65_536,
+            ),
+        };
+        let mut limit_obj = Map::new();
+        limit_obj.insert("context".to_string(), Value::Number(ctx_limit.into()));
+        limit_obj.insert("output".to_string(), Value::Number(out_limit.into()));
+        model_obj.insert("limit".to_string(), Value::Object(limit_obj));
+
+        let supports_thinking = catalog_item
             .map(|m| m.supports_thinking)
             .unwrap_or(false);
         if supports_thinking {

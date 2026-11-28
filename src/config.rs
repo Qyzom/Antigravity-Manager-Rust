@@ -729,7 +729,7 @@ impl AppConfig {
                 if am.is_internal || am.id.starts_with("chat_") || am.id.starts_with("tab_") {
                     continue;
                 }
-                if has_curated && !am.is_recommended_agent && am.modality != "image" {
+                if has_curated && !am.is_recommended_agent && !am.recommended && am.modality != "image" {
                     continue;
                 }
                 let (base, _) = Self::strip_effort_suffix(&am.id);
@@ -764,7 +764,7 @@ impl AppConfig {
                 if am.is_internal || am.id.starts_with("chat_") || am.id.starts_with("tab_") {
                     continue;
                 }
-                if has_curated && !am.is_recommended_agent && am.modality != "image" {
+                if has_curated && !am.is_recommended_agent && !am.recommended && am.modality != "image" {
                     continue;
                 }
 
