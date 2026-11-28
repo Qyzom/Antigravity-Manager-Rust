@@ -127,12 +127,12 @@ jobs:
           arch: x64
 
       - name: Build AMR x86_64
-        shell: bash
+        shell: pwsh
         run: |
-          set -o pipefail
-          cargo build --release --target x86_64-pc-windows-msvc --bin amr 2>&1 | tee win_x64.log || {
-            tail -n 120 win_x64.log > win_x64_err.txt
-            exit 1
+          cargo build --release --target x86_64-pc-windows-msvc --bin amr 2>&1 | Tee-Object -FilePath win_x64.log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content win_x64.log -Tail 120 | Out-File -FilePath win_x64_err.txt -Encoding utf8
+            exit $LASTEXITCODE
           }
 
       - name: Setup MSVC ARM64 environment
