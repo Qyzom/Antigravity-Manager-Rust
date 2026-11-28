@@ -442,8 +442,6 @@ pub struct AppConfig {
     #[serde(default)]
     pub default_agent_model: Option<String>,
     #[serde(default)]
-    pub image_generation_models: Vec<String>,
-    #[serde(default)]
     pub web_search_models: Vec<String>,
     #[serde(default)]
     pub enabled_connectors: Vec<String>,
@@ -581,7 +579,6 @@ impl Default for AppConfig {
             active_account_id: None,
             models: Vec::new(),
             default_agent_model: None,
-            image_generation_models: Vec::new(),
             web_search_models: Vec::new(),
             enabled_connectors: Vec::new(),
             default_reasoning_mode: default_reasoning_mode_val(),

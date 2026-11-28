@@ -369,6 +369,7 @@ pub fn process_antigravity_to_openai_stream(
         let mut accumulated_reasoning = String::new();
         let mut tool_call_index: usize = 0;
         let mut has_emitted_tools: bool = false;
+        let mut sent_role: bool = false;
 
         loop {
             tokio::select! {
@@ -453,10 +454,20 @@ pub fn process_antigravity_to_openai_stream(
                                                                 tool_call_index += 1;
                                                                 has_emitted_tools = true;
 
+                                                                if !sent_role {
+                                                                    sent_role = true;
+                                                                    let role_chunk = create_stream_chunk_with_usage(&stream_id, &model_name, None, None, None, None);
+                                                                    yield Ok(Bytes::from(role_chunk));
+                                                                }
                                                                 let chunk = create_stream_tool_chunk(&stream_id, &model_name, vec![tool_call_obj]);
                                                                 yield Ok(Bytes::from(chunk));
                                                             } else if let Some(txt) = part.get("text").and_then(|t| t.as_str()) {
                                                                 if !txt.is_empty() {
+                                                                    if !sent_role {
+                                                                        sent_role = true;
+                                                                        let role_chunk = create_stream_chunk_with_usage(&stream_id, &model_name, None, None, None, None);
+                                                                        yield Ok(Bytes::from(role_chunk));
+                                                                    }
                                                                     if is_thought {
                                                                         if accumulated_reasoning.len() < 65536 {
                                                                             accumulated_reasoning.push_str(txt);
@@ -610,7 +621,7 @@ pub fn process_antigravity_to_claude_stream(
         let mut active_block: Option<&'static str> = None;
         let mut block_index: usize = 0;
         let mut total_output_tokens: u64 = 0;
-        let mut total_input_tokens: u64 = 50;
+        let mut total_input_tokens: u64 = resolve_input_tokens(0, &log_ctx);
         let mut total_cached_tokens: u64 = 0;
         let mut accumulated_response = String::new();
         let mut has_emitted_tools = false;

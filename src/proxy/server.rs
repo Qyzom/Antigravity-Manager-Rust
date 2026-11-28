@@ -78,6 +78,27 @@ fn refresh_singleflight_lock(account_id: &str) -> Arc<tokio::sync::Mutex<()>> {
         .clone()
 }
 
+fn configured_hub_user_agent(state: &AppState) -> String {
+    let cfg = state.config.read();
+    crate::proxy::antigravity::get_official_hub_user_agent_with_meta(
+        Some(cfg.resolved_platform()),
+        Some(&cfg.spoof_ide_version),
+        Some(&cfg.spoof_arch),
+    )
+}
+
+fn is_non_retryable_auth_block(status: StatusCode, body: &str) -> bool {
+    if status != StatusCode::FORBIDDEN {
+        return false;
+    }
+    let upper = body.to_uppercase();
+    upper.contains("VALIDATION_REQUIRED")
+        || upper.contains("SUBSCRIPTION_REQUIRED")
+        || upper.contains("ACCOUNT_DISABLED")
+        || upper.contains("PERMISSION_DENIED")
+        || upper.contains("TOS_VIOLATION")
+}
+
 pub(crate) async fn refresh_account_token_and_save(
     state: &AppState,
     account: &crate::config::UpstreamAccount,
@@ -97,14 +118,7 @@ pub(crate) async fn refresh_account_token_and_save(
 
     let rt = account.refresh_token.as_deref()?;
     let client = state.get_client_for_account(account);
-    let ua = {
-        let cfg = state.config.read();
-        crate::proxy::antigravity::get_official_hub_user_agent_with_meta(
-            Some(cfg.resolved_platform()),
-            Some(&cfg.spoof_ide_version),
-            Some(&cfg.spoof_arch),
-        )
-    };
+    let ua = configured_hub_user_agent(state);
     let tok_res = crate::proxy::antigravity::refresh_token_with_ua(&client, rt, Some(&ua))
         .await
         .ok()?;
@@ -448,6 +462,7 @@ async fn oauth_callback(
             .into_response();
     };
 
+    let ua = configured_hub_user_agent(&state);
     let (
         access_token,
         refresh_token_opt,
@@ -460,7 +475,13 @@ async fn oauth_callback(
         models,
         detailed_quota,
         project_id_opt,
-    ) = match crate::proxy::antigravity::exchange_code(&state.http_client, code, &redirect_uri).await
+    ) = match crate::proxy::antigravity::exchange_code_with_ua(
+        &state.http_client,
+        code,
+        &redirect_uri,
+        Some(&ua),
+    )
+    .await
     {
         Ok(token_resp) => {
             let acc_token = token_resp.access_token;
@@ -471,32 +492,36 @@ async fn oauth_callback(
                 .and_then(crate::proxy::antigravity::extract_email_from_jwt)
             {
                 Some(e) => e,
-                None => crate::proxy::antigravity::fetch_user_info(
+                None => crate::proxy::antigravity::fetch_user_info_with_ua(
                     &state.http_client,
                     &acc_token,
+                    Some(&ua),
                 )
                 .await
                 .map(|i| i.email)
                 .unwrap_or_else(|_| "antigravity.user@gmail.com".to_string()),
             };
-            let (project_id, tier) = crate::proxy::antigravity::fetch_project_and_tier(
+            let (project_id, tier) = crate::proxy::antigravity::fetch_project_and_tier_with_ua(
                 &state.http_client,
                 &acc_token,
+                Some(&ua),
             )
             .await;
             let (acc_models, models, used, limit, reset, det) =
-                match crate::proxy::antigravity::fetch_account_models_and_quota(
+                match crate::proxy::antigravity::fetch_account_models_and_quota_with_ua(
                     &state.http_client,
                     &acc_token,
                     project_id.as_deref(),
+                    Some(&ua),
                 )
                 .await
                 {
                     Ok(res) => (res.0, Some(res.1), res.2, res.3, res.4, res.5),
                     Err(_) => {
-                        let det = crate::proxy::antigravity::fetch_user_quota_summary(
+                        let det = crate::proxy::antigravity::fetch_user_quota_summary_with_ua(
                             &state.http_client,
                             &acc_token,
+                            Some(&ua),
                         )
                         .await;
                         (Vec::new(), None, 0, 100_000, "in 4h 00m".to_string(), det)
@@ -995,11 +1020,21 @@ async fn gemini_content(
                             }
                         }
                         break;
-                    } else if (s == StatusCode::UNAUTHORIZED || s == StatusCode::FORBIDDEN)
-                        && account.refresh_token.is_some()
-                    {
-                        if let Some(fresh) = refresh_account_token_and_save(&state, &account).await {
-                            req_token = fresh;
+                    } else if s == StatusCode::UNAUTHORIZED || s == StatusCode::FORBIDDEN {
+                        let mut skip_refresh = false;
+                        if s == StatusCode::FORBIDDEN {
+                            let err_body = res.text().await.unwrap_or_default();
+                            if is_non_retryable_auth_block(s, &err_body) {
+                                skip_refresh = true;
+                                last_status = s;
+                                last_err = format!("HTTP {}: {}", s.as_u16(), err_body);
+                                hit_auth = true;
+                                state.balancer.clear_session_bindings(&account.id);
+                            }
+                        }
+                        if !skip_refresh && account.refresh_token.is_some() {
+                            if let Some(fresh) = refresh_account_token_and_save(&state, &account).await {
+                                req_token = fresh;
 
                                 let retry_headers = if use_stream_endpoint {
                                     build_upstream_headers(
@@ -1062,9 +1097,16 @@ async fn gemini_content(
                                         || rs == StatusCode::FORBIDDEN
                                     {
                                         hit_auth = true;
+                                        state.balancer.clear_session_bindings(&account.id);
                                     }
                                 }
                             }
+                        } else if !skip_refresh {
+                            last_status = s;
+                            last_err = format!("HTTP {}: Authentication failed", s.as_u16());
+                            hit_auth = true;
+                            state.balancer.clear_session_bindings(&account.id);
+                        }
                     } else {
                         let err_body = res.text().await.unwrap_or_default();
                         last_status = s;
@@ -1542,7 +1584,7 @@ async fn execute_chat_request(
             }
         }
 
-        let mut res = match res_opt {
+        let res = match res_opt {
             Some(r) => r,
             None => {
                 let lat = start_time.elapsed().as_millis() as u64;
@@ -1558,18 +1600,31 @@ async fn execute_chat_request(
             }
         };
 
-        let mut status = res.status();
+        let mut res_holder = Some(res);
+        let mut status = res_holder.as_ref().unwrap().status();
         let mut is_429 = status == StatusCode::TOO_MANY_REQUESTS;
         let mut is_auth_error =
             status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
+        let mut pre_read_err_body: Option<String> = None;
 
-        // If auth error occurred and account has a refresh token, automatically refresh on the fly and retry!
-        if is_auth_error && account.refresh_token.is_some() {
-            log::info!(
-                "Upstream token expired for {}, attempting automatic refresh",
-                account.name
-            );
-            if let Some(fresh_token) = refresh_account_token_and_save(state, account).await {
+        // If auth error occurred, separate 403 VALIDATION_REQUIRED/SUBSCRIPTION_REQUIRED from expired OAuth tokens
+        if is_auth_error {
+            let mut should_refresh = account.refresh_token.is_some();
+            if status == StatusCode::FORBIDDEN {
+                if let Some(r) = res_holder.take() {
+                    let body = r.text().await.unwrap_or_default();
+                    if is_non_retryable_auth_block(status, &body) {
+                        should_refresh = false;
+                    }
+                    pre_read_err_body = Some(body);
+                }
+            }
+            if should_refresh {
+                log::info!(
+                    "Upstream token expired for {}, attempting automatic refresh",
+                    account.name
+                );
+                if let Some(fresh_token) = refresh_account_token_and_save(state, account).await {
                     for endpoint_url in endpoints {
                         let retry_headers = if use_non_stream_generate {
                             build_upstream_headers_json(
@@ -1610,7 +1665,8 @@ async fn execute_chat_request(
                             is_429 = status == StatusCode::TOO_MANY_REQUESTS;
                             is_auth_error = status == StatusCode::UNAUTHORIZED
                                 || status == StatusCode::FORBIDDEN;
-                            res = retry_res;
+                            res_holder = Some(retry_res);
+                            pre_read_err_body = None;
                             if status.is_success() {
                                 state.balancer.record_success(&account.id);
                                 break;
@@ -1620,11 +1676,18 @@ async fn execute_chat_request(
                             }
                         }
                     }
+                }
             }
         }
 
         if !status.is_success() {
-            let err_text = res.text().await.unwrap_or_default();
+            let err_text = match pre_read_err_body {
+                Some(b) => b,
+                None => match res_holder.take() {
+                    Some(r) => r.text().await.unwrap_or_default(),
+                    None => String::new(),
+                },
+            };
             let lat = start_time.elapsed().as_millis() as u64;
 
             let error_msg = crate::proxy::antigravity::extract_clean_error_message(&err_text);
@@ -1748,6 +1811,7 @@ async fn execute_chat_request(
             );
         }
 
+        let res = res_holder.expect("success response");
         if is_streaming {
             let stream_id = format!("chatcmpl-{}", uuid::Uuid::new_v4().simple());
             let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
@@ -2034,10 +2098,15 @@ async fn execute_chat_request(
             );
 
             if is_429 && cooldown_429 {
-                state.balancer.update_failure_reason(
+                let retry_hint =
+                    crate::proxy::balancer::LoadBalancer::parse_retry_delay_secs(&err_text);
+                state.balancer.record_rate_limit_hit(
                     &account.id,
                     429,
-                    &format!("HTTP 429: {}", error_msg),
+                    cooldown_secs,
+                    cooldown_jitter,
+                    Some(&format!("HTTP 429: {}", error_msg)),
+                    retry_hint,
                 );
             } else if is_auth_error {
                 state.balancer.clear_session_bindings(&account.id);
@@ -2172,6 +2241,7 @@ async fn execute_chat_request(
                 }
             };
             let oai_resp = convert_claude_response_to_openai(&claude_resp);
+            state.balancer.record_success(&account.id);
             let tokens = oai_resp.usage.as_ref().map(|u| u.total_tokens).unwrap_or(0);
             let lat = start_time.elapsed().as_millis() as u64;
             state.stats.record_request(
@@ -2258,8 +2328,10 @@ async fn execute_chat_request(
 
         let status = res.status();
         let is_429 = status == StatusCode::TOO_MANY_REQUESTS;
+        let is_auth = status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
 
         if is_streaming && status.is_success() {
+            state.balancer.record_success(&account.id);
             let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
             let log_ctx = StreamLoggingContext {
                 stats: state.stats.clone(),
@@ -2286,6 +2358,24 @@ async fn execute_chat_request(
         } else {
             let text = res.text().await.unwrap_or_default();
             let lat = start_time.elapsed().as_millis() as u64;
+            if status.is_success() {
+                state.balancer.record_success(&account.id);
+            } else if is_429 || status.is_server_error() {
+                let cfg = state.config.read();
+                if !is_429 || cfg.cooldown_on_429 {
+                    let retry_hint = crate::proxy::balancer::LoadBalancer::parse_retry_delay_secs(&text);
+                    state.balancer.record_rate_limit_hit(
+                        &account.id,
+                        status.as_u16(),
+                        cfg.cooldown_duration_secs,
+                        cfg.cooldown_jitter_percent,
+                        Some(&format!("HTTP {}", status.as_u16())),
+                        retry_hint,
+                    );
+                }
+            } else if is_auth {
+                state.balancer.clear_session_bindings(&account.id);
+            }
             state.stats.record_request(
                 "POST",
                 "/v1/chat/completions",
@@ -2294,7 +2384,12 @@ async fn execute_chat_request(
                 50,
                 lat,
             );
-            ((status, text).into_response(), is_429)
+            let mut resp = (status, text).into_response();
+            resp.headers_mut().insert(
+                header::CONTENT_TYPE,
+                header::HeaderValue::from_static("application/json"),
+            );
+            (resp, is_429 || is_auth)
         }
     }
 }
@@ -2666,7 +2761,7 @@ async fn execute_claude_request(
             }
         }
 
-        let mut res = match res_opt {
+        let res = match res_opt {
             Some(r) => r,
             None => {
                 let lat = start_time.elapsed().as_millis() as u64;
@@ -2677,17 +2772,30 @@ async fn execute_claude_request(
             }
         };
 
-        let mut status = res.status();
+        let mut res_holder = Some(res);
+        let mut status = res_holder.as_ref().unwrap().status();
         let mut is_429 = status == StatusCode::TOO_MANY_REQUESTS;
         let mut is_auth_error =
             status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
+        let mut pre_read_err_body: Option<String> = None;
 
-        if is_auth_error && account.refresh_token.is_some() {
-            log::info!(
-                "Claude token expired for {}, attempting automatic refresh",
-                account.name
-            );
-            if let Some(fresh_token) = refresh_account_token_and_save(state, account).await {
+        if is_auth_error {
+            let mut should_refresh = account.refresh_token.is_some();
+            if status == StatusCode::FORBIDDEN {
+                if let Some(r) = res_holder.take() {
+                    let body = r.text().await.unwrap_or_default();
+                    if is_non_retryable_auth_block(status, &body) {
+                        should_refresh = false;
+                    }
+                    pre_read_err_body = Some(body);
+                }
+            }
+            if should_refresh {
+                log::info!(
+                    "Claude token expired for {}, attempting automatic refresh",
+                    account.name
+                );
+                if let Some(fresh_token) = refresh_account_token_and_save(state, account).await {
                     for endpoint_url in endpoints {
                         let retry_headers = if use_non_stream_generate {
                             build_upstream_headers_json(
@@ -2728,7 +2836,8 @@ async fn execute_claude_request(
                             is_429 = status == StatusCode::TOO_MANY_REQUESTS;
                             is_auth_error = status == StatusCode::UNAUTHORIZED
                                 || status == StatusCode::FORBIDDEN;
-                            res = retry_res;
+                            res_holder = Some(retry_res);
+                            pre_read_err_body = None;
                             if status.is_success() {
                                 state.balancer.record_success(&account.id);
                                 break;
@@ -2738,11 +2847,18 @@ async fn execute_claude_request(
                             }
                         }
                     }
+                }
             }
         }
 
         if !status.is_success() {
-            let err_text = res.text().await.unwrap_or_default();
+            let err_text = match pre_read_err_body {
+                Some(b) => b,
+                None => match res_holder.take() {
+                    Some(r) => r.text().await.unwrap_or_default(),
+                    None => String::new(),
+                },
+            };
             let lat = start_time.elapsed().as_millis() as u64;
 
             let error_msg = crate::proxy::antigravity::extract_clean_error_message(&err_text);
@@ -2849,6 +2965,7 @@ async fn execute_claude_request(
             );
         }
 
+        let res = res_holder.expect("success response");
         if is_streaming {
             let stream_id = format!("msg_{}", uuid::Uuid::new_v4().simple());
             let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
@@ -3077,8 +3194,10 @@ async fn execute_claude_request(
 
         let status = res.status();
         let is_429 = status == StatusCode::TOO_MANY_REQUESTS;
+        let is_auth = status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN;
 
         if is_streaming && status.is_success() {
+            state.balancer.record_success(&account.id);
             let req_body_str = serde_json::to_string_pretty(&payload).unwrap_or_default();
             let log_ctx = StreamLoggingContext {
                 stats: state.stats.clone(),
@@ -3105,6 +3224,24 @@ async fn execute_claude_request(
         } else {
             let text = res.text().await.unwrap_or_default();
             let lat = start_time.elapsed().as_millis() as u64;
+            if status.is_success() {
+                state.balancer.record_success(&account.id);
+            } else if is_429 || status.is_server_error() {
+                let cfg = state.config.read();
+                if !is_429 || cfg.cooldown_on_429 {
+                    let retry_hint = crate::proxy::balancer::LoadBalancer::parse_retry_delay_secs(&text);
+                    state.balancer.record_rate_limit_hit(
+                        &account.id,
+                        status.as_u16(),
+                        cfg.cooldown_duration_secs,
+                        cfg.cooldown_jitter_percent,
+                        Some(&format!("HTTP {}", status.as_u16())),
+                        retry_hint,
+                    );
+                }
+            } else if is_auth {
+                state.balancer.clear_session_bindings(&account.id);
+            }
             state.stats.record_request(
                 "POST",
                 "/v1/messages",
@@ -3113,7 +3250,12 @@ async fn execute_claude_request(
                 50,
                 lat,
             );
-            ((status, text).into_response(), is_429)
+            let mut resp = (status, text).into_response();
+            resp.headers_mut().insert(
+                header::CONTENT_TYPE,
+                header::HeaderValue::from_static("application/json"),
+            );
+            (resp, is_429 || is_auth)
         }
     }
 }
@@ -3276,6 +3418,61 @@ pub async fn run_diagnostic_check(state: &AppState, model_id: &str) -> (u16, u64
     };
 
     let (target_model, _) = crate::proxy::router::resolve_model_with_effort(model_id, &account, None);
+    let client = state.get_client_for_account(&account);
+
+    if account.provider == "anthropic" {
+        let mut req_headers = reqwest::header::HeaderMap::new();
+        if let Ok(v) = account.api_key.trim().parse() {
+            req_headers.insert("x-api-key", v);
+        }
+        apply_fingerprint(&mut req_headers, &account.fingerprint);
+        let upstream_url = format!("{}/v1/messages", account.base_url.trim_end_matches('/'));
+        let body = serde_json::json!({
+            "model": target_model,
+            "max_tokens": 16,
+            "messages": [{"role": "user", "content": "Hello, diagnostic test."}]
+        });
+        return match client.post(&upstream_url).headers(req_headers).json(&body).send().await {
+            Ok(resp) => {
+                let status = resp.status().as_u16();
+                let latency = t0.elapsed().as_millis() as u64;
+                if resp.status().is_success() {
+                    state.balancer.record_success(&account.id);
+                    (status, latency, "OK: Anthropic endpoint is responsive and healthy".to_string())
+                } else {
+                    let err_text = resp.text().await.unwrap_or_default();
+                    (status, latency, format!("Upstream HTTP {}: {}", status, err_text))
+                }
+            }
+            Err(e) => (502, t0.elapsed().as_millis() as u64, format!("Network error: {}", e)),
+        };
+    } else if account.provider != "antigravity" {
+        let mut req_headers = reqwest::header::HeaderMap::new();
+        if let Ok(v) = format!("Bearer {}", account.api_key.trim()).parse() {
+            req_headers.insert("authorization", v);
+        }
+        apply_fingerprint(&mut req_headers, &account.fingerprint);
+        let upstream_url = format!("{}/v1/chat/completions", account.base_url.trim_end_matches('/'));
+        let body = serde_json::json!({
+            "model": target_model,
+            "max_tokens": 16,
+            "messages": [{"role": "user", "content": "Hello, diagnostic test."}]
+        });
+        return match client.post(&upstream_url).headers(req_headers).json(&body).send().await {
+            Ok(resp) => {
+                let status = resp.status().as_u16();
+                let latency = t0.elapsed().as_millis() as u64;
+                if resp.status().is_success() {
+                    state.balancer.record_success(&account.id);
+                    (status, latency, "OK: OpenAI-compatible endpoint is responsive and healthy".to_string())
+                } else {
+                    let err_text = resp.text().await.unwrap_or_default();
+                    (status, latency, format!("Upstream HTTP {}: {}", status, err_text))
+                }
+            }
+            Err(e) => (502, t0.elapsed().as_millis() as u64, format!("Network error: {}", e)),
+        };
+    }
 
     let client_id = account
         .device_profile
@@ -3353,7 +3550,6 @@ pub async fn run_diagnostic_check(state: &AppState, model_id: &str) -> (u16, u64
         None,
     );
 
-    let client = state.get_client_for_account(&account);
     let endpoints = if is_chat {
         if cfg.lock_production_endpoints {
             &crate::proxy::antigravity::STREAM_ENDPOINTS[..1]

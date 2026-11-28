@@ -214,15 +214,101 @@ fn atomic_write(path: &Path, content: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
+fn strip_jsonc(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let chars: Vec<char> = input.chars().collect();
+    let mut i = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    while i < chars.len() {
+        let c = chars[i];
+        if in_string {
+            out.push(c);
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        if c == '"' {
+            in_string = true;
+            out.push(c);
+            i += 1;
+        } else if c == '/' && i + 1 < chars.len() && chars[i + 1] == '/' {
+            i += 2;
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+        } else if c == '/' && i + 1 < chars.len() && chars[i + 1] == '*' {
+            i += 2;
+            while i + 1 < chars.len() && !(chars[i] == '*' && chars[i + 1] == '/') {
+                i += 1;
+            }
+            i = (i + 2).min(chars.len());
+        } else {
+            out.push(c);
+            i += 1;
+        }
+    }
+
+    // Remove trailing commas before '}' or ']' outside strings
+    let out_chars: Vec<char> = out.chars().collect();
+    let mut cleaned = String::with_capacity(out_chars.len());
+    in_string = false;
+    escaped = false;
+    let mut j = 0;
+    while j < out_chars.len() {
+        let c = out_chars[j];
+        if in_string {
+            cleaned.push(c);
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+            j += 1;
+            continue;
+        }
+        if c == '"' {
+            in_string = true;
+            cleaned.push(c);
+            j += 1;
+            continue;
+        }
+        if c == ',' {
+            let mut k = j + 1;
+            while k < out_chars.len() && out_chars[k].is_whitespace() {
+                k += 1;
+            }
+            if k < out_chars.len() && (out_chars[k] == '}' || out_chars[k] == ']') {
+                j += 1;
+                continue;
+            }
+        }
+        cleaned.push(c);
+        j += 1;
+    }
+    cleaned
+}
+
 fn read_json_object(path: &Path) -> Result<Map<String, Value>, String> {
     if !path.exists() {
         return Ok(Map::new());
     }
     let raw = fs::read_to_string(path).map_err(|e| format!("Read error: {}", e))?;
-    if raw.trim().is_empty() {
+    let stripped = strip_jsonc(&raw);
+    if stripped.trim().is_empty() {
         return Ok(Map::new());
     }
-    let val: Value = serde_json::from_str(&raw).map_err(|e| format!("Invalid JSON: {}", e))?;
+    let val: Value = serde_json::from_str(&stripped).map_err(|e| format!("Invalid JSON: {}", e))?;
     match val {
         Value::Object(map) => Ok(map),
         _ => Err("Config root is not a JSON object".to_string()),

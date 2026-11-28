@@ -122,6 +122,8 @@ pub struct LoadBalancer {
     account_cooldowns: Arc<RwLock<HashMap<String, Instant>>>,
     /// Account health and adaptive exponential backoff tracker: account_id -> AccountHealthRecord
     account_health: Arc<RwLock<HashMap<String, AccountHealthRecord>>>,
+    /// Single-probe guard for Probing accounts to prevent thundering herd on cooldown expiry
+    probing_in_flight: Arc<RwLock<HashMap<String, Instant>>>,
     /// Round-robin counter
     rr_counter: AtomicU64,
     /// Metrics
@@ -142,6 +144,7 @@ impl LoadBalancer {
             session_bindings: Arc::new(RwLock::new(HashMap::new())),
             account_cooldowns: Arc::new(RwLock::new(HashMap::new())),
             account_health: Arc::new(RwLock::new(HashMap::new())),
+            probing_in_flight: Arc::new(RwLock::new(HashMap::new())),
             rr_counter: AtomicU64::new(0),
             total_routed: AtomicU64::new(0),
             cache_hits: AtomicU64::new(0),
@@ -365,6 +368,7 @@ impl LoadBalancer {
 
         // Immediately unbind all sessions pinned to this account so next requests failover without delay
         self.clear_session_bindings(account_id);
+        self.probing_in_flight.write().remove(account_id);
 
         self.failover_rotations.fetch_add(1, Ordering::Relaxed);
     }
@@ -398,6 +402,7 @@ impl LoadBalancer {
         }
         let mut cds = self.account_cooldowns.write();
         cds.remove(account_id);
+        self.probing_in_flight.write().remove(account_id);
         log::info!(
             "[LoadBalancer] Health manually reset for account {}. Cooldown cleared.",
             account_id
@@ -424,6 +429,7 @@ impl LoadBalancer {
         }
         let mut cds = self.account_cooldowns.write();
         cds.remove(account_id);
+        self.probing_in_flight.write().remove(account_id);
     }
 
     /// Mark account in temporary cooldown on rate-limit (429) or transient 5xx error
@@ -683,9 +689,18 @@ impl LoadBalancer {
                         continue; // Active backoff ladder cooldown: skip to protect account!
                     }
                 }
-                // If cooldown expired, check failure count:
+                // If cooldown expired, check failure count and single-probe guard:
                 if let Some(rec) = health_map.get(&acc.id) {
                     if rec.failure_count > 0 {
+                        let in_flight = self
+                            .probing_in_flight
+                            .read()
+                            .get(&acc.id)
+                            .is_some_and(|t| now.duration_since(*t).as_secs() < 30);
+                        if in_flight {
+                            min_wait = Some(min_wait.map_or(1, |w| w.min(1)));
+                            continue;
+                        }
                         probing.push(acc);
                         continue;
                     }
@@ -697,6 +712,8 @@ impl LoadBalancer {
 
         // Include expired-cooldown probing accounts alongside zero-fail accounts so they can
         // actually receive a trial request and auto-heal instead of starving forever.
+        let probing_ids: std::collections::HashSet<String> =
+            probing_accounts.iter().map(|a| a.id.clone()).collect();
         let mut healthy_accounts = healthy_zero_fail;
         if !probing_accounts.is_empty() {
             if healthy_accounts.is_empty() {
@@ -710,6 +727,14 @@ impl LoadBalancer {
                 retry_after_secs: min_cd_secs,
             });
         }
+
+        let fraction_to_pct = |f: f64| -> i32 {
+            if f <= 0.0 {
+                0
+            } else {
+                (f * 100.0).round().max(1.0) as i32
+            }
+        };
 
         let account_model_pct = |a: &UpstreamAccount| -> i32 {
             if !is_virtual && !a.available_models.is_empty() {
@@ -727,7 +752,7 @@ impl LoadBalancer {
                                 || m.id.eq_ignore_ascii_case(&resolved_target)
                                 || m_canon.eq_ignore_ascii_case(&resolved_canon))
                     })
-                    .map(|m| (m.remaining_fraction * 100.0).round() as i32)
+                    .map(|m| fraction_to_pct(m.remaining_fraction))
                     .max()
                 {
                     return best;
@@ -838,6 +863,13 @@ impl LoadBalancer {
                     .ok_or(RoutingError::NoAccounts)?
             }
         };
+
+        // Mark probing slot if this account is under trial probe
+        if probing_ids.contains(&chosen_acc.id) {
+            self.probing_in_flight
+                .write()
+                .insert(chosen_acc.id.clone(), now);
+        }
 
         // Pin session to chosen account if session_id is present and not AggressiveSpread
         if let Some(sid) = session_id {

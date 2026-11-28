@@ -446,6 +446,15 @@ pub async fn exchange_code(
     code: &str,
     redirect_uri: &str,
 ) -> Result<GoogleTokenResponse, String> {
+    exchange_code_with_ua(client, code, redirect_uri, None).await
+}
+
+pub async fn exchange_code_with_ua(
+    client: &reqwest::Client,
+    code: &str,
+    redirect_uri: &str,
+    user_agent_override: Option<&str>,
+) -> Result<GoogleTokenResponse, String> {
     let cid = get_google_client_id();
     let csec = get_google_client_secret();
     let params = [
@@ -456,7 +465,9 @@ pub async fn exchange_code(
         ("redirect_uri", redirect_uri),
     ];
 
-    let ua = get_official_hub_user_agent();
+    let ua = user_agent_override
+        .map(|s| s.to_string())
+        .unwrap_or_else(get_official_hub_user_agent);
     let resp = client
         .post(GOOGLE_TOKEN_URL)
         .header("User-Agent", &ua)
@@ -521,7 +532,17 @@ pub async fn fetch_user_info(
     client: &reqwest::Client,
     access_token: &str,
 ) -> Result<GoogleUserInfo, String> {
-    let ua = get_official_hub_user_agent();
+    fetch_user_info_with_ua(client, access_token, None).await
+}
+
+pub async fn fetch_user_info_with_ua(
+    client: &reqwest::Client,
+    access_token: &str,
+    user_agent_override: Option<&str>,
+) -> Result<GoogleUserInfo, String> {
+    let ua = user_agent_override
+        .map(|s| s.to_string())
+        .unwrap_or_else(get_official_hub_user_agent);
     let resp = client
         .get(GOOGLE_USERINFO_URL)
         .header("User-Agent", &ua)
@@ -544,13 +565,24 @@ pub async fn fetch_project_and_tier(
     client: &reqwest::Client,
     access_token: &str,
 ) -> (Option<String>, String) {
+    fetch_project_and_tier_with_ua(client, access_token, None).await
+}
+
+pub async fn fetch_project_and_tier_with_ua(
+    client: &reqwest::Client,
+    access_token: &str,
+    user_agent_override: Option<&str>,
+) -> (Option<String>, String) {
     let meta = serde_json::json!({
-        "metadata": { "ideType": "ANTIGRAVITY" }
+        "metadata": { "ideType": "ANTIGRAVITY", "pluginType": "GEMINI" }
     });
 
-    let mut project_id = Some("aicode-consumers".to_string());
-    let mut tier = "PRO".to_string();
-    let ua = get_official_hub_user_agent();
+    let mut project_id: Option<String> = None;
+    let mut tier = "FREE".to_string();
+    let mut loaded = false;
+    let ua = user_agent_override
+        .map(|s| s.to_string())
+        .unwrap_or_else(get_official_hub_user_agent);
 
     for endpoint in LOAD_PROJECT_ENDPOINTS {
         if let Ok(resp) = client
@@ -563,7 +595,7 @@ pub async fn fetch_project_and_tier(
         {
             if resp.status().is_success() {
                 if let Ok(data) = resp.json::<LoadProjectResponse>().await {
-                    if let Some(pid) = data.project_id {
+                    if let Some(pid) = data.project_id.filter(|s| !s.trim().is_empty()) {
                         project_id = Some(pid);
                     }
                     let raw_tier = data
@@ -579,14 +611,19 @@ pub async fn fetch_project_and_tier(
                             "PRO".to_string()
                         };
                     }
+                    loaded = true;
                     break;
                 }
             }
         }
     }
 
+    if !loaded || project_id.is_none() {
+        log::warn!("loadCodeAssist did not return cloudaicompanionProject");
+    }
+
     // Double check via quota summary: any account with Claude quota is definitely PRO
-    let quota_summary = fetch_user_quota_summary(client, access_token).await;
+    let quota_summary = fetch_user_quota_summary_with_ua(client, access_token, Some(&ua)).await;
     if quota_summary.claude_percent > 0 {
         tier = "PRO".to_string();
     }
@@ -641,7 +678,17 @@ pub async fn fetch_user_quota_summary(
     client: &reqwest::Client,
     access_token: &str,
 ) -> DetailedQuotaInfo {
-    let ua = get_official_hub_user_agent();
+    fetch_user_quota_summary_with_ua(client, access_token, None).await
+}
+
+pub async fn fetch_user_quota_summary_with_ua(
+    client: &reqwest::Client,
+    access_token: &str,
+    user_agent_override: Option<&str>,
+) -> DetailedQuotaInfo {
+    let ua = user_agent_override
+        .map(|s| s.to_string())
+        .unwrap_or_else(get_official_hub_user_agent);
     for endpoint in QUOTA_SUMMARY_ENDPOINTS {
         if let Ok(resp) = client
             .post(endpoint)
@@ -658,11 +705,15 @@ pub async fn fetch_user_quota_summary(
                     let mut claude_5h_reset = "in 4h 00m".to_string();
                     let mut claude_week_frac = 1.0f64;
                     let mut claude_week_reset = "in 7d 00h".to_string();
+                    let mut seen_claude_5h = false;
+                    let mut seen_claude_week = false;
 
                     let mut gemini_5h_frac = 1.0f64;
                     let mut gemini_5h_reset = "in 4h 00m".to_string();
                     let mut gemini_week_frac = 1.0f64;
                     let mut gemini_week_reset = "in 7d 00h".to_string();
+                    let mut seen_gemini_5h = false;
+                    let mut seen_gemini_week = false;
 
                     for group in data.groups {
                         let name = group.display_name.unwrap_or_default().to_lowercase();
@@ -710,11 +761,13 @@ pub async fn fetch_user_quota_summary(
 
                             if is_gemini {
                                 if is_weekly {
+                                    seen_gemini_week = true;
                                     if frac < gemini_week_frac {
                                         gemini_week_frac = frac;
                                         gemini_week_reset = formatted_reset;
                                     }
                                 } else {
+                                    seen_gemini_5h = true;
                                     if frac < gemini_5h_frac {
                                         gemini_5h_frac = frac;
                                         gemini_5h_reset = formatted_reset;
@@ -722,11 +775,13 @@ pub async fn fetch_user_quota_summary(
                                 }
                             } else {
                                 if is_weekly {
+                                    seen_claude_week = true;
                                     if frac < claude_week_frac {
                                         claude_week_frac = frac;
                                         claude_week_reset = formatted_reset;
                                     }
                                 } else {
+                                    seen_claude_5h = true;
                                     if frac < claude_5h_frac {
                                         claude_5h_frac = frac;
                                         claude_5h_reset = formatted_reset;
@@ -736,16 +791,38 @@ pub async fn fetch_user_quota_summary(
                         }
                     }
 
-                    let c_pct = (claude_5h_frac * 100.0).round() as i32;
-                    let c_week_pct = (claude_week_frac * 100.0).round() as i32;
+                    let c_pct = if seen_claude_5h {
+                        (claude_5h_frac * 100.0).round() as i32
+                    } else if seen_claude_week {
+                        (claude_week_frac * 100.0).round() as i32
+                    } else {
+                        0
+                    };
+                    let c_week_pct = if seen_claude_week {
+                        (claude_week_frac * 100.0).round() as i32
+                    } else {
+                        c_pct
+                    };
+                    let g_pct = if seen_gemini_5h {
+                        (gemini_5h_frac * 100.0).round() as i32
+                    } else if seen_gemini_week {
+                        (gemini_week_frac * 100.0).round() as i32
+                    } else {
+                        0
+                    };
+                    let g_week_pct = if seen_gemini_week {
+                        (gemini_week_frac * 100.0).round() as i32
+                    } else {
+                        g_pct
+                    };
                     return DetailedQuotaInfo {
                         claude_percent: c_pct,
                         claude_reset: claude_5h_reset,
                         claude_weekly_percent: c_week_pct,
                         claude_weekly_reset: claude_week_reset,
-                        gemini_percent: (gemini_5h_frac * 100.0).round() as i32,
+                        gemini_percent: g_pct,
                         gemini_reset: gemini_5h_reset,
-                        gemini_weekly_percent: (gemini_week_frac * 100.0).round() as i32,
+                        gemini_weekly_percent: g_week_pct,
                         gemini_weekly_reset: gemini_week_reset,
                     };
                 }
@@ -790,14 +867,35 @@ pub async fn fetch_account_models_and_quota(
     ),
     String,
 > {
-    let quota_summary = fetch_user_quota_summary(client, access_token).await;
+    fetch_account_models_and_quota_with_ua(client, access_token, project_id, None).await
+}
+
+pub async fn fetch_account_models_and_quota_with_ua(
+    client: &reqwest::Client,
+    access_token: &str,
+    project_id: Option<&str>,
+    user_agent_override: Option<&str>,
+) -> Result<
+    (
+        Vec<AccountModelStatus>,
+        Vec<ModelCatalogItem>,
+        u64,
+        u64,
+        String,
+        DetailedQuotaInfo,
+    ),
+    String,
+> {
+    let quota_summary = fetch_user_quota_summary_with_ua(client, access_token, user_agent_override).await;
     let payload = if let Some(pid) = project_id {
         serde_json::json!({ "project": pid })
     } else {
         serde_json::json!({})
     };
 
-    let ua = get_official_hub_user_agent();
+    let ua = user_agent_override
+        .map(|s| s.to_string())
+        .unwrap_or_else(get_official_hub_user_agent);
     for endpoint in FETCH_MODELS_ENDPOINTS {
         if let Ok(resp) = client
             .post(endpoint)
@@ -949,6 +1047,22 @@ pub async fn fetch_account_models_and_quota(
                     account_models.sort_by(|a, b| a.sort_order.cmp(&b.sort_order).then(a.id.cmp(&b.id)));
 
                     if !account_models.is_empty() {
+                        let mut quota_summary = quota_summary;
+                        let has_active_claude = account_models
+                            .iter()
+                            .any(|m| !m.disabled && m.provider != "gemini");
+                        let has_active_gemini = account_models
+                            .iter()
+                            .any(|m| !m.disabled && m.provider == "gemini");
+                        if !has_active_claude {
+                            quota_summary.claude_percent = 0;
+                            quota_summary.claude_weekly_percent = 0;
+                        }
+                        if !has_active_gemini {
+                            quota_summary.gemini_percent = 0;
+                            quota_summary.gemini_weekly_percent = 0;
+                        }
+
                         let mut temp_cfg = AppConfig::default();
                         temp_cfg.accounts.push(crate::config::UpstreamAccount {
                             id: "probe".to_string(),

@@ -2360,4 +2360,83 @@ mod tests {
             collected
         );
     }
+
+    #[test]
+    fn test_parse_model_unicode_and_whitespace_no_panic() {
+        use amr::proxy::router::{parse_model_and_reasoning, ReasoningEffort};
+
+        let (base1, eff1) = parse_model_and_reasoning("  İstanbul-модель (high)  ", None);
+        assert_eq!(base1, "İstanbul-модель");
+        assert_eq!(eff1, Some(ReasoningEffort::High));
+
+        let (base2, eff2) = parse_model_and_reasoning("  İİİ-test ", Some("low"));
+        assert_eq!(base2, "İİİ-test");
+        assert_eq!(eff2, Some(ReasoningEffort::Low));
+    }
+
+    #[test]
+    fn test_convert_openai_parallel_tools_merged() {
+        use amr::proxy::mappers::openai::{OpenAIChatRequest, OpenAIMessage};
+        use amr::proxy::router::convert_openai_to_claude;
+
+        let req = OpenAIChatRequest {
+            model: "claude-sonnet-4-6".into(),
+            messages: vec![
+                OpenAIMessage {
+                    role: "system".into(),
+                    content: serde_json::json!("Sys 1"),
+                    reasoning_content: None,
+                    refusal: None,
+                    name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
+                },
+                OpenAIMessage {
+                    role: "developer".into(),
+                    content: serde_json::json!("Sys 2"),
+                    reasoning_content: None,
+                    refusal: None,
+                    name: None,
+                    tool_calls: None,
+                    tool_call_id: None,
+                },
+                OpenAIMessage {
+                    role: "tool".into(),
+                    content: serde_json::json!("res1"),
+                    reasoning_content: None,
+                    refusal: None,
+                    name: None,
+                    tool_calls: None,
+                    tool_call_id: Some("call_1".into()),
+                },
+                OpenAIMessage {
+                    role: "tool".into(),
+                    content: serde_json::json!("res2"),
+                    reasoning_content: None,
+                    refusal: None,
+                    name: None,
+                    tool_calls: None,
+                    tool_call_id: Some("call_2".into()),
+                },
+            ],
+            stream: false,
+            temperature: None,
+            max_tokens: None,
+            max_completion_tokens: None,
+            reasoning_effort: None,
+            stream_options: None,
+            tools: None,
+            tool_choice: None,
+            extra: std::collections::HashMap::new(),
+        };
+
+        let claude = convert_openai_to_claude(&req, "claude-sonnet-4-6", None);
+        assert_eq!(claude.system.unwrap(), serde_json::json!("Sys 1\n\nSys 2"));
+        assert_eq!(claude.messages.len(), 1);
+        assert_eq!(claude.messages[0].role, "user");
+        let blocks = claude.messages[0].content.as_array().unwrap();
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0]["type"], "tool_result");
+        assert_eq!(blocks[1]["tool_use_id"], "call_2");
+    }
 }

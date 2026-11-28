@@ -243,39 +243,139 @@ fn format_elapsed_time(added_at: u64, lang: Language) -> String {
     }
 }
 
-fn arc_svg_path(cx: f64, cy: f64, r: f64, start_deg: f64, end_deg: f64) -> String {
-    let sweep = end_deg - start_deg;
-    if sweep <= 0.5 {
-        return String::new();
-    }
-    let sweep = sweep.clamp(0.5, 359.8);
-    let s_rad = (start_deg - 90.0).to_radians();
-    let e_rad = ((start_deg + sweep) - 90.0).to_radians();
-    let x1 = cx + r * s_rad.cos();
-    let y1 = cy + r * s_rad.sin();
-    let x2 = cx + r * e_rad.cos();
-    let y2 = cy + r * e_rad.sin();
-    let large_arc = if sweep > 180.0 { 1 } else { 0 };
-    format!(
-        "M {:.1} {:.1} A {:.1} {:.1} 0 {} 1 {:.1} {:.1}",
-        x1, y1, r, r, large_arc, x2, y2
+fn configured_ua_for_config(cfg: &AppConfig) -> String {
+    antigravity::get_official_hub_user_agent_with_meta(
+        Some(cfg.resolved_platform()),
+        Some(&cfg.spoof_ide_version),
+        Some(&cfg.spoof_arch),
     )
 }
 
-fn full_circle_path(cx: f64, cy: f64, r: f64) -> String {
-    format!(
-        "M {:.1} {:.1} A {:.1} {:.1} 0 1 1 {:.1} {:.1} A {:.1} {:.1} 0 1 1 {:.1} {:.1}",
-        cx,
-        cy - r,
-        r,
-        r,
-        cx,
-        cy + r,
-        r,
-        r,
-        cx,
-        cy - r
+/// Shared account quota & model catalog sync helper with proxy isolation, configured UA, and OAuth refresh.
+async fn sync_account_quota_and_models(
+    app_state: &amr::proxy::server::AppState,
+    acc_id: &str,
+    ensure_project_id: bool,
+    mark_error_on_any_failure: bool,
+) -> bool {
+    let acc_snapshot = {
+        let cfg = app_state.config.read();
+        cfg.accounts.iter().find(|a| a.id == acc_id).cloned()
+    };
+    let Some(acc_snapshot) = acc_snapshot else {
+        return false;
+    };
+
+    let mut token = acc_snapshot.api_key.clone();
+    let refresh_tok = acc_snapshot.refresh_token.clone();
+    let mut pid = acc_snapshot.project_id.clone();
+    let client = app_state.get_client_for_account(&acc_snapshot);
+    let ua = {
+        let cfg = app_state.config.read();
+        configured_ua_for_config(&cfg)
+    };
+
+    if ensure_project_id && pid.is_none() {
+        let (pid_opt, tier) =
+            antigravity::fetch_project_and_tier_with_ua(&client, &token, Some(&ua)).await;
+        if pid_opt.is_some() {
+            pid = pid_opt.clone();
+            let mut cfg = app_state.config.write();
+            if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == acc_id) {
+                acc.project_id = pid_opt;
+                acc.tier = tier;
+            }
+            let _ = cfg.save();
+        }
+    }
+
+    let mut quota_res = antigravity::fetch_account_models_and_quota_with_ua(
+        &client,
+        &token,
+        pid.as_deref(),
+        Some(&ua),
     )
+    .await;
+
+    if quota_res.is_err() {
+        if let Some(ref rtok) = refresh_tok {
+            if let Ok(ref_res) =
+                antigravity::refresh_token_with_ua(&client, rtok, Some(&ua)).await
+            {
+                token = ref_res.access_token.clone();
+                {
+                    let mut cfg = app_state.config.write();
+                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == acc_id) {
+                        acc.api_key = token.clone();
+                        if ref_res.refresh_token.is_some() {
+                            acc.refresh_token = ref_res.refresh_token;
+                        }
+                    }
+                    let _ = cfg.save();
+                }
+                quota_res = antigravity::fetch_account_models_and_quota_with_ua(
+                    &client,
+                    &token,
+                    pid.as_deref(),
+                    Some(&ua),
+                )
+                .await;
+            }
+        }
+    }
+
+    match quota_res {
+        Ok((acc_models, _models, used, limit, reset, detailed_quota)) => {
+            {
+                let mut cfg = app_state.config.write();
+                if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == acc_id) {
+                    acc.available_models = acc_models;
+                    acc.quota_used = used;
+                    acc.quota_limit = limit;
+                    acc.quota_reset = reset;
+                    acc.claude_percent = detailed_quota.claude_percent;
+                    acc.claude_reset = detailed_quota.claude_reset;
+                    acc.claude_weekly_percent = detailed_quota.claude_weekly_percent;
+                    acc.claude_weekly_reset = detailed_quota.claude_weekly_reset;
+                    acc.gemini_percent = detailed_quota.gemini_percent;
+                    acc.gemini_reset = detailed_quota.gemini_reset;
+                    acc.gemini_weekly_percent = detailed_quota.gemini_weekly_percent;
+                    acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
+                    acc.error_message = None;
+                    acc.status = "ACTIVE".to_string();
+                    if detailed_quota.claude_percent > 0 {
+                        acc.tier = "PRO".to_string();
+                    }
+                }
+                cfg.rebuild_models_from_accounts();
+                let _ = cfg.save();
+            }
+            app_state.cfg_version.fetch_add(1, Ordering::SeqCst);
+            true
+        }
+        Err(e) => {
+            let err_str = e.to_string();
+            let is_auth = err_str.contains("401")
+                || err_str.contains("403")
+                || err_str.contains("invalid_grant");
+            if is_auth || mark_error_on_any_failure {
+                {
+                    let mut cfg = app_state.config.write();
+                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == acc_id) {
+                        acc.status = "ERROR".to_string();
+                        if acc.refresh_token.is_none() {
+                            acc.error_message = Some("Google OAuth access token (ya29...) has expired. Please Login via Browser to obtain a persistent session.".to_string());
+                        } else if is_auth {
+                            acc.error_message = Some(format!("Authentication failed: {}", err_str));
+                        }
+                    }
+                    let _ = cfg.save();
+                }
+                app_state.cfg_version.fetch_add(1, Ordering::SeqCst);
+            }
+            false
+        }
+    }
 }
 
 fn detect_model_modality(id: &str) -> &'static str {
@@ -330,7 +430,6 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         tab_logs: t.tab_logs.into(),
         tab_stats: t.tab_stats.into(),
         tab_settings: t.tab_settings.into(),
-        tab_about: t.tab_about.into(),
 
         btn_stop_proxy: t.btn_stop_proxy.into(),
         btn_start_proxy: t.btn_start_proxy.into(),
@@ -338,15 +437,10 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         dash_title: t.dash_title.into(),
         dash_subtitle: t.dash_subtitle.into(),
         stat_requests: t.stat_requests.into(),
-        stat_tokens: t.stat_tokens.into(),
-        stat_latency: t.stat_latency.into(),
-        stat_accounts: t.stat_accounts.into(),
         stat_app_ram: t.stat_app_ram.into(),
         stat_proxy_engine: t.stat_proxy_engine.into(),
         quota_claude_title: t.quota_claude_title.into(),
-        quota_claude_desc: t.quota_claude_desc.into(),
         quota_gemini_title: t.quota_gemini_title.into(),
-        quota_gemini_desc: t.quota_gemini_desc.into(),
 
         acc_title: t.acc_title.into(),
         acc_subtitle: t.acc_subtitle.into(),
@@ -367,12 +461,6 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         btn_test_dialog: t.btn_test_dialog.into(),
 
         test_dialog_title: t.test_dialog_title.into(),
-        test_prompt_label: t.test_prompt_label.into(),
-        test_timeout_label: t.test_timeout_label.into(),
-        test_max_tokens_label: t.test_max_tokens_label.into(),
-        test_stream_toggle: t.test_stream_toggle.into(),
-        btn_send_test: t.btn_send_test.into(),
-        btn_cancel_test: t.btn_cancel_test.into(),
         btn_close: t.btn_close.into(),
 
         proxy_title: t.proxy_title.into(),
@@ -380,7 +468,6 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         sec_network: t.sec_network.into(),
         sec_routing: t.sec_routing.into(),
         sec_cache: t.sec_cache.into(),
-        sec_timeouts: t.sec_timeouts.into(),
         lbl_port: t.lbl_port.into(),
         lbl_host: t.lbl_host.into(),
         lbl_timeout: t.lbl_timeout.into(),
@@ -401,38 +488,22 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         sec_visual: t.sec_visual.into(),
         lbl_language: t.lbl_language.into(),
         lbl_quota_mode: t.lbl_quota_mode.into(),
-        opt_quota_percent: t.opt_quota_percent.into(),
-        opt_quota_fraction: t.opt_quota_fraction.into(),
         lbl_hide_brand: t.lbl_hide_brand.into(),
         sec_system: t.sec_system.into(),
         lbl_tray: t.lbl_tray.into(),
         lbl_autostart: t.lbl_autostart.into(),
         lbl_portable: t.lbl_portable.into(),
-        btn_save_settings: t.btn_save_settings.into(),
         lbl_show_logs: t.lbl_show_logs.into(),
         lbl_show_stats: t.lbl_show_stats.into(),
-        lbl_hide_about: t.lbl_hide_about.into(),
-        lbl_hide_about_desc: t.lbl_hide_about_desc.into(),
         lbl_billing_emulation: t.lbl_billing_emulation.into(),
         lbl_billing_emulation_desc: t.lbl_billing_emulation_desc.into(),
         lbl_reasoning_effort: t.lbl_reasoning_effort.into(),
-        lbl_reasoning_default: t.lbl_reasoning_default.into(),
-        lbl_reasoning_off: t.lbl_reasoning_off.into(),
-        lbl_reasoning_low: t.lbl_reasoning_low.into(),
-        lbl_reasoning_medium: t.lbl_reasoning_medium.into(),
-        lbl_reasoning_high: t.lbl_reasoning_high.into(),
-        lbl_jitter_percent: t.lbl_jitter_percent.into(),
-        lbl_inspector_prompt_tok: t.lbl_inspector_prompt_tok.into(),
-        lbl_inspector_comp_tok: t.lbl_inspector_comp_tok.into(),
         lbl_added_at: t.lbl_added_at.into(),
         lbl_check_updates: t.lbl_check_updates.into(),
         lbl_clear_logs_exit: t.lbl_clear_logs_exit.into(),
         lbl_quota_protection: t.lbl_quota_protection.into(),
         lbl_active_refresh: t.lbl_active_refresh.into(),
         lbl_pool_refresh: t.lbl_pool_refresh.into(),
-        info_error_label: t.info_error_label.into(),
-        about_title: t.about_title.into(),
-        about_subtitle: t.about_subtitle.into(),
         lbl_app_folder: t.lbl_app_folder.into(),
         btn_open_folder: t.btn_open_folder.into(),
         lbl_quota_view_mode: t.lbl_quota_view_mode.into(),
@@ -459,13 +530,10 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_modal_gemini_quota: t.lbl_modal_gemini_quota.into(),
         lbl_modal_5h: t.lbl_modal_5h.into(),
         lbl_modal_week: t.lbl_modal_week.into(),
-        lbl_modal_fingerprint: t.lbl_modal_fingerprint.into(),
         lbl_modal_endpoint: t.lbl_modal_endpoint.into(),
         lbl_modal_models: t.lbl_modal_models.into(),
         lbl_modal_error_details: t.lbl_modal_error_details.into(),
         lbl_updating: t.lbl_updating.into(),
-        lbl_updated: t.lbl_updated.into(),
-        lbl_update_failed: t.lbl_update_failed.into(),
         lbl_active_refresh_desc: t.lbl_active_refresh_desc.into(),
         lbl_pool_refresh_desc: t.lbl_pool_refresh_desc.into(),
         lbl_modal_machine_id: t.lbl_modal_machine_id.into(),
@@ -474,7 +542,6 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_modal_proxy_placeholder: t.lbl_modal_proxy_placeholder.into(),
         btn_save_proxy: t.btn_save_proxy.into(),
         btn_regenerate_fp: t.btn_regenerate_fp.into(),
-        lbl_direct_proxy: t.lbl_direct_proxy.into(),
         lbl_language_desc: t.lbl_language_desc.into(),
         lbl_quota_mode_desc: t.lbl_quota_mode_desc.into(),
         lbl_quota_view_mode_desc: t.lbl_quota_view_mode_desc.into(),
@@ -486,8 +553,6 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_portable_desc: t.lbl_portable_desc.into(),
         lbl_check_updates_desc: t.lbl_check_updates_desc.into(),
         lbl_clear_logs_exit_desc: t.lbl_clear_logs_exit_desc.into(),
-        lbl_logs_folder: t.lbl_logs_folder.into(),
-        btn_open_logs_folder: t.btn_open_logs_folder.into(),
         btn_reset_stats: t.btn_reset_stats.into(),
         lbl_time_range: t.lbl_time_range.into(),
         lbl_stat_composition: t.lbl_stat_composition.into(),
@@ -507,9 +572,6 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         strat_quota_aware_desc: t.strat_quota_aware_desc.into(),
         strat_round_robin_desc: t.strat_round_robin_desc.into(),
         strat_failover_desc: t.strat_failover_desc.into(),
-        btn_cache_priority: t.btn_cache_priority.into(),
-        btn_balanced: t.btn_balanced.into(),
-        btn_scatter: t.btn_scatter.into(),
         btn_off: t.btn_off.into(),
         btn_default: t.btn_default.into(),
         opt_percent: t.opt_percent.into(),
@@ -518,14 +580,10 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
             .about_app_desc
             .replace("{version}", env!("CARGO_PKG_VERSION"))
             .into(),
-        about_spec_title: t.about_spec_title.into(),
         about_spec_runtime: t.about_spec_runtime.into(),
         about_spec_transport: t.about_spec_transport.into(),
         about_spec_gui: t.about_spec_gui.into(),
-        about_spec_license: t.about_spec_license.into(),
-        btn_check_updates: t.btn_check_updates.clone().into(),
         btn_github_releases: t.btn_github_releases.into(),
-        btn_config_folder: t.btn_config_folder.into(),
         lbl_reset_5h_prefix: t.lbl_reset_5h_prefix.into(),
         lbl_reset_week_prefix: t.lbl_reset_week_prefix.into(),
         lbl_remaining: t.lbl_remaining.into(),
@@ -575,14 +633,7 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         log_detail_model: t.log_detail_model.into(),
         log_detail_tokens: t.log_detail_tokens.into(),
         log_detail_latency: t.log_detail_latency.into(),
-        log_detail_error: t.log_detail_error.into(),
         log_detail_headers: t.log_detail_headers.into(),
-        log_detail_payload: t.log_detail_payload.into(),
-        log_detail_response: t.log_detail_response.into(),
-        btn_updating: t.btn_updating.into(),
-        lbl_status_prefix: t.lbl_status_prefix.into(),
-        test_temp_label: t.test_temp_label.into(),
-        test_prompt_placeholder: t.test_prompt_placeholder.into(),
         lbl_catalog_models_header: t.lbl_catalog_models_header.into(),
         lbl_rolling_5h: t.lbl_rolling_5h.into(),
         lbl_rolling_weekly: t.lbl_rolling_weekly.into(),
@@ -590,47 +641,24 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_proxy_engine_standby: t.lbl_proxy_engine_standby.into(),
         lbl_stat_success: t.lbl_stat_success.into(),
         lbl_stat_error: t.lbl_stat_error.into(),
-        lbl_checking_updates: t.lbl_checking_updates.into(),
-        lbl_update_available: t.lbl_update_available.into(),
-        lbl_latest_version: t.lbl_latest_version.into(),
-        lbl_sending: t.lbl_sending.into(),
         lbl_tokens_upper: t.lbl_tokens_upper.into(),
         lbl_active_upper: t.lbl_active_upper.into(),
         lbl_antifraud_badge: t.lbl_antifraud_badge.into(),
         lbl_antifraud_desc: t.lbl_antifraud_desc.into(),
-        lbl_total: t.lbl_total.into(),
         lbl_proxy_engine_online: t.lbl_proxy_engine_online.into(),
-        lbl_auto_selected: t.lbl_auto_selected.into(),
         lbl_just_now: t.lbl_just_now.into(),
         lbl_auto_device_id: t.lbl_auto_device_id.into(),
-        lbl_upstream_models_suffix: t.lbl_upstream_models_suffix.into(),
         lbl_empty_response: t.lbl_empty_response.into(),
-        lbl_test_default_prompt: t.lbl_test_default_prompt.clone().into(),
-        lbl_test_response_placeholder: t.lbl_test_response_placeholder.into(),
-        test_status_ready: t.test_status_ready.clone().into(),
-        test_status_dispatching: t.test_status_dispatching.into(),
-        test_status_waiting_token: t.test_status_waiting_token.into(),
-        test_status_cancelled: t.test_status_cancelled.into(),
-        test_status_error: t.test_status_error.into(),
-        test_status_success: t.test_status_success.into(),
-        test_err_request_prefix: t.test_err_request_prefix.into(),
         lbl_acc_claude_5h: t.lbl_acc_claude_5h.into(),
         lbl_acc_claude_week: t.lbl_acc_claude_week.into(),
         lbl_acc_gemini_5h: t.lbl_acc_gemini_5h.into(),
         lbl_acc_gemini_week: t.lbl_acc_gemini_week.into(),
-        lbl_tray_show: t.lbl_tray_show.into(),
-        lbl_tray_exit: t.lbl_tray_exit.into(),
-        lbl_tray_tooltip: t.lbl_tray_tooltip.into(),
         lbl_config_files_hint: t.lbl_config_files_hint.into(),
-        sec_stealth: t.sec_stealth.into(),
         spoofing_title: t.spoofing_title.into(),
         spoofing_subtitle: t.spoofing_subtitle.into(),
         lbl_spoof_platform: t.lbl_spoof_platform.into(),
-        lbl_spoof_platform_desc: t.lbl_spoof_platform_desc.into(),
         lbl_spoof_ide_version: t.lbl_spoof_ide_version.into(),
-        lbl_spoof_ide_version_desc: t.lbl_spoof_ide_version_desc.into(),
         lbl_cooldown_jitter: t.lbl_cooldown_jitter.into(),
-        lbl_cooldown_jitter_desc: t.lbl_cooldown_jitter_desc.into(),
         lbl_ladder_backoff_info: t.lbl_ladder_backoff_info.into(),
         lbl_platform_auto: t.lbl_platform_auto.into(),
         lbl_spoof_go_sdk: t.lbl_spoof_go_sdk.into(),
@@ -642,33 +670,20 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_cooldown_429: t.lbl_cooldown_429.into(),
         lbl_cooldown_429_desc: t.lbl_cooldown_429_desc.into(),
         lbl_cooldown_duration: t.lbl_cooldown_duration.into(),
-        lbl_request_jitter: t.lbl_request_jitter.into(),
-        lbl_request_jitter_desc: t.lbl_request_jitter_desc.into(),
         lbl_stealth_sec_protocol: t.lbl_stealth_sec_protocol.into(),
         lbl_stealth_sec_identity: t.lbl_stealth_sec_identity.into(),
         lbl_stealth_sec_backoff: t.lbl_stealth_sec_backoff.into(),
-        lbl_tag_latest: t.lbl_tag_latest.into(),
-        lbl_tag_legacy: t.lbl_tag_legacy.into(),
         lbl_tag_default: t.lbl_tag_default.into(),
         lbl_modal_effort_prefix: t.lbl_modal_effort_prefix.into(),
         about_spec_runtime_val: t.about_spec_runtime_val.into(),
         about_spec_transport_val: t.about_spec_transport_val.into(),
         about_spec_gui_val: t.about_spec_gui_val.into(),
-        about_spec_license_val: t.about_spec_license_val.into(),
         lbl_endpoints_openai: t.lbl_endpoints_openai.into(),
         lbl_endpoints_claude: t.lbl_endpoints_claude.into(),
-        lbl_tag_stable: t.lbl_tag_stable.into(),
-        lbl_test_image_prompt: t.lbl_test_image_prompt.into(),
-        lbl_test_image_prompt_placeholder: t.lbl_test_image_prompt_placeholder.into(),
         opt_cache_first_desc: t.opt_cache_first_desc.into(),
         opt_cache_balanced_desc: t.opt_cache_balanced_desc.into(),
         opt_cache_spread_desc: t.opt_cache_spread_desc.into(),
         lbl_badge_thinking: t.lbl_badge_thinking.into(),
-        lbl_badge_no_thinking: t.lbl_badge_no_thinking.into(),
-        lbl_spoof_arch: t.lbl_spoof_arch.into(),
-        lbl_spoof_arch_desc: t.lbl_spoof_arch_desc.into(),
-        lbl_spoof_channel: t.lbl_spoof_channel.into(),
-        lbl_spoof_channel_desc: t.lbl_spoof_channel_desc.into(),
         lbl_strip_telemetry: t.lbl_strip_telemetry.into(),
         lbl_strip_telemetry_desc: t.lbl_strip_telemetry_desc.into(),
         lbl_auto_rotate_fp: t.lbl_auto_rotate_fp.into(),
@@ -678,78 +693,33 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_version_amr_release: t.lbl_version_amr_release.into(),
         lbl_version_antigravity_latest: t.lbl_version_antigravity_latest.into(),
         lbl_modal_health_title: t.lbl_modal_health_title.into(),
-        lbl_modal_quarantine_stage: t.lbl_modal_quarantine_stage.into(),
         lbl_modal_quarantine_remaining: t.lbl_modal_quarantine_remaining.into(),
         lbl_modal_quarantine_reason: t.lbl_modal_quarantine_reason.into(),
         lbl_modal_quarantine_active: t.lbl_modal_quarantine_active.into(),
         lbl_modal_quarantine_no_error: t.lbl_modal_quarantine_no_error.into(),
         btn_modal_reset_quarantine: t.btn_modal_reset_quarantine.into(),
         lbl_stage_healthy: t.lbl_stage_healthy.into(),
-        lbl_stage_soft_pause: t.lbl_stage_soft_pause.into(),
-        lbl_stage_backoff: t.lbl_stage_backoff.into(),
-        lbl_stage_cooldown: t.lbl_stage_cooldown.into(),
-        lbl_stage_quarantine: t.lbl_stage_quarantine.into(),
-        lbl_stage_probing: t.lbl_stage_probing.into(),
-        lbl_badge_stt: t.lbl_badge_stt.into(),
-        lbl_badge_search: t.lbl_badge_search.into(),
         lbl_model_disabled: t.lbl_model_disabled.into(),
         lbl_model_exhausted: t.lbl_model_exhausted.into(),
         lbl_model_notice: t.lbl_model_notice.into(),
-        lbl_test_aspect_ratio: t.lbl_test_aspect_ratio.into(),
-        lbl_test_audio_file: t.lbl_test_audio_file.into(),
-        lbl_test_audio_file_placeholder: t.lbl_test_audio_file_placeholder.into(),
-        btn_browse_file: t.btn_browse_file.into(),
-        lbl_test_language: t.lbl_test_language.into(),
-        lbl_test_voice: t.lbl_test_voice.into(),
-        lbl_test_speed: t.lbl_test_speed.into(),
-        lbl_test_search_domain: t.lbl_test_search_domain.into(),
-        lbl_test_stt_prompt_placeholder: t.lbl_test_stt_prompt_placeholder.into(),
-        lbl_test_tts_prompt_placeholder: t.lbl_test_tts_prompt_placeholder.into(),
-        lbl_test_search_prompt_placeholder: t.lbl_test_search_prompt_placeholder.into(),
-        lbl_test_stt_default_prompt: t.lbl_test_stt_default_prompt.into(),
-        lbl_test_tts_default_prompt: t.lbl_test_tts_default_prompt.into(),
-        lbl_test_search_default_prompt: t.lbl_test_search_default_prompt.into(),
-        btn_save_output: t.btn_save_output.into(),
-        btn_play_audio: t.btn_play_audio.into(),
         lbl_mcp_title: t.lbl_mcp_title.into(),
         lbl_mcp_desc: t.lbl_mcp_desc.into(),
         btn_mcp_test: t.btn_mcp_test.into(),
         btn_mcp_config: t.btn_mcp_config.into(),
-        btn_download_update: t.btn_download_update.into(),
         lbl_mcp_search_results: t.lbl_mcp_search_results.into(),
         lbl_mcp_search_results_desc: t.lbl_mcp_search_results_desc.into(),
-        lbl_mcp_active: t.lbl_mcp_active.into(),
-        lbl_mcp_disabled: t.lbl_mcp_disabled.into(),
-        mcp_dialog_title: t.mcp_dialog_title.into(),
-        lbl_mcp_tool_select: t.lbl_mcp_tool_select.into(),
-        lbl_mcp_arg_label: t.lbl_mcp_arg_label.into(),
-        btn_run_mcp: t.btn_run_mcp.into(),
         lbl_mcp_config_title: t.lbl_mcp_config_title.into(),
         lbl_mcp_config_desc: t.lbl_mcp_config_desc.into(),
         diag_dialog_title: t.diag_dialog_title.into(),
         btn_run_diagnostic: t.btn_run_diagnostic.into(),
         lbl_diag_testing: t.lbl_diag_testing.into(),
-        lbl_diag_success: t.lbl_diag_success.into(),
         lbl_diag_error: t.lbl_diag_error.into(),
-        lbl_model_desc_header: t.lbl_model_desc_header.into(),
         lbl_account_breakdown_header: t.lbl_account_breakdown_header.into(),
         btn_test_proxy: t.btn_test_proxy.into(),
         lbl_testing_proxy: t.lbl_testing_proxy.into(),
-        lbl_proxy_ok: t.lbl_proxy_ok.into(),
-        lbl_proxy_failed: t.lbl_proxy_failed.into(),
         lbl_account_models_header: t.lbl_account_models_header.into(),
         sec_error_spoofing: t.sec_error_spoofing.into(),
         sec_error_spoofing_desc: t.sec_error_spoofing_desc.into(),
-        lbl_quota_view_both: t.lbl_quota_view_both.into(),
-        lbl_quota_view_gemini: t.lbl_quota_view_gemini.into(),
-        lbl_quota_view_claude: t.lbl_quota_view_claude.into(),
-        lbl_stat_mcp_title: t.lbl_stat_mcp_title.into(),
-        lbl_stat_mcp_total: t.lbl_stat_mcp_total.into(),
-        lbl_stat_mcp_search: t.lbl_stat_mcp_search.into(),
-        lbl_stat_mcp_fetch: t.lbl_stat_mcp_fetch.into(),
-        lbl_stat_catalog_title: t.lbl_stat_catalog_title.into(),
-        lbl_stat_catalog_refreshes: t.lbl_stat_catalog_refreshes.into(),
-        lbl_status_diag_button: t.lbl_status_diag_button.into(),
         lbl_hide_unavailable_models: t.lbl_hide_unavailable_models.into(),
         lbl_hide_unavailable_models_desc: t.lbl_hide_unavailable_models_desc.into(),
         lbl_diag_quota_notice: t.lbl_diag_quota_notice.into(),
@@ -759,18 +729,8 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         connectors_title: t.connectors_title.into(),
         connectors_subtitle: t.connectors_subtitle.into(),
         conn_status_synced: t.conn_status_synced.into(),
-        conn_status_outdated: t.conn_status_outdated.into(),
-        conn_status_not_synced: t.conn_status_not_synced.into(),
-        conn_status_error: t.conn_status_error.into(),
         conn_btn_sync_now: t.conn_btn_sync_now.into(),
         conn_lbl_config_path: t.conn_lbl_config_path.into(),
-        conn_opencode_desc: t.conn_opencode_desc.into(),
-        conn_claude_code_desc: t.conn_claude_code_desc.into(),
-        conn_codex_desc: t.conn_codex_desc.into(),
-        conn_gemini_cli_desc: t.conn_gemini_cli_desc.into(),
-        conn_deepseek_harness_desc: t.conn_deepseek_harness_desc.into(),
-        conn_cursor_desc: t.conn_cursor_desc.into(),
-        conn_cline_desc: t.conn_cline_desc.into(),
         lbl_show_connectors: t.lbl_show_connectors.into(),
         mcp_test_dialog_title: t.mcp_test_dialog_title.into(),
         lbl_default_reasoning_title: t.lbl_default_reasoning_title.into(),
@@ -1299,7 +1259,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Background dual-cadence account refresh task
     let bg_cfg = Arc::clone(&config_arc);
-    let bg_ver = Arc::clone(&cfg_version);
     let bg_balancer = Arc::clone(&balancer_arc);
     let bg_state = Arc::clone(&shared_app_state);
     let mut bg_stop_rx = stop_receiver.clone();
@@ -1362,103 +1321,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     next_pool_check += Duration::from_secs(45);
                 }
 
-                let active_account_opt = {
+                let active_acc_id = {
                     let cfg = bg_cfg.read();
                     cfg.accounts
                         .iter()
                         .find(|a| active_id.as_deref() == Some(&a.id) && a.is_active)
-                        .cloned()
+                        .map(|a| a.id.clone())
                 };
 
-                if let Some(acc_snapshot) = active_account_opt {
-                    let id = acc_snapshot.id.clone();
-                    let mut token = acc_snapshot.api_key.clone();
-                    let refresh_tok = acc_snapshot.refresh_token.clone();
-                    let pid = acc_snapshot.project_id.clone();
-                    let client = bg_state.get_client_for_account(&acc_snapshot);
-
-                    let mut quota_res = antigravity::fetch_account_models_and_quota(
-                        &client,
-                        &token,
-                        pid.as_deref(),
-                    )
-                    .await;
-                    if quota_res.is_err() {
-                        if let Some(ref rtok) = refresh_tok {
-                            if let Ok(ref_res) = antigravity::refresh_token(&client, rtok).await {
-                                token = ref_res.access_token.clone();
-                                {
-                                    let mut cfg = bg_cfg.write();
-                                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id)
-                                    {
-                                        acc.api_key = token.clone();
-                                        if ref_res.refresh_token.is_some() {
-                                            acc.refresh_token = ref_res.refresh_token;
-                                        }
-                                    }
-                                    let _ = cfg.save();
-                                }
-                                quota_res = antigravity::fetch_account_models_and_quota(
-                                    &client,
-                                    &token,
-                                    pid.as_deref(),
-                                )
-                                .await;
-                            }
-                        }
-                    }
-
-                    match quota_res {
-                        Ok((acc_models, _models, used, limit, reset, detailed_quota)) => {
-                            {
-                                let mut cfg = bg_cfg.write();
-                                if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id) {
-                                    acc.available_models = acc_models;
-                                    acc.quota_used = used;
-                                    acc.quota_limit = limit;
-                                    acc.quota_reset = reset;
-                                    acc.claude_percent = detailed_quota.claude_percent;
-                                    acc.claude_reset = detailed_quota.claude_reset;
-                                    acc.claude_weekly_percent =
-                                        detailed_quota.claude_weekly_percent;
-                                    acc.claude_weekly_reset =
-                                        detailed_quota.claude_weekly_reset;
-                                    acc.gemini_percent = detailed_quota.gemini_percent;
-                                    acc.gemini_reset = detailed_quota.gemini_reset;
-                                    acc.gemini_weekly_percent =
-                                        detailed_quota.gemini_weekly_percent;
-                                    acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
-                                    acc.error_message = None;
-                                    acc.status = "ACTIVE".to_string();
-                                    if detailed_quota.claude_percent > 0 {
-                                        acc.tier = "PRO".to_string();
-                                    }
-                                }
-                                cfg.rebuild_models_from_accounts();
-                                let _ = cfg.save();
-                            }
-                            bg_ver.fetch_add(1, Ordering::SeqCst);
-                        }
-                        Err(e) => {
-                            let err_str = e.to_string();
-                            if err_str.contains("401")
-                                || err_str.contains("403")
-                                || err_str.contains("invalid_grant")
-                            {
-                                {
-                                    let mut cfg = bg_cfg.write();
-                                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id)
-                                    {
-                                        acc.status = "ERROR".to_string();
-                                        acc.error_message =
-                                            Some(format!("Authentication failed: {}", err_str));
-                                    }
-                                    let _ = cfg.save();
-                                }
-                                bg_ver.fetch_add(1, Ordering::SeqCst);
-                            }
-                        }
-                    }
+                if let Some(id) = active_acc_id {
+                    sync_account_quota_and_models(&bg_state, &id, false, false).await;
                 }
             }
 
@@ -1475,7 +1347,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     next_active_check += Duration::from_secs(45);
                 }
 
-                let pool_accounts: Vec<UpstreamAccount> = {
+                let pool_account_ids: Vec<String> = {
                     let cfg = bg_cfg.read();
                     cfg.accounts
                         .iter()
@@ -1484,105 +1356,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 && active_id.as_deref() != Some(&a.id)
                                 && !(a.status == "ERROR" && a.refresh_token.is_none())
                         })
-                        .cloned()
+                        .map(|a| a.id.clone())
                         .collect()
                 };
 
-                for acc_snapshot in pool_accounts {
+                for id in pool_account_ids {
                     // Stagger pool account checks with randomized 3 to 7 second pauses to avoid bot-like bursting
                     tokio::time::sleep(Duration::from_millis(AppConfig::random_delay_ms(
                         3000, 7000,
                     )))
                     .await;
-
-                    let id = acc_snapshot.id.clone();
-                    let mut token = acc_snapshot.api_key.clone();
-                    let refresh_tok = acc_snapshot.refresh_token.clone();
-                    let pid = acc_snapshot.project_id.clone();
-                    let client = bg_state.get_client_for_account(&acc_snapshot);
-
-                    let mut quota_res = antigravity::fetch_account_models_and_quota(
-                        &client,
-                        &token,
-                        pid.as_deref(),
-                    )
-                    .await;
-                    if quota_res.is_err() {
-                        if let Some(ref rtok) = refresh_tok {
-                            if let Ok(ref_res) = antigravity::refresh_token(&client, rtok).await {
-                                token = ref_res.access_token.clone();
-                                {
-                                    let mut cfg = bg_cfg.write();
-                                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id)
-                                    {
-                                        acc.api_key = token.clone();
-                                        if ref_res.refresh_token.is_some() {
-                                            acc.refresh_token = ref_res.refresh_token;
-                                        }
-                                    }
-                                    let _ = cfg.save();
-                                }
-                                quota_res = antigravity::fetch_account_models_and_quota(
-                                    &client,
-                                    &token,
-                                    pid.as_deref(),
-                                )
-                                .await;
-                            }
-                        }
-                    }
-
-                    match quota_res {
-                        Ok((acc_models, _models, used, limit, reset, detailed_quota)) => {
-                            {
-                                let mut cfg = bg_cfg.write();
-                                if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id) {
-                                    acc.available_models = acc_models;
-                                    acc.quota_used = used;
-                                    acc.quota_limit = limit;
-                                    acc.quota_reset = reset;
-                                    acc.claude_percent = detailed_quota.claude_percent;
-                                    acc.claude_reset = detailed_quota.claude_reset;
-                                    acc.claude_weekly_percent =
-                                        detailed_quota.claude_weekly_percent;
-                                    acc.claude_weekly_reset =
-                                        detailed_quota.claude_weekly_reset;
-                                    acc.gemini_percent = detailed_quota.gemini_percent;
-                                    acc.gemini_reset = detailed_quota.gemini_reset;
-                                    acc.gemini_weekly_percent =
-                                        detailed_quota.gemini_weekly_percent;
-                                    acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
-                                    acc.error_message = None;
-                                    acc.status = "ACTIVE".to_string();
-                                    if detailed_quota.claude_percent > 0 {
-                                        acc.tier = "PRO".to_string();
-                                    }
-                                }
-                                cfg.rebuild_models_from_accounts();
-                                let _ = cfg.save();
-                            }
-                            bg_ver.fetch_add(1, Ordering::SeqCst);
-                        }
-                        Err(e) => {
-                            let err_str = e.to_string();
-                            if err_str.contains("401")
-                                || err_str.contains("403")
-                                || err_str.contains("invalid_grant")
-                            {
-                                {
-                                    let mut cfg = bg_cfg.write();
-                                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id)
-                                    {
-                                        acc.status = "ERROR".to_string();
-                                        acc.error_message =
-                                            Some(format!("Authentication failed: {}", err_str));
-                                    }
-                                    let _ = cfg.save();
-                                }
-                                bg_ver.fetch_add(1, Ordering::SeqCst);
-                            }
-                        }
-                    }
+                    sync_account_quota_and_models(&bg_state, &id, false, false).await;
                 }
             }
         }
@@ -1590,109 +1374,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Startup dynamic catalog & quota sync across all active accounts
     let startup_cfg = Arc::clone(&config_arc);
-    let startup_ver = Arc::clone(&cfg_version);
     let startup_state = Arc::clone(&shared_app_state);
     tokio::spawn(async move {
-        let active_accounts: Vec<UpstreamAccount> = {
+        let active_account_ids: Vec<String> = {
             let cfg = startup_cfg.read();
             cfg.accounts
                 .iter()
                 .filter(|a| a.is_active && !a.api_key.is_empty())
-                .cloned()
+                .map(|a| a.id.clone())
                 .collect()
         };
 
-        if active_accounts.is_empty() {
+        if active_account_ids.is_empty() {
             return;
         }
 
         log::info!(
             "Synchronizing {} active upstream account(s) on proxy launch...",
-            active_accounts.len()
+            active_account_ids.len()
         );
 
-        for (idx, acc_snapshot) in active_accounts.into_iter().enumerate() {
+        for (idx, acc_id) in active_account_ids.into_iter().enumerate() {
             if idx > 0 {
                 tokio::time::sleep(Duration::from_millis(AppConfig::random_delay_ms(400, 1200)))
                     .await;
             }
-
-            let acc_id = acc_snapshot.id.clone();
-            let mut token = acc_snapshot.api_key.clone();
-            let refresh_tok = acc_snapshot.refresh_token.clone();
-            let mut active_pid = acc_snapshot.project_id.clone();
-            let client = startup_state.get_client_for_account(&acc_snapshot);
-
-            if active_pid.is_none() {
-                let (pid_opt, tier) = antigravity::fetch_project_and_tier(&client, &token).await;
-                if pid_opt.is_some() {
-                    active_pid = pid_opt.clone();
-                    let mut cfg = startup_cfg.write();
-                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == acc_id) {
-                        acc.project_id = pid_opt;
-                        acc.tier = tier;
-                    }
-                    let _ = cfg.save();
-                }
-            }
-
-            let mut res = antigravity::fetch_account_models_and_quota(
-                &client,
-                &token,
-                active_pid.as_deref(),
-            )
-            .await;
-
-            if res.is_err() {
-                if let Some(ref rtok) = refresh_tok {
-                    if let Ok(ref_res) = antigravity::refresh_token(&client, rtok).await {
-                        token = ref_res.access_token;
-                        {
-                            let mut cfg = startup_cfg.write();
-                            if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == acc_id) {
-                                acc.api_key = token.clone();
-                                if ref_res.refresh_token.is_some() {
-                                    acc.refresh_token = ref_res.refresh_token;
-                                }
-                            }
-                            let _ = cfg.save();
-                        }
-                        res = antigravity::fetch_account_models_and_quota(
-                            &client,
-                            &token,
-                            active_pid.as_deref(),
-                        )
-                        .await;
-                    }
-                }
-            }
-
-            if let Ok((acc_models, _models, used, limit, reset, detailed_quota)) = res {
-                log::info!(
-                    "Synchronized {} upstream models for {} on startup",
-                    acc_models.len(),
-                    acc_snapshot.name
-                );
-                {
-                    let mut cfg = startup_cfg.write();
-                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == acc_id) {
-                        acc.available_models = acc_models;
-                        acc.quota_used = used;
-                        acc.quota_limit = limit;
-                        acc.quota_reset = reset;
-                        acc.claude_percent = detailed_quota.claude_percent;
-                        acc.claude_reset = detailed_quota.claude_reset;
-                        acc.claude_weekly_percent = detailed_quota.claude_weekly_percent;
-                        acc.claude_weekly_reset = detailed_quota.claude_weekly_reset;
-                        acc.gemini_percent = detailed_quota.gemini_percent;
-                        acc.gemini_reset = detailed_quota.gemini_reset;
-                        acc.gemini_weekly_percent = detailed_quota.gemini_weekly_percent;
-                        acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
-                    }
-                    cfg.rebuild_models_from_accounts();
-                    let _ = cfg.save();
-                }
-                startup_ver.fetch_add(1, Ordering::SeqCst);
+            if sync_account_quota_and_models(&startup_state, &acc_id, true, false).await {
+                log::info!("Synchronized upstream models for {} on startup", acc_id);
             }
         }
     });
@@ -1859,7 +1567,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_proxy_host_input(cfg.host.clone().into());
         main_window.set_setting_timeout_str(cfg.request_timeout_secs.to_string().into());
         main_window.set_setting_heartbeat_str(cfg.heartbeat_interval_secs.to_string().into());
-        main_window.set_expose_reasoning_variants(cfg.expose_reasoning_variants);
         main_window.set_group_reasoning_clones(cfg.group_reasoning_clones);
         main_window.set_quota_display_mode(cfg.quota_display_mode.clone().into());
         main_window.set_quota_view_mode(cfg.quota_view_mode.clone().into());
@@ -1882,30 +1589,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_stealth_lock_prod(cfg.lock_production_endpoints);
         main_window.set_stealth_cooldown_429(cfg.cooldown_on_429);
         main_window.set_stealth_cooldown_duration(cfg.cooldown_duration_secs as i32);
-        main_window.set_stealth_request_jitter(cfg.request_jitter);
         main_window.set_stealth_spoof_platform(cfg.spoof_platform.clone().into());
         main_window.set_stealth_spoof_ide_version(cfg.spoof_ide_version.clone().into());
-        main_window.set_stealth_spoof_arch(cfg.spoof_arch.clone().into());
-        main_window.set_stealth_spoof_channel(cfg.spoof_channel.clone().into());
         main_window.set_stealth_strip_telemetry(cfg.strip_telemetry_traces);
         main_window.set_stealth_auto_rotate_fp(cfg.auto_rotate_fp_on_limit);
         main_window.set_stealth_normalize_headers(cfg.normalize_headers);
         main_window.set_stealth_cooldown_jitter_pct(cfg.cooldown_jitter_percent as i32);
         main_window.set_active_account_refresh_mins(cfg.active_account_refresh_mins as i32);
         main_window.set_pool_account_refresh_mins(cfg.pool_account_refresh_mins as i32);
-        main_window.set_setting_timeout_secs(cfg.request_timeout_secs as i32);
-        main_window.set_setting_heartbeat_secs(cfg.heartbeat_interval_secs as i32);
         main_window.set_setting_minimize_tray(cfg.minimize_to_tray);
         main_window.set_setting_autostart(cfg.autostart);
         main_window.set_setting_portable_mode(cfg.portable_mode);
         main_window.set_routing_strategy_index(cfg.routing_strategy.to_index());
         main_window.set_cache_affinity_mode_index(cfg.cache_affinity_mode.to_index());
-        main_window.set_session_sticky_ttl_secs(cfg.session_sticky_ttl_secs as i32);
-        main_window.set_quota_imbalance_threshold(cfg.quota_imbalance_threshold as i32);
         main_window.set_failover_on_429(cfg.failover_on_429);
         main_window.set_logging_enabled(cfg.log_enabled);
         main_window.set_max_log_capacity(cfg.max_log_entries as i32);
-        main_window.set_max_log_capacity_input(cfg.max_log_entries.to_string().into());
         main_window.set_master_api_key(cfg.master_api_key.clone().into());
 
         let (f_path, f_size) = AppConfig::config_folder_info();
@@ -2115,13 +1814,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let v_clone = Arc::clone(&v_add);
 
             tokio::spawn(async move {
-                let http_client = reqwest::Client::new();
+                let mut builder = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(30));
+                if let Some(ref p_url) = proxy_opt {
+                    if let Ok(p) = reqwest::Proxy::all(p_url) {
+                        builder = builder.proxy(p);
+                    }
+                }
+                let http_client = builder.build().unwrap_or_default();
+                let ua = configured_ua_for_config(&c_clone.read());
                 let mut access_token = token.clone();
                 let mut refresh_token_opt = None;
 
                 if token.starts_with("1//") {
                     refresh_token_opt = Some(token.clone());
-                    if let Ok(tok_res) = antigravity::refresh_token(&http_client, &token).await {
+                    if let Ok(tok_res) =
+                        antigravity::refresh_token_with_ua(&http_client, &token, Some(&ua)).await
+                    {
                         access_token = tok_res.access_token;
                         if tok_res.refresh_token.is_some() {
                             refresh_token_opt = tok_res.refresh_token;
@@ -2129,7 +1838,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
-                let email = match antigravity::fetch_user_info(&http_client, &access_token).await {
+                let email = match antigravity::fetch_user_info_with_ua(
+                    &http_client,
+                    &access_token,
+                    Some(&ua),
+                )
+                .await
+                {
                     Ok(info) => info.email,
                     Err(_) => {
                         if access_token.starts_with("sk-ant") {
@@ -2145,22 +1860,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 };
 
-                let (project_id, tier) =
-                    antigravity::fetch_project_and_tier(&http_client, &access_token).await;
+                let (project_id, tier) = antigravity::fetch_project_and_tier_with_ua(
+                    &http_client,
+                    &access_token,
+                    Some(&ua),
+                )
+                .await;
 
                 let (acc_models, _fetched_models, quota_used, quota_limit, quota_reset, detailed_quota) =
-                    match antigravity::fetch_account_models_and_quota(
+                    match antigravity::fetch_account_models_and_quota_with_ua(
                         &http_client,
                         &access_token,
                         project_id.as_deref(),
+                        Some(&ua),
                     )
                     .await
                     {
                         Ok(res) => (res.0, Some(res.1), res.2, res.3, res.4, res.5),
                         Err(_) => {
-                            let det =
-                                antigravity::fetch_user_quota_summary(&http_client, &access_token)
-                                    .await;
+                            let det = antigravity::fetch_user_quota_summary_with_ua(
+                                &http_client,
+                                &access_token,
+                                Some(&ua),
+                            )
+                            .await;
                             (Vec::new(), None, 0, 100_000, "in 4h 00m".to_string(), det)
                         }
                     };
@@ -2266,11 +1989,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let c_ref = Arc::clone(&config_arc);
     let v_ref = Arc::clone(&cfg_version);
     let states_ref = Arc::clone(&account_update_states);
+    let state_ref = Arc::clone(&shared_app_state);
     main_window.on_refresh_account_quota(move |id_slint| {
         let id_str = id_slint.to_string();
         let c_clone = Arc::clone(&c_ref);
         let v_clone = Arc::clone(&v_ref);
         let states_clone = Arc::clone(&states_ref);
+        let state_clone = Arc::clone(&state_ref);
 
         let lang = Language::from_str_code(&c_ref.read().language);
         let updating_lbl = match lang {
@@ -2282,93 +2007,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         v_ref.fetch_add(1, Ordering::SeqCst);
 
         tokio::spawn(async move {
-            let (mut token, project_id, refresh_token_opt) = {
-                let cfg = c_clone.read();
-                if let Some(acc) = cfg.accounts.iter().find(|a| a.id == id_str) {
-                    (acc.api_key.clone(), acc.project_id.clone(), acc.refresh_token.clone())
-                } else {
-                    return;
-                }
-            };
-
-            let client = reqwest::Client::new();
-            let mut resolved_pid = project_id;
-            if resolved_pid.is_none() {
-                let (pid_opt, tier) = antigravity::fetch_project_and_tier(&client, &token).await;
-                if pid_opt.is_some() {
-                    resolved_pid = pid_opt.clone();
-                    let mut cfg = c_clone.write();
-                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id_str) {
-                        acc.project_id = pid_opt;
-                        acc.tier = tier;
-                    }
-                    let _ = cfg.save();
-                }
-            }
-
-            let mut res = antigravity::fetch_account_models_and_quota(&client, &token, resolved_pid.as_deref()).await;
-
-            // If token expired, try refreshing via refresh token
-            if res.is_err() {
-                if let Some(ref rtok) = refresh_token_opt {
-                    if let Ok(tok_res) = antigravity::refresh_token(&client, rtok).await {
-                        token = tok_res.access_token.clone();
-                        {
-                            let mut cfg = c_clone.write();
-                            if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id_str) {
-                                acc.api_key = token.clone();
-                                if tok_res.refresh_token.is_some() {
-                                    acc.refresh_token = tok_res.refresh_token;
-                                }
-                            }
-                            let _ = cfg.save();
-                        }
-                        res = antigravity::fetch_account_models_and_quota(&client, &token, resolved_pid.as_deref()).await;
-                    }
-                }
-            }
-
-            let success = match res {
-                Ok((acc_models, _models, used, limit, reset, detailed_quota)) => {
-                    {
-                        let mut cfg = c_clone.write();
-                        if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id_str) {
-                            acc.status = "ACTIVE".to_string();
-                            acc.error_message = None;
-                            acc.is_active = true;
-                            acc.available_models = acc_models;
-                            acc.quota_used = used;
-                            acc.quota_limit = limit;
-                            acc.quota_reset = reset;
-                            acc.claude_percent = detailed_quota.claude_percent;
-                            acc.claude_reset = detailed_quota.claude_reset;
-                            acc.claude_weekly_percent = detailed_quota.claude_weekly_percent;
-                            acc.claude_weekly_reset = detailed_quota.claude_weekly_reset;
-                            acc.gemini_percent = detailed_quota.gemini_percent;
-                            acc.gemini_reset = detailed_quota.gemini_reset;
-                            acc.gemini_weekly_percent = detailed_quota.gemini_weekly_percent;
-                            acc.gemini_weekly_reset = detailed_quota.gemini_weekly_reset;
-                            if detailed_quota.claude_percent > 0 {
-                                acc.tier = "PRO".to_string();
-                            }
-                        }
-                        cfg.rebuild_models_from_accounts();
-                        let _ = cfg.save();
-                    }
-                    true
-                }
-                Err(_) => {
-                    let mut cfg = c_clone.write();
-                    if let Some(acc) = cfg.accounts.iter_mut().find(|a| a.id == id_str) {
-                        acc.status = "ERROR".to_string();
-                        if acc.refresh_token.is_none() {
-                            acc.error_message = Some("Google OAuth access token (ya29...) has expired. Please Login via Browser to obtain a persistent session.".to_string());
-                        }
-                    }
-                    let _ = cfg.save();
-                    false
-                }
-            };
+            let success = sync_account_quota_and_models(&state_clone, &id_str, true, true).await;
 
             let current_lang = Language::from_str_code(&c_clone.read().language);
             let result_str = if success {
@@ -2413,7 +2052,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 h.set_info_account_machine_id(mach_id.into());
                 h.set_info_account_proxy_url(acc.proxy_url.clone().unwrap_or_default().into());
                 h.set_info_account_name(acc.name.clone().into());
-                h.set_info_account_tier(acc.tier.clone().into());
                 h.set_info_account_status(acc.status.clone().into());
                 h.set_info_account_claude_5h_pct(acc.claude_percent);
                 h.set_info_account_claude_5h_reset(acc.claude_reset.clone().into());
@@ -2423,7 +2061,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 h.set_info_account_gemini_5h_reset(acc.gemini_reset.clone().into());
                 h.set_info_account_gemini_week_pct(acc.gemini_weekly_percent);
                 h.set_info_account_gemini_week_reset(acc.gemini_weekly_reset.clone().into());
-                h.set_info_account_fingerprint(acc.fingerprint.clone().into());
                 let lang = Language::from_str_code(&cfg.language);
                 let t = get_translations(lang);
                 h.set_info_account_models(
@@ -2829,12 +2466,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let lang = Language::from_str_code(&cfg.language);
             let t = get_translations(lang);
 
-            let (model_name, provider, thinking) = if let Some(m) = cfg.models.iter().find(|m| m.id == model_id) {
-                (m.display_name.clone(), m.provider.clone(), m.supports_thinking)
+            let (model_name, thinking) = if let Some(m) = cfg.models.iter().find(|m| m.id == model_id) {
+                (m.display_name.clone(), m.supports_thinking)
             } else {
-                (model_id.clone(), "google".to_string(), false)
+                (model_id.clone(), false)
             };
-            let modality = detect_model_modality(&model_id);
 
             // Accounts breakdown
             let mut breakdown_lines = Vec::new();
@@ -2865,8 +2501,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             h.set_diag_model_id(model_id.into());
             h.set_diag_model_name(model_name.into());
             h.set_diag_model_notice(notice.into());
-            h.set_diag_model_provider(provider.into());
-            h.set_diag_model_modality(modality.into());
             h.set_diag_model_thinking(thinking);
             h.set_diag_accounts_breakdown(breakdown_text.into());
             h.set_diag_status_text("".into());
@@ -3126,34 +2760,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    // Set session sticky TTL callback
-    let c_ttl = Arc::clone(&config_arc);
-    let h_ttl = window_handle.clone();
-    main_window.on_set_session_ttl(move |ttl| {
-        {
-            let mut cfg = c_ttl.write();
-            cfg.session_sticky_ttl_secs = ttl as u64;
-            let _ = cfg.save();
-        }
-        if let Some(h) = h_ttl.upgrade() {
-            h.set_session_sticky_ttl_secs(ttl);
-        }
-    });
-
-    // Set imbalance threshold callback
-    let c_imb = Arc::clone(&config_arc);
-    let h_imb = window_handle.clone();
-    main_window.on_set_imbalance_threshold(move |thresh| {
-        {
-            let mut cfg = c_imb.write();
-            cfg.quota_imbalance_threshold = thresh as u32;
-            let _ = cfg.save();
-        }
-        if let Some(h) = h_imb.upgrade() {
-            h.set_quota_imbalance_threshold(thresh);
-        }
-    });
-
     // Toggle 429 failover callback
     let c_fo = Arc::clone(&config_arc);
     let h_fo = window_handle.clone();
@@ -3390,11 +2996,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         open_in_system(&p.to_string_lossy());
     });
 
-    main_window.on_open_logs_folder(move || {
-        let p = amr::proxy::stats::ProxyStats::logs_folder_path();
-        open_in_system(&p.to_string_lossy());
-    });
-
     let s_reset = Arc::clone(&stats_arc);
     let h_reset = window_handle.clone();
     main_window.on_reset_stats(move || {
@@ -3416,11 +3017,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             h.set_stat_think_pct(0);
             h.set_stat_claude_pct(0);
             h.set_stat_gemini_pct(0);
-            h.set_stat_chart1_path1("".into());
-            h.set_stat_chart1_path2("".into());
-            h.set_stat_chart1_path3("".into());
-            h.set_stat_chart2_path_succ("".into());
-            h.set_stat_chart2_path_err("".into());
         }
     });
 
@@ -3445,10 +3041,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 });
             });
         }
-    });
-
-    main_window.on_open_github_repo(move || {
-        open_in_system("https://github.com/Qyzom/Antigravity-Manager-Rust");
     });
 
     main_window.on_open_github_releases(move || {
@@ -3487,28 +3079,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let c_ptim = Arc::clone(&config_arc);
-    let h_ptim = window_handle.clone();
     main_window.on_set_proxy_timeout_str(move |s| {
         if let Ok(t) = s.to_string().trim().parse::<u64>() {
             let mut cfg = c_ptim.write();
             cfg.request_timeout_secs = t;
             let _ = cfg.save();
-            if let Some(h) = h_ptim.upgrade() {
-                h.set_setting_timeout_secs(t as i32);
-            }
         }
     });
 
     let c_phb = Arc::clone(&config_arc);
-    let h_phb = window_handle.clone();
     main_window.on_set_proxy_heartbeat_str(move |s| {
         if let Ok(hb) = s.to_string().trim().parse::<u64>() {
             let mut cfg = c_phb.write();
             cfg.heartbeat_interval_secs = hb;
             let _ = cfg.save();
-            if let Some(h) = h_phb.upgrade() {
-                h.set_setting_heartbeat_secs(hb as i32);
-            }
         }
     });
 
@@ -3594,20 +3178,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let c_sjit = Arc::clone(&config_arc);
-    let h_sjit = window_handle.clone();
-    main_window.on_toggle_stealth_request_jitter(move || {
-        let new_val = {
-            let mut cfg = c_sjit.write();
-            cfg.request_jitter = !cfg.request_jitter;
-            let _ = cfg.save();
-            cfg.request_jitter
-        };
-        if let Some(h) = h_sjit.upgrade() {
-            h.set_stealth_request_jitter(new_val);
-        }
-    });
-
     let c_splat = Arc::clone(&config_arc);
     let h_splat = window_handle.clone();
     main_window.on_set_stealth_platform(move |plat| {
@@ -3633,34 +3203,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         if let Some(h) = h_side.upgrade() {
             h.set_stealth_spoof_ide_version(ver_str.into());
-        }
-    });
-
-    let c_sarch = Arc::clone(&config_arc);
-    let h_sarch = window_handle.clone();
-    main_window.on_set_stealth_arch(move |arch| {
-        let arch_str = arch.to_string();
-        {
-            let mut cfg = c_sarch.write();
-            cfg.spoof_arch = arch_str.clone();
-            let _ = cfg.save();
-        }
-        if let Some(h) = h_sarch.upgrade() {
-            h.set_stealth_spoof_arch(arch_str.into());
-        }
-    });
-
-    let c_schan = Arc::clone(&config_arc);
-    let h_schan = window_handle.clone();
-    main_window.on_set_stealth_channel(move |chan| {
-        let chan_str = chan.to_string();
-        {
-            let mut cfg = c_schan.write();
-            cfg.spoof_channel = chan_str.clone();
-            let _ = cfg.save();
-        }
-        if let Some(h) = h_schan.upgrade() {
-            h.set_stealth_spoof_channel(chan_str.into());
         }
     });
 
@@ -3746,25 +3288,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    let s_mlog = Arc::clone(&stats_arc);
-    let c_mlog = Arc::clone(&config_arc);
-    let h_mlog = window_handle.clone();
-    main_window.on_set_max_log_capacity_str(move |val_slint| {
-        if let Ok(num) = val_slint.to_string().trim().parse::<usize>() {
-            let clamped = num.clamp(10, 5000);
-            s_mlog.max_log_capacity.store(clamped, Ordering::Relaxed);
-            {
-                let mut cfg = c_mlog.write();
-                cfg.max_log_entries = clamped;
-                let _ = cfg.save();
-            }
-            if let Some(h) = h_mlog.upgrade() {
-                h.set_max_log_capacity(clamped as i32);
-                h.set_max_log_capacity_input(clamped.to_string().into());
-            }
-        }
-    });
-
     // Periodic UI stats and state updater timer
     let timer = slint::Timer::default();
     let s_timer = Arc::clone(&stats_arc);
@@ -3821,46 +3344,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 w.set_stat_error_pct(err_pct);
                 w.set_stat_max_latency(format!("{} ms", max_lat).into());
 
-                // Circular Vector Charts
-                let cx = 48.0;
-                let cy = 48.0;
-                let r = 38.0;
-
-                // Chart 1: Token Composition
-                w.set_stat_chart1_path_bg(full_circle_path(cx, cy, r).into());
-                if total_tok > 0 {
-                    let p_deg = (p_pct as f64) * 3.6;
-                    let c_deg = (c_pct as f64) * 3.6;
-                    let t_deg = (t_pct as f64) * 3.6;
-                    w.set_stat_chart1_path1(arc_svg_path(cx, cy, r, 0.0, p_deg).into());
-                    w.set_stat_chart1_path2(arc_svg_path(cx, cy, r, p_deg, p_deg + c_deg).into());
-                    w.set_stat_chart1_path3(
-                        arc_svg_path(cx, cy, r, p_deg + c_deg, (p_deg + c_deg + t_deg).min(359.8))
-                            .into(),
-                    );
-                } else {
-                    w.set_stat_chart1_path1("".into());
-                    w.set_stat_chart1_path2("".into());
-                    w.set_stat_chart1_path3("".into());
-                }
-
-                // Chart 2: Protocol Reliability (QoS)
-                w.set_stat_chart2_path_bg(full_circle_path(cx, cy, r).into());
-                if reqs > 0 {
-                    let succ_ratio = (succ as f64 / reqs as f64).clamp(0.0, 1.0);
-                    let succ_deg = succ_ratio * 359.8;
-                    w.set_stat_chart2_path_succ(arc_svg_path(cx, cy, r, 0.0, succ_deg).into());
-                    if succ_ratio < 0.999 {
-                        w.set_stat_chart2_path_err(arc_svg_path(cx, cy, r, succ_deg, 359.8).into());
-                    } else {
-                        w.set_stat_chart2_path_err("".into());
-                    }
-                } else {
-                    w.set_stat_chart2_path_succ("".into());
-                    w.set_stat_chart2_path_err("".into());
-                }
-
-                // Chart 3: Model Traffic Share
+                // Model Traffic Share
                 let (claude_pct, gemini_pct) = {
                     let logs = s_timer.recent_logs.read();
                     let mut cl = 0;
@@ -4008,8 +3492,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     models_model.set_vec(get_display_models(&cfg));
-                    amr::connectors::sync_all_enabled(&cfg);
                     refresh_connectors_ui(&w, &cfg);
+                    let cfg_for_sync = cfg.clone();
 
                     w.set_global_claude_percent(cfg.aggregate_claude_percent());
                     w.set_global_claude_label(cfg.format_claude_quota().into());
@@ -4026,6 +3510,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     w.set_healthy_accounts_count(
                         cfg.accounts.iter().filter(|a| a.is_active).count() as i32,
                     );
+                    drop(cfg);
+                    tokio::task::spawn_blocking(move || {
+                        amr::connectors::sync_all_enabled(&cfg_for_sync);
+                    });
                 }
 
                 // Real-time Adaptive Backoff Ladder & Auto-Heal status sync
