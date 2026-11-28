@@ -1242,14 +1242,24 @@ async fn execute_chat_request(
         .or(budget_str);
 
     let (base_clean, reasoning_effort) = parse_model_and_reasoning(requested_model, native_effort);
-    let (target_model, effective_effort) =
+    let (target_model, mut effective_effort) =
         crate::proxy::router::resolve_model_with_effort(&base_clean, account, reasoning_effort);
+    if effective_effort.is_none() {
+        let mode = state.config.read().default_reasoning_mode.clone();
+        effective_effort = match mode.as_str() {
+            "off" => Some(crate::proxy::router::ReasoningEffort::Off),
+            "low" => Some(crate::proxy::router::ReasoningEffort::Low),
+            "medium" => Some(crate::proxy::router::ReasoningEffort::Medium),
+            "high" => Some(crate::proxy::router::ReasoningEffort::High),
+            _ => None,
+        };
+    }
     let effort_str = match effective_effort {
         Some(crate::proxy::router::ReasoningEffort::Off) => "off",
         Some(crate::proxy::router::ReasoningEffort::Low) => "low",
         Some(crate::proxy::router::ReasoningEffort::Medium) => "medium",
         Some(crate::proxy::router::ReasoningEffort::High) => "high",
-        None => "off",
+        None => "default",
     };
 
     // If upstream is Antigravity (Google Cloud Code Pa), convert and forward
@@ -2375,14 +2385,24 @@ async fn execute_claude_request(
         requested_model,
         claude_effort,
     );
-    let (target_model, effective_effort) =
+    let (target_model, mut effective_effort) =
         crate::proxy::router::resolve_model_with_effort(&base_clean, account, reasoning_effort);
+    if effective_effort.is_none() {
+        let mode = state.config.read().default_reasoning_mode.clone();
+        effective_effort = match mode.as_str() {
+            "off" => Some(crate::proxy::router::ReasoningEffort::Off),
+            "low" => Some(crate::proxy::router::ReasoningEffort::Low),
+            "medium" => Some(crate::proxy::router::ReasoningEffort::Medium),
+            "high" => Some(crate::proxy::router::ReasoningEffort::High),
+            _ => None,
+        };
+    }
     let effort_str = match effective_effort {
         Some(crate::proxy::router::ReasoningEffort::Off) => "off",
         Some(crate::proxy::router::ReasoningEffort::Low) => "low",
         Some(crate::proxy::router::ReasoningEffort::Medium) => "medium",
         Some(crate::proxy::router::ReasoningEffort::High) => "high",
-        None => "off",
+        None => "default",
     };
 
     if account.provider == "antigravity" {

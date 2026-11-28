@@ -23,10 +23,16 @@ impl ReasoningEffort {
 }
 
 const REASONING_SUFFIXES: &[(&str, Option<ReasoningEffort>)] = &[
-    // Low effort
+    // Low / minimal effort
     (" [low effort]", Some(ReasoningEffort::Low)),
     (" (low effort)", Some(ReasoningEffort::Low)),
+    ("-thinking-minimal", Some(ReasoningEffort::Low)),
     ("-thinking-low", Some(ReasoningEffort::Low)),
+    (" [minimal]", Some(ReasoningEffort::Low)),
+    (" (minimal)", Some(ReasoningEffort::Low)),
+    (":minimal", Some(ReasoningEffort::Low)),
+    (" minimal", Some(ReasoningEffort::Low)),
+    ("-minimal", Some(ReasoningEffort::Low)),
     (" [low]", Some(ReasoningEffort::Low)),
     (" (low)", Some(ReasoningEffort::Low)),
     (":low", Some(ReasoningEffort::Low)),
@@ -41,7 +47,20 @@ const REASONING_SUFFIXES: &[(&str, Option<ReasoningEffort>)] = &[
     (":medium", Some(ReasoningEffort::Medium)),
     (" medium", Some(ReasoningEffort::Medium)),
     ("-medium", Some(ReasoningEffort::Medium)),
-    // High effort
+    // High / xhigh / max effort
+    (" [xhigh effort]", Some(ReasoningEffort::High)),
+    (" (xhigh effort)", Some(ReasoningEffort::High)),
+    ("-thinking-xhigh", Some(ReasoningEffort::High)),
+    (" [xhigh]", Some(ReasoningEffort::High)),
+    (" (xhigh)", Some(ReasoningEffort::High)),
+    (":xhigh", Some(ReasoningEffort::High)),
+    (" xhigh", Some(ReasoningEffort::High)),
+    ("-xhigh", Some(ReasoningEffort::High)),
+    (" [max]", Some(ReasoningEffort::High)),
+    (" (max)", Some(ReasoningEffort::High)),
+    (":max", Some(ReasoningEffort::High)),
+    (" max", Some(ReasoningEffort::High)),
+    ("-max", Some(ReasoningEffort::High)),
     (" [high effort]", Some(ReasoningEffort::High)),
     (" (high effort)", Some(ReasoningEffort::High)),
     ("-thinking-high", Some(ReasoningEffort::High)),

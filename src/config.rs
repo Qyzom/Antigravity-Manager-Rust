@@ -423,6 +423,8 @@ pub struct AppConfig {
     #[serde(default = "default_true")]
     pub show_stats_tab: bool,
     #[serde(default = "default_true")]
+    pub show_connectors_tab: bool,
+    #[serde(default = "default_true")]
     pub show_about_tab: bool,
     #[serde(default = "default_true")]
     pub enable_billing_emulation: bool,
@@ -443,6 +445,14 @@ pub struct AppConfig {
     pub image_generation_models: Vec<String>,
     #[serde(default)]
     pub web_search_models: Vec<String>,
+    #[serde(default)]
+    pub enabled_connectors: Vec<String>,
+    #[serde(default = "default_reasoning_mode_val")]
+    pub default_reasoning_mode: String,
+}
+
+fn default_reasoning_mode_val() -> String {
+    "native".to_string()
 }
 
 fn default_master_api_key() -> String {
@@ -560,18 +570,21 @@ impl Default for AppConfig {
             cadence_jitter_percent: 15,
             show_logs_tab: true,
             show_stats_tab: true,
+            show_connectors_tab: true,
             show_about_tab: true,
             enable_billing_emulation: true,
             check_updates_startup: true,
             clear_logs_on_exit: false,
             hide_unavailable_models: false,
-            master_api_key: "sk-amr-v1-master-key".to_string(),
+            master_api_key: default_master_api_key(),
             accounts: Vec::new(),
             active_account_id: None,
             models: Vec::new(),
             default_agent_model: None,
             image_generation_models: Vec::new(),
             web_search_models: Vec::new(),
+            enabled_connectors: Vec::new(),
+            default_reasoning_mode: default_reasoning_mode_val(),
         }
     }
 }
@@ -642,7 +655,9 @@ impl AppConfig {
             ("-minimal", "minimal"),
             ("-low", "low"),
             ("-medium", "medium"),
+            ("-xhigh", "xhigh"),
             ("-high", "high"),
+            ("-max", "max"),
             ("-none", "none"),
             ("-off", "off"),
         ] {
@@ -774,7 +789,7 @@ impl AppConfig {
                     } else {
                         am.display_name.clone()
                     };
-                    for tag in [" (High)", " (Medium)", " (Low)", " (Minimal)", " (Thinking)", " (Disabled)", " (disabled)", "-disabled"] {
+                    for tag in [" (XHigh)", " (Max)", " (High)", " (Medium)", " (Low)", " (Minimal)", " (Thinking)", " (Disabled)", " (disabled)", "-disabled"] {
                         if let Some(stripped) = d.strip_suffix(tag) {
                             d = stripped.to_string();
                             break;

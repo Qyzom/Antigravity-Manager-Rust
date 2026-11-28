@@ -22,6 +22,55 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::watch;
 
+fn refresh_connectors_ui(ui: &MainWindow, config: &AppConfig) {
+    let t = get_translations(Language::from_str_code(&config.language));
+    let mut items = Vec::new();
+    for desc in amr::connectors::CONNECTORS {
+        let enabled = config.enabled_connectors.iter().any(|x| x == desc.id);
+        let path_str = amr::connectors::connector_config_path(desc.id)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| "-".to_string());
+        let description = match desc.id {
+            "opencode_api" => t.conn_opencode_desc.clone(),
+            "opencode_mcp" => format!("MCP ({}) -> opencode.json", desc.category),
+            "claude_code_api" => t.conn_claude_code_desc.clone(),
+            "claude_code_mcp" => format!("MCP ({}) -> ~/.claude.json", desc.category),
+            "codex_api" => t.conn_codex_desc.clone(),
+            "codex_mcp" => format!("MCP ({}) -> config.toml", desc.category),
+            "gemini_cli_api" => t.conn_gemini_cli_desc.clone(),
+            "gemini_cli_mcp" => format!("MCP ({}) -> settings.json", desc.category),
+            "deepseek_harness" => t.conn_deepseek_harness_desc.clone(),
+            "cursor" => t.conn_cursor_desc.clone(),
+            "cline" => t.conn_cline_desc.clone(),
+            _ => String::new(),
+        };
+        let status = amr::connectors::check_connector_status(desc.id, config);
+        let (status_text, status_kind) = match status {
+            amr::connectors::ConnectorSyncStatus::Synced => (t.conn_status_synced.clone(), "synced"),
+            amr::connectors::ConnectorSyncStatus::Outdated => {
+                (t.conn_status_outdated.clone(), "outdated")
+            }
+            amr::connectors::ConnectorSyncStatus::NotSynced => {
+                (t.conn_status_not_synced.clone(), "not_synced")
+            }
+            amr::connectors::ConnectorSyncStatus::Error(e) => {
+                (format!("{}: {}", t.conn_status_error, e), "error")
+            }
+        };
+        items.push(ConnectorItemData {
+            id: desc.id.into(),
+            name: desc.name.into(),
+            category: desc.category.into(),
+            description: description.into(),
+            config_path: path_str.into(),
+            enabled,
+            status_text: status_text.into(),
+            status_kind: status_kind.into(),
+        });
+    }
+    ui.set_connectors_list(ModelRc::new(VecModel::from(items)));
+}
+
 fn open_in_system(target: &str) {
     #[cfg(target_os = "linux")]
     let _ = std::process::Command::new("xdg-open").arg(target).spawn();
@@ -246,6 +295,9 @@ fn get_display_models(cfg: &AppConfig) -> Vec<ModelItemData> {
 
     for m in &cfg.models {
         if !seen_ids.insert(m.id.clone()) {
+            continue;
+        }
+        if cfg.hide_unavailable_models && amr::connectors::is_model_unavailable(m) {
             continue;
         }
         let modality = detect_model_modality(&m.id);
@@ -703,7 +755,31 @@ fn apply_translations(ui: &MainWindow, lang: Language) {
         lbl_diag_quota_notice: t.lbl_diag_quota_notice.into(),
         btn_show_key: t.btn_show_key.into(),
         btn_hide_key: t.btn_hide_key.into(),
-        lbl_master_key_badge: t.lbl_master_key_badge.into(),
+        nav_connectors: t.nav_connectors.into(),
+        connectors_title: t.connectors_title.into(),
+        connectors_subtitle: t.connectors_subtitle.into(),
+        conn_status_synced: t.conn_status_synced.into(),
+        conn_status_outdated: t.conn_status_outdated.into(),
+        conn_status_not_synced: t.conn_status_not_synced.into(),
+        conn_status_error: t.conn_status_error.into(),
+        conn_btn_sync_now: t.conn_btn_sync_now.into(),
+        conn_lbl_config_path: t.conn_lbl_config_path.into(),
+        conn_opencode_desc: t.conn_opencode_desc.into(),
+        conn_claude_code_desc: t.conn_claude_code_desc.into(),
+        conn_codex_desc: t.conn_codex_desc.into(),
+        conn_gemini_cli_desc: t.conn_gemini_cli_desc.into(),
+        conn_deepseek_harness_desc: t.conn_deepseek_harness_desc.into(),
+        conn_cursor_desc: t.conn_cursor_desc.into(),
+        conn_cline_desc: t.conn_cline_desc.into(),
+        lbl_show_connectors: t.lbl_show_connectors.into(),
+        mcp_test_dialog_title: t.mcp_test_dialog_title.into(),
+        lbl_default_reasoning_title: t.lbl_default_reasoning_title.into(),
+        lbl_default_reasoning_desc: t.lbl_default_reasoning_desc.into(),
+        btn_reasoning_native: t.btn_reasoning_native.into(),
+        btn_reasoning_off: t.btn_reasoning_off.into(),
+        btn_reasoning_low: t.btn_reasoning_low.into(),
+        btn_reasoning_medium: t.btn_reasoning_medium.into(),
+        btn_reasoning_high: t.btn_reasoning_high.into(),
     };
     ui.set_github_update_status(t.btn_check_updates.clone().into());
     ui.set_app_version(format!("v{}", env!("CARGO_PKG_VERSION")).into());
@@ -961,20 +1037,20 @@ fn capture_and_save_screenshots(target_dir: &str) -> Result<(), Box<dyn std::err
     ];
     main_window.set_log_entries(Rc::new(VecModel::from(logs)).into());
 
-    // Stats tab metrics
-    main_window.set_stat_prompt_tokens("184,200".into());
-    main_window.set_stat_completion_tokens("142,500".into());
-    main_window.set_stat_thinking_tokens("57,500".into());
-    main_window.set_stat_prompt_pct(48);
-    main_window.set_stat_comp_pct(37);
-    main_window.set_stat_think_pct(15);
-    main_window.set_stat_success_rate("100%".into());
-    main_window.set_stat_success_pct(100);
+    // Stats tab metrics (zeros when no live stats)
+    main_window.set_stat_prompt_tokens("0".into());
+    main_window.set_stat_completion_tokens("0".into());
+    main_window.set_stat_thinking_tokens("0".into());
+    main_window.set_stat_prompt_pct(0);
+    main_window.set_stat_comp_pct(0);
+    main_window.set_stat_think_pct(0);
+    main_window.set_stat_success_rate("0%".into());
+    main_window.set_stat_success_pct(0);
     main_window.set_stat_error_count("0".into());
     main_window.set_stat_error_pct(0);
-    main_window.set_stat_max_latency("1,240 ms".into());
-    main_window.set_stat_claude_pct(60);
-    main_window.set_stat_gemini_pct(40);
+    main_window.set_stat_max_latency("0 ms".into());
+    main_window.set_stat_claude_pct(0);
+    main_window.set_stat_gemini_pct(0);
 
     let out_dir = std::path::PathBuf::from(target_dir);
     std::fs::create_dir_all(&out_dir)?;
@@ -1172,6 +1248,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 None => {
                     log::error!("AMR failed to bind to {} after 10 attempts", addr);
+                    let bind_err = format!("Port {} is already in use or cannot be bound", addr);
+                    state.stats.record_detailed_request(
+                        "BIND",
+                        &addr,
+                        "proxy-listener",
+                        500,
+                        0,
+                        0,
+                        "System",
+                        "-",
+                        "",
+                        "",
+                        "",
+                        Some(bind_err.as_str()),
+                    );
                     p_running_srv.store(false, Ordering::SeqCst);
                     tokio::select! {
                         _ = proxy_enable_rx.changed() => continue,
@@ -1775,6 +1866,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         main_window.set_hide_sidebar_brand(cfg.hide_sidebar_brand);
         main_window.set_show_logs_tab(cfg.show_logs_tab);
         main_window.set_show_stats_tab(cfg.show_stats_tab);
+        main_window.set_show_connectors_tab(cfg.show_connectors_tab);
+        main_window.set_default_reasoning_mode(cfg.default_reasoning_mode.clone().into());
         main_window.set_mcp_enabled(cfg.mcp_enabled);
         main_window.set_mcp_search_max_results(cfg.mcp_search_max_results as i32);
         main_window.set_standardized_error_handling(cfg.standardized_error_handling);
@@ -1907,6 +2000,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Toggle model callback
     let c_mod = Arc::clone(&config_arc);
     let v_mod = Arc::clone(&cfg_version);
+    let h_mod = window_handle.clone();
     main_window.on_toggle_model(move |id_slint| {
         let id_str = id_slint.to_string();
         {
@@ -1915,6 +2009,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 item.is_enabled = !item.is_enabled;
             }
             let _ = cfg.save();
+            amr::connectors::sync_all_enabled(&cfg);
+            if let Some(h) = h_mod.upgrade() {
+                refresh_connectors_ui(&h, &cfg);
+            }
         }
         v_mod.fetch_add(1, Ordering::SeqCst);
     });
@@ -2497,6 +2595,61 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     });
 
+    // Initial connectors migration, auto-sync, and UI population
+    {
+        let mut cfg = config_arc.write();
+        if amr::connectors::migrate_legacy_connector_ids(&mut cfg) {
+            let _ = cfg.save();
+        }
+        amr::connectors::sync_all_enabled(&cfg);
+        refresh_connectors_ui(&main_window, &cfg);
+    }
+
+    let c_conn_toggle = Arc::clone(&config_arc);
+    let h_conn_toggle = window_handle.clone();
+    main_window.on_toggle_connector(move |id_slint, enable| {
+        let id = id_slint.to_string();
+        let mut cfg = c_conn_toggle.write();
+        if enable {
+            if !cfg.enabled_connectors.contains(&id) {
+                cfg.enabled_connectors.push(id.clone());
+            }
+            let _ = amr::connectors::sync_connector(&id, &cfg, true);
+        } else {
+            cfg.enabled_connectors.retain(|x| x != &id);
+            let _ = amr::connectors::sync_connector(&id, &cfg, false);
+        }
+        let _ = cfg.save();
+        if let Some(h) = h_conn_toggle.upgrade() {
+            refresh_connectors_ui(&h, &cfg);
+        }
+    });
+
+    let c_conn_sync = Arc::clone(&config_arc);
+    let h_conn_sync = window_handle.clone();
+    main_window.on_sync_connector_now(move |id_slint| {
+        let id = id_slint.to_string();
+        {
+            let cfg = c_conn_sync.read();
+            let _ = amr::connectors::sync_connector(&id, &cfg, true);
+            if let Some(h) = h_conn_sync.upgrade() {
+                refresh_connectors_ui(&h, &cfg);
+                h.set_conn_sync_flash_id(id.clone().into());
+            }
+        }
+        let h_timer = h_conn_sync.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(tokio::time::Duration::from_millis(1400)).await;
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(h) = h_timer.upgrade() {
+                    if h.get_conn_sync_flash_id().as_str() == id {
+                        h.set_conn_sync_flash_id("".into());
+                    }
+                }
+            });
+        });
+    });
+
     let c_regen = Arc::clone(&config_arc);
     let h_regen = window_handle.clone();
     main_window.on_regenerate_master_key(move || {
@@ -2508,12 +2661,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut cfg = c_regen.write();
             cfg.master_api_key = new_key.clone();
             let _ = cfg.save();
+            amr::connectors::sync_all_enabled(&cfg);
             cfg.language.clone()
         };
         if let Some(h) = h_regen.upgrade() {
             let t = amr::i18n::get_translations(amr::i18n::Language::from_str_code(&lang));
             h.set_master_api_key(new_key.into());
             h.set_master_key_status_text(t.lbl_updated.into());
+            let cfg = c_regen.read();
+            refresh_connectors_ui(&h, &cfg);
         }
         let h_timer = h_regen.clone();
         tokio::spawn(async move {
@@ -2847,20 +3003,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 h.set_modal_log_latency(format!("{} ms", item.latency_ms).into());
                 h.set_modal_log_account(item.account.clone().into());
                 h.set_modal_log_headers(item.request_headers.clone().into());
-                h.set_modal_log_req_body(if item.request_body.is_empty() {
-                    "{}".into()
-                } else {
-                    item.request_body.clone().into()
-                });
-                h.set_modal_log_resp_body(if item.response_body.is_empty() {
-                    if let Some(ref err) = item.error_msg {
-                        err.clone().into()
+                let truncate_ui = |s: &str| -> String {
+                    const MAX_UI_BYTES: usize = 12_000;
+                    if s.len() <= MAX_UI_BYTES {
+                        s.to_string()
                     } else {
-                        "(empty or streaming response)".into()
+                        let mut end = MAX_UI_BYTES;
+                        while !s.is_char_boundary(end) && end > 0 {
+                            end -= 1;
+                        }
+                        format!(
+                            "{}\n\n... [Truncated {} bytes for UI smoothness — click Copy for full payload]",
+                            &s[..end],
+                            s.len() - end
+                        )
+                    }
+                };
+                let req_full = if item.request_body.is_empty() {
+                    "{}".to_string()
+                } else {
+                    item.request_body.clone()
+                };
+                let resp_full = if item.response_body.is_empty() {
+                    if let Some(ref err) = item.error_msg {
+                        err.clone()
+                    } else {
+                        "(empty or streaming response)".to_string()
                     }
                 } else {
-                    item.response_body.clone().into()
-                });
+                    item.response_body.clone()
+                };
+                h.set_modal_log_req_body(truncate_ui(&req_full).into());
+                h.set_modal_log_resp_body(truncate_ui(&resp_full).into());
+                h.set_modal_log_req_body_full(req_full.into());
+                h.set_modal_log_resp_body_full(resp_full.into());
                 h.set_modal_log_error(item.error_msg.clone().unwrap_or_default().into());
                 h.set_modal_inspector_tab(0);
                 h.set_show_log_modal(true);
@@ -3093,6 +3269,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    let c_sconn = Arc::clone(&config_arc);
+    let h_sconn = window_handle.clone();
+    main_window.on_toggle_show_connectors(move || {
+        let next_val = {
+            let mut cfg = c_sconn.write();
+            cfg.show_connectors_tab = !cfg.show_connectors_tab;
+            let _ = cfg.save();
+            cfg.show_connectors_tab
+        };
+        if let Some(h) = h_sconn.upgrade() {
+            h.set_show_connectors_tab(next_val);
+        }
+    });
+
+    let c_def_reason = Arc::clone(&config_arc);
+    let h_def_reason = window_handle.clone();
+    main_window.on_set_default_reasoning_mode(move |mode| {
+        let m = mode.to_string();
+        {
+            let mut cfg = c_def_reason.write();
+            cfg.default_reasoning_mode = m.clone();
+            let _ = cfg.save();
+        }
+        if let Some(h) = h_def_reason.upgrade() {
+            h.set_default_reasoning_mode(m.into());
+        }
+    });
+
     let c_mcp = Arc::clone(&config_arc);
     let h_mcp = window_handle.clone();
     main_window.on_toggle_mcp_enabled(move || {
@@ -3123,15 +3327,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let c_hide_unavail = Arc::clone(&config_arc);
     let h_hide_unavail = window_handle.clone();
+    let m_hide_unavail = models_model.clone();
     main_window.on_toggle_hide_unavailable_models(move || {
-        let next_val = {
+        let (next_val, display_models) = {
             let mut cfg = c_hide_unavail.write();
             cfg.hide_unavailable_models = !cfg.hide_unavailable_models;
             let _ = cfg.save();
-            cfg.hide_unavailable_models
+            amr::connectors::sync_all_enabled(&cfg);
+            (cfg.hide_unavailable_models, get_display_models(&cfg))
         };
+        m_hide_unavail.set_vec(display_models);
         if let Some(h) = h_hide_unavail.upgrade() {
             h.set_hide_unavailable_models(next_val);
+            let cfg = c_hide_unavail.read();
+            refresh_connectors_ui(&h, &cfg);
         }
     });
 
@@ -3593,7 +3802,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let t = 100 - p - c;
                     (p.max(1), c.max(1), t.max(1))
                 } else {
-                    (50, 40, 10)
+                    (0, 0, 0)
                 };
                 w.set_stat_prompt_pct(p_pct);
                 w.set_stat_comp_pct(c_pct);
@@ -3604,7 +3813,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let e = (errs as f64 / reqs as f64) * 100.0;
                     (s.round() as i32, e.round() as i32, format!("{:.1}%", s))
                 } else {
-                    (100, 0, "100%".to_string())
+                    (0, 0, "0%".to_string())
                 };
                 w.set_stat_success_rate(succ_rate.into());
                 w.set_stat_success_pct(succ_pct);
@@ -3619,28 +3828,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // Chart 1: Token Composition
                 w.set_stat_chart1_path_bg(full_circle_path(cx, cy, r).into());
-                let p_deg = (p_pct as f64) * 3.6;
-                let c_deg = (c_pct as f64) * 3.6;
-                let t_deg = (t_pct as f64) * 3.6;
-                w.set_stat_chart1_path1(arc_svg_path(cx, cy, r, 0.0, p_deg).into());
-                w.set_stat_chart1_path2(arc_svg_path(cx, cy, r, p_deg, p_deg + c_deg).into());
-                w.set_stat_chart1_path3(
-                    arc_svg_path(cx, cy, r, p_deg + c_deg, (p_deg + c_deg + t_deg).min(359.8))
-                        .into(),
-                );
+                if total_tok > 0 {
+                    let p_deg = (p_pct as f64) * 3.6;
+                    let c_deg = (c_pct as f64) * 3.6;
+                    let t_deg = (t_pct as f64) * 3.6;
+                    w.set_stat_chart1_path1(arc_svg_path(cx, cy, r, 0.0, p_deg).into());
+                    w.set_stat_chart1_path2(arc_svg_path(cx, cy, r, p_deg, p_deg + c_deg).into());
+                    w.set_stat_chart1_path3(
+                        arc_svg_path(cx, cy, r, p_deg + c_deg, (p_deg + c_deg + t_deg).min(359.8))
+                            .into(),
+                    );
+                } else {
+                    w.set_stat_chart1_path1("".into());
+                    w.set_stat_chart1_path2("".into());
+                    w.set_stat_chart1_path3("".into());
+                }
 
                 // Chart 2: Protocol Reliability (QoS)
                 w.set_stat_chart2_path_bg(full_circle_path(cx, cy, r).into());
-                let succ_ratio = if reqs > 0 {
-                    (succ as f64 / reqs as f64).clamp(0.0, 1.0)
+                if reqs > 0 {
+                    let succ_ratio = (succ as f64 / reqs as f64).clamp(0.0, 1.0);
+                    let succ_deg = succ_ratio * 359.8;
+                    w.set_stat_chart2_path_succ(arc_svg_path(cx, cy, r, 0.0, succ_deg).into());
+                    if succ_ratio < 0.999 {
+                        w.set_stat_chart2_path_err(arc_svg_path(cx, cy, r, succ_deg, 359.8).into());
+                    } else {
+                        w.set_stat_chart2_path_err("".into());
+                    }
                 } else {
-                    1.0
-                };
-                let succ_deg = succ_ratio * 359.8;
-                w.set_stat_chart2_path_succ(arc_svg_path(cx, cy, r, 0.0, succ_deg).into());
-                if succ_ratio < 0.999 {
-                    w.set_stat_chart2_path_err(arc_svg_path(cx, cy, r, succ_deg, 359.8).into());
-                } else {
+                    w.set_stat_chart2_path_succ("".into());
                     w.set_stat_chart2_path_err("".into());
                 }
 
@@ -3661,7 +3877,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let cp = ((cl as f64 / (cl + gm) as f64) * 100.0).round() as i32;
                         (cp, 100 - cp)
                     } else {
-                        (50, 50)
+                        (0, 0)
                     }
                 };
                 w.set_stat_claude_pct(claude_pct);
@@ -3670,7 +3886,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Latency Percentiles & Real Cache Hit Rate
                 let (p50, p95, p99) = s_timer.get_latency_percentiles();
                 let (_, _, _, balancer_hit_rate, _) = b_timer.get_metrics();
-                let real_cache_rate = s_timer.get_token_cache_hit_rate(balancer_hit_rate);
+                let real_cache_rate = if reqs > 0 {
+                    s_timer.get_token_cache_hit_rate(balancer_hit_rate)
+                } else {
+                    0.0
+                };
 
                 w.set_stat_cache_hit_rate(format!("{:.1}%", real_cache_rate).into());
                 w.set_stat_p50_latency(format!("{} ms", p50).into());
@@ -3788,6 +4008,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     models_model.set_vec(get_display_models(&cfg));
+                    amr::connectors::sync_all_enabled(&cfg);
+                    refresh_connectors_ui(&w, &cfg);
 
                     w.set_global_claude_percent(cfg.aggregate_claude_percent());
                     w.set_global_claude_label(cfg.format_claude_quota().into());

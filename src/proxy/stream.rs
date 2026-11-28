@@ -11,6 +11,45 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time::interval;
 
+fn format_stream_response_json(
+    stream_id: &str,
+    model: &str,
+    content: &str,
+    reasoning: &str,
+    in_tok: u64,
+    out_tok: u64,
+    cached_tok: u64,
+) -> String {
+    let mut message = serde_json::Map::new();
+    message.insert("role".to_string(), serde_json::Value::String("assistant".to_string()));
+    message.insert("content".to_string(), serde_json::Value::String(content.to_string()));
+    if !reasoning.is_empty() {
+        message.insert(
+            "reasoning_content".to_string(),
+            serde_json::Value::String(reasoning.to_string()),
+        );
+    }
+    let resp = serde_json::json!({
+        "id": stream_id,
+        "object": "chat.completion",
+        "model": model,
+        "choices": [{
+            "index": 0,
+            "message": serde_json::Value::Object(message),
+            "finish_reason": "stop"
+        }],
+        "usage": {
+            "prompt_tokens": in_tok,
+            "completion_tokens": out_tok,
+            "total_tokens": in_tok + out_tok,
+            "prompt_tokens_details": {
+                "cached_tokens": cached_tok
+            }
+        }
+    });
+    serde_json::to_string_pretty(&resp).unwrap_or_else(|_| content.to_string())
+}
+
 #[derive(Clone)]
 pub struct StreamLoggingContext {
     pub stats: Arc<crate::proxy::stats::ProxyStats>,
@@ -65,6 +104,7 @@ pub fn process_claude_to_openai_stream(
         let mut total_output_tokens: u64 = 0;
         let mut total_cached_tokens: u64 = 0;
         let mut accumulated_response = String::new();
+        let mut _accumulated_reasoning = String::new();
 
         loop {
             tokio::select! {
@@ -264,6 +304,7 @@ pub fn process_antigravity_to_openai_stream(
         let mut total_cached_tokens: u64 = 0;
         let mut estimated_output_tokens: u64 = 0;
         let mut accumulated_response = String::new();
+        let mut accumulated_reasoning = String::new();
         let mut tool_call_index: usize = 0;
         let mut has_emitted_tools: bool = false;
 
@@ -397,7 +438,11 @@ pub fn process_antigravity_to_openai_stream(
                                                                     yield Ok(Bytes::from(chunk));
                                                                 } else if let Some(txt) = part.get("text").and_then(|t| t.as_str()) {
                                                                     if !txt.is_empty() {
-                                                                        if accumulated_response.len() < 65536 {
+                                                                        if is_thought {
+                                                                            if accumulated_reasoning.len() < 65536 {
+                                                                                accumulated_reasoning.push_str(txt);
+                                                                            }
+                                                                        } else if accumulated_response.len() < 65536 {
                                                                             accumulated_response.push_str(txt);
                                                                         }
                                                                         estimated_output_tokens += (txt.len() / 4).max(1) as u64;
@@ -487,11 +532,15 @@ pub fn process_antigravity_to_openai_stream(
 
                                                             if let Some(ref ctx) = log_ctx {
                                                                 let elapsed = ctx.start_time.elapsed().as_millis() as u64;
-                                                                let resp_display = if accumulated_response.is_empty() {
-                                                                    "[Stream Complete]".to_string()
-                                                                } else {
-                                                                    accumulated_response.clone()
-                                                                };
+                                                                let resp_display = format_stream_response_json(
+                                                                    &stream_id,
+                                                                    &model_name,
+                                                                    &accumulated_response,
+                                                                    &accumulated_reasoning,
+                                                                    in_tok,
+                                                                    out_tok,
+                                                                    total_cached_tokens,
+                                                                );
                                                                 ctx.stats.record_detailed_request_full(
                                                                     ctx.method,
                                                                     ctx.path,
@@ -556,11 +605,15 @@ pub fn process_antigravity_to_openai_stream(
 
         if let Some(ref ctx) = log_ctx {
             let elapsed = ctx.start_time.elapsed().as_millis() as u64;
-            let resp_display = if accumulated_response.is_empty() {
-                "[Stream Finished]".to_string()
-            } else {
-                accumulated_response
-            };
+            let resp_display = format_stream_response_json(
+                &stream_id,
+                &model_name,
+                &accumulated_response,
+                &accumulated_reasoning,
+                in_tok,
+                out_tok,
+                total_cached_tokens,
+            );
             ctx.stats.record_detailed_request_full(
                 ctx.method,
                 ctx.path,
@@ -600,6 +653,7 @@ pub fn process_antigravity_to_claude_stream(
         let mut total_input_tokens: u64 = 50;
         let mut total_cached_tokens: u64 = 0;
         let mut accumulated_response = String::new();
+        let mut _accumulated_reasoning = String::new();
 
         loop {
             tokio::select! {

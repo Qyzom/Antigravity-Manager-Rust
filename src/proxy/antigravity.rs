@@ -1110,6 +1110,50 @@ pub fn extract_grounding_info(actual: &Value) -> (Vec<String>, Vec<Value>, Strin
     (search_queries, results, md)
 }
 
+fn sanitize_gemini_schema(val: &mut Value) {
+    match val {
+        Value::Object(map) => {
+            for key in [
+                "exclusiveMinimum",
+                "exclusiveMaximum",
+                "$schema",
+                "$id",
+                "$defs",
+                "definitions",
+                "additionalProperties",
+                "propertyNames",
+                "patternProperties",
+                "examples",
+                "readOnly",
+                "writeOnly",
+                "deprecated",
+            ] {
+                map.remove(key);
+            }
+            if let Some(const_val) = map.remove("const") {
+                map.insert("enum".to_string(), Value::Array(vec![const_val]));
+            }
+            if let Some(Value::Array(types)) = map.get("type").cloned() {
+                if let Some(first_non_null) = types
+                    .into_iter()
+                    .find(|t| t.as_str() != Some("null"))
+                {
+                    map.insert("type".to_string(), first_non_null);
+                }
+            }
+            for v in map.values_mut() {
+                sanitize_gemini_schema(v);
+            }
+        }
+        Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                sanitize_gemini_schema(v);
+            }
+        }
+        _ => {}
+    }
+}
+
 pub fn build_antigravity_payload(
     req: &OpenAIChatRequest,
     target_model: &str,
@@ -1358,7 +1402,7 @@ pub fn build_antigravity_payload_with_meta(
                         "thinkingLevel": "OFF",
                         "thinkingBudget": 0
                     });
-                } else if target_model.contains("flash") {
+                } else {
                     gen_config["thinkingConfig"] = serde_json::json!({
                         "thinkingBudget": 0
                     });
@@ -1515,13 +1559,14 @@ pub fn build_antigravity_payload_with_meta(
                     .get("description")
                     .and_then(|d| d.as_str())
                     .unwrap_or("");
-                let params = fn_obj
+                let mut params = fn_obj
                     .get("parameters")
                     .cloned()
                     .unwrap_or(serde_json::json!({
                         "type": "object",
                         "properties": {}
                     }));
+                sanitize_gemini_schema(&mut params);
                 function_declarations.push(serde_json::json!({
                     "name": name,
                     "description": desc,
@@ -1752,7 +1797,7 @@ pub fn build_antigravity_payload_from_claude_with_meta(
                         "thinkingLevel": "OFF",
                         "thinkingBudget": 0
                     });
-                } else if target_model.contains("flash") {
+                } else {
                     gen_config["thinkingConfig"] = serde_json::json!({
                         "thinkingBudget": 0
                     });
@@ -1876,7 +1921,7 @@ pub fn build_antigravity_payload_from_claude_with_meta(
             }
             if let Some(name) = t.get("name").and_then(|n| n.as_str()) {
                 let desc = t.get("description").and_then(|d| d.as_str()).unwrap_or("");
-                let params = t
+                let mut params = t
                     .get("input_schema")
                     .or_else(|| t.get("parameters"))
                     .cloned()
@@ -1884,6 +1929,7 @@ pub fn build_antigravity_payload_from_claude_with_meta(
                         "type": "object",
                         "properties": {}
                     }));
+                sanitize_gemini_schema(&mut params);
                 function_declarations.push(serde_json::json!({
                     "name": name,
                     "description": desc,

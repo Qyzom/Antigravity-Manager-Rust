@@ -41,6 +41,17 @@ export struct AccountData {
     proxy_url: string,
 }
 
+export struct ConnectorItemData {
+    id: string,
+    name: string,
+    category: string,
+    description: string,
+    config_path: string,
+    enabled: bool,
+    status_text: string,
+    status_kind: string, // "synced", "outdated", "not_synced", "error"
+}
+
 export struct ModelItemData {
     id: string,
     display_name: string,
@@ -486,7 +497,31 @@ export struct I18nData {
     lbl_diag_quota_notice: string,
     btn_show_key: string,
     btn_hide_key: string,
-    lbl_master_key_badge: string,
+    nav_connectors: string,
+    connectors_title: string,
+    connectors_subtitle: string,
+    conn_status_synced: string,
+    conn_status_outdated: string,
+    conn_status_not_synced: string,
+    conn_status_error: string,
+    conn_btn_sync_now: string,
+    conn_lbl_config_path: string,
+    conn_opencode_desc: string,
+    conn_claude_code_desc: string,
+    conn_codex_desc: string,
+    conn_gemini_cli_desc: string,
+    conn_deepseek_harness_desc: string,
+    conn_cursor_desc: string,
+    conn_cline_desc: string,
+    lbl_show_connectors: string,
+    mcp_test_dialog_title: string,
+    lbl_default_reasoning_title: string,
+    lbl_default_reasoning_desc: string,
+    btn_reasoning_native: string,
+    btn_reasoning_off: string,
+    btn_reasoning_low: string,
+    btn_reasoning_medium: string,
+    btn_reasoning_high: string,
 }
 
 component NavItem inherits Rectangle {
@@ -671,9 +706,9 @@ export component MainWindow inherits Window {
     title: "AMR — Antigravity Manager Rust";
     icon: @image-url("../assets/icons/logo_256.png");
     default-font-family: "Unbounded";
-    min-width: 1140px;
+    min-width: 1200px;
     min-height: 740px;
-    max-width: 1140px;
+    max-width: 1200px;
     max-height: 740px;
     background: #09090b;
 
@@ -759,7 +794,14 @@ export component MainWindow inherits Window {
     in-out property <bool> info_account_is_cooling: false;
 
     // Master API Key & Extra Dashboard Metrics
-    in-out property <string> master_api_key: "sk-amr-v1-master-key";
+    in-out property <string> master_api_key: "";
+    in-out property <bool> show_connectors_tab: true;
+    in-out property <bool> show_mcp_test_dialog: false;
+    in-out property <string> conn_sync_flash_id: "";
+    in-out property <[ConnectorItemData]> connectors_list: [];
+    callback toggle_connector(string, bool);
+    callback sync_connector_now(string);
+    callback toggle_show_connectors();
     in-out property <string> master_key_status_text: "";
     in-out property <bool> master_key_visible: false;
     in-out property <string> github_update_status: "";
@@ -784,6 +826,10 @@ export component MainWindow inherits Window {
     in-out property <string> modal_log_headers: "";
     in-out property <string> modal_log_req_body: "";
     in-out property <string> modal_log_resp_body: "";
+    in-out property <string> modal_log_req_body_full: "";
+    in-out property <string> modal_log_resp_body_full: "";
+    in-out property <string> default_reasoning_mode: "native";
+    callback set_default_reasoning_mode(string);
     in-out property <string> modal_log_error: "";
     in-out property <int> modal_inspector_tab: 0; // 0: Req Body, 1: Resp Body, 2: Headers & Meta
 
@@ -1048,6 +1094,11 @@ export component MainWindow inherits Window {
                     text: root.i18n.tab_settings;
                     is_active: root.active_tab == 7;
                     clicked => { root.active_tab = 7; }
+                }
+                if root.show_connectors_tab: NavItem {
+                    text: root.i18n.nav_connectors;
+                    is_active: root.active_tab == 8;
+                    clicked => { root.active_tab = 8; }
                 }
 
 
@@ -1684,12 +1735,14 @@ export component MainWindow inherits Window {
                                     HorizontalLayout {
                                         spacing: 8px;
                                         ActionButton {
-                                            text: root.mcp_test_status != "" ? root.mcp_test_status : root.i18n.btn_mcp_test;
+                                            text: root.i18n.btn_mcp_test;
                                             is_primary: true;
                                             is_accent: true;
                                             custom_height: 28px;
-                                            is_disabled: root.mcp_is_testing;
-                                            clicked => { root.run_mcp_diagnostic(); }
+                                            clicked => {
+                                                root.show_mcp_test_dialog = true;
+                                                root.run_mcp_diagnostic();
+                                            }
                                         }
                                         ActionButton {
                                             text: root.i18n.btn_mcp_config;
@@ -1697,20 +1750,6 @@ export component MainWindow inherits Window {
                                             custom_height: 28px;
                                             clicked => { root.open_mcp_config_dialog(); }
                                         }
-                                    }
-                                }
-
-                                if root.mcp_test_result_text != "": Rectangle {
-                                    background: #0d0d0f;
-                                    border-radius: 6px;
-                                    border-width: 1px;
-                                    border-color: #27272a;
-                                    HorizontalLayout {
-                                        padding: 8px;
-                                        padding-left: 12px;
-                                        padding-right: 12px;
-                                        spacing: 8px;
-                                        Text { text: root.mcp_test_result_text; font-size: 11px; color: #38bdf8; wrap: word-wrap; horizontal-stretch: 1; }
                                     }
                                 }
 
@@ -1779,8 +1818,23 @@ export component MainWindow inherits Window {
                                         Text { text: root.i18n.group_reasoning_desc; font-size: 11px; color: #71717a; }
                                     }
                                     ToggleSwitch {
-                                        checked: !root.group_reasoning_clones;
+                                        checked: root.group_reasoning_clones;
                                         toggled => { root.toggle_reasoning_clones_grouping(); }
+                                    }
+                                }
+
+                                Rectangle { height: 1px; background: #27272a; }
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Text { text: root.i18n.lbl_hide_unavailable_models; font-size: 13px; font-weight: 700; color: #ffffff; }
+                                        Text { text: root.i18n.lbl_hide_unavailable_models_desc; font-size: 11px; color: #71717a; }
+                                    }
+                                    ToggleSwitch {
+                                        checked: root.hide_unavailable_models;
+                                        toggled => { root.toggle_hide_unavailable_models(); }
                                     }
                                 }
                             }
@@ -1856,8 +1910,8 @@ export component MainWindow inherits Window {
                                                 }
                                             }
 
-                                            // Thinking / Modality badge (sleek uniform grey)
-                                            Rectangle {
+                                            // Thinking badge (only shown when model supports thinking and is not STT)
+                                            if model.supports_thinking && model.modality != "stt": Rectangle {
                                                 height: 18px;
                                                 border-radius: 4px;
                                                 background: #27272a80;
@@ -1867,9 +1921,7 @@ export component MainWindow inherits Window {
                                                     padding-left: 6px;
                                                     padding-right: 6px;
                                                     Text {
-                                                        text: model.modality == "stt" ? root.i18n.lbl_badge_stt :
-                                                              model.modality == "search" ? root.i18n.lbl_badge_search :
-                                                              (model.supports_thinking ? root.i18n.lbl_badge_thinking : root.i18n.lbl_badge_no_thinking);
+                                                        text: root.i18n.lbl_badge_thinking;
                                                         font-size: 9px;
                                                         font-weight: 700;
                                                         color: #a1a1aa;
@@ -2008,12 +2060,6 @@ export component MainWindow inherits Window {
                                             Text { text: root.i18n.lbl_master_key_title; font-size: 11px; font-weight: 700; color: #ffffff; }
                                             Text { text: root.i18n.lbl_master_key_desc; font-size: 9px; color: #71717a; }
                                         }
-                                        VerticalLayout {
-                                            alignment: center;
-                                            Badge {
-                                                text: root.i18n.lbl_master_key_badge;
-                                            }
-                                        }
                                     }
 
                                     HorizontalLayout {
@@ -2150,6 +2196,56 @@ export component MainWindow inherits Window {
                                                 checked: root.failover_on_429;
                                                 toggled => { root.toggle_failover_429(); }
                                             }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Default Reasoning Interpretation Box
+                            Rectangle {
+                                background: #18181b;
+                                border-radius: 8px;
+                                border-width: 1px;
+                                border-color: #27272a;
+
+                                VerticalLayout {
+                                    padding: 8px;
+                                    spacing: 6px;
+
+                                    Text { text: root.i18n.lbl_default_reasoning_title; font-size: 11px; font-weight: 700; color: #ffffff; }
+                                    Text { text: root.i18n.lbl_default_reasoning_desc; font-size: 10px; color: #71717a; wrap: word-wrap; }
+
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        ActionButton {
+                                            text: root.i18n.btn_reasoning_native;
+                                            is_primary: root.default_reasoning_mode == "native";
+                                            is_accent: root.default_reasoning_mode == "native";
+                                            clicked => { root.set_default_reasoning_mode("native"); }
+                                        }
+                                        ActionButton {
+                                            text: root.i18n.btn_reasoning_off;
+                                            is_primary: root.default_reasoning_mode == "off";
+                                            is_accent: root.default_reasoning_mode == "off";
+                                            clicked => { root.set_default_reasoning_mode("off"); }
+                                        }
+                                        ActionButton {
+                                            text: root.i18n.btn_reasoning_low;
+                                            is_primary: root.default_reasoning_mode == "low";
+                                            is_accent: root.default_reasoning_mode == "low";
+                                            clicked => { root.set_default_reasoning_mode("low"); }
+                                        }
+                                        ActionButton {
+                                            text: root.i18n.btn_reasoning_medium;
+                                            is_primary: root.default_reasoning_mode == "medium";
+                                            is_accent: root.default_reasoning_mode == "medium";
+                                            clicked => { root.set_default_reasoning_mode("medium"); }
+                                        }
+                                        ActionButton {
+                                            text: root.i18n.btn_reasoning_high;
+                                            is_primary: root.default_reasoning_mode == "high";
+                                            is_accent: root.default_reasoning_mode == "high";
+                                            clicked => { root.set_default_reasoning_mode("high"); }
                                         }
                                     }
                                 }
@@ -3515,6 +3611,28 @@ export component MainWindow inherits Window {
                                     }
                                 }
 
+                                Rectangle { height: 1px; background: #27272a; }
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    spacing: 12px;
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        spacing: 2px;
+                                        Text { text: root.i18n.lbl_show_connectors; font-size: 12px; color: #e4e4e7; }
+                                    }
+                                    VerticalLayout {
+                                        alignment: center;
+                                        ToggleSwitch {
+                                            checked: root.show_connectors_tab;
+                                            toggled => {
+                                                root.show_connectors_tab = !root.show_connectors_tab;
+                                                root.toggle_show_connectors();
+                                            }
+                                        }
+                                    }
+                                }
+
 
                             }
                         }
@@ -3655,7 +3773,130 @@ export component MainWindow inherits Window {
                     }
 
                     // ==========================================
-                    // TAB 8: ABOUT & OPEN SOURCE
+                    // TAB 8: CONNECTORS
+                    if root.active_tab == 8: VerticalLayout {
+                        spacing: 12px;
+
+                        VerticalLayout {
+                            spacing: 4px;
+                            Text {
+                                text: root.i18n.connectors_title;
+                                font-size: 16px;
+                                font-weight: 700;
+                                color: #ffffff;
+                            }
+                            Text {
+                                text: root.i18n.connectors_subtitle;
+                                font-size: 11px;
+                                color: #71717a;
+                                wrap: word-wrap;
+                            }
+                        }
+
+                        for conn in root.connectors_list: Rectangle {
+                            background: conn.enabled ? #141916 : #141418;
+                            border-radius: 10px;
+                            border-width: 1px;
+                            border-color: conn.enabled ? #22c55e44 : #27272a;
+
+                            VerticalLayout {
+                                padding: 14px;
+                                spacing: 10px;
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    spacing: 12px;
+
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        spacing: 4px;
+                                        HorizontalLayout {
+                                            spacing: 8px;
+                                            alignment: start;
+                                            Text {
+                                                text: conn.name;
+                                                font-size: 14px;
+                                                font-weight: 700;
+                                                color: #ffffff;
+                                                vertical-alignment: center;
+                                            }
+                                            Rectangle {
+                                                height: 20px;
+                                                border-radius: 4px;
+                                                background: conn.status_kind == "synced" ? #12291b : (conn.status_kind == "outdated" ? #2c220f : (conn.status_kind == "error" ? #2d1414 : #1e1e24));
+                                                border-width: 1px;
+                                                border-color: conn.status_kind == "synced" ? #22c55e : (conn.status_kind == "outdated" ? #f59e0b : (conn.status_kind == "error" ? #ef4444 : #3f3f46));
+                                                HorizontalLayout {
+                                                    padding-left: 7px;
+                                                    padding-right: 7px;
+                                                    Text {
+                                                        text: conn.status_text;
+                                                        font-size: 9px;
+                                                        font-weight: 700;
+                                                        color: conn.status_kind == "synced" ? #4ade80 : (conn.status_kind == "outdated" ? #fbbf24 : (conn.status_kind == "error" ? #f87171 : #a1a1aa));
+                                                        vertical-alignment: center;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Text {
+                                            text: conn.description;
+                                            font-size: 11px;
+                                            color: #a1a1aa;
+                                            wrap: word-wrap;
+                                        }
+                                    }
+
+                                    HorizontalLayout {
+                                        spacing: 10px;
+                                        alignment: end;
+
+                                        if conn.enabled: VerticalLayout {
+                                            alignment: center;
+                                            ActionButton {
+                                                text: root.conn_sync_flash_id == conn.id ? root.i18n.conn_status_synced : root.i18n.conn_btn_sync_now;
+                                                is_accent: root.conn_sync_flash_id == conn.id;
+                                                custom_height: 28px;
+                                                clicked => { root.sync_connector_now(conn.id); }
+                                            }
+                                        }
+
+                                        VerticalLayout {
+                                            alignment: center;
+                                            ToggleSwitch {
+                                                checked: conn.enabled;
+                                                toggled => { root.toggle_connector(conn.id, !conn.enabled); }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Rectangle { height: 1px; background: #27272a80; }
+
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    Text {
+                                        text: root.i18n.conn_lbl_config_path;
+                                        font-size: 10px;
+                                        font-weight: 700;
+                                        color: #71717a;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: conn.config_path;
+                                        font-family: "monospace";
+                                        font-size: 10px;
+                                        color: #94a3b8;
+                                        overflow: elide;
+                                        horizontal-stretch: 1;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle { height: 28px; }
+                    }
                     
                 }
             }
@@ -3673,10 +3914,11 @@ export component MainWindow inherits Window {
 
         TouchArea {
             clicked => { root.show_account_info = false; }
+            scroll-event(event) => { accept }
         }
 
         modal_card1 := Rectangle {
-            width: 620px;
+            width: 680px;
             height: modal_inner1.min-height;
             background: #141416;
             border-radius: 12px;
@@ -3958,25 +4200,25 @@ export component MainWindow inherits Window {
 
                         HorizontalLayout {
                             spacing: 8px;
-                            Text { text: root.i18n.lbl_modal_device_id; width: 150px; font-size: 10px; color: #a1a1aa; vertical-alignment: center; }
+                            Text { text: root.i18n.lbl_modal_device_id; min-width: 175px; font-size: 10px; color: #a1a1aa; vertical-alignment: center; }
                             Text { text: root.info_account_device_id != "" ? root.info_account_device_id : root.i18n.lbl_auto_device_id; horizontal-stretch: 1; min-width: 0px; overflow: elide; font-size: 10px; color: #e4e4e7; horizontal-alignment: right; vertical-alignment: center; }
                         }
 
                         HorizontalLayout {
                             spacing: 8px;
-                            Text { text: root.i18n.lbl_modal_machine_id; width: 150px; font-size: 10px; color: #a1a1aa; vertical-alignment: center; }
+                            Text { text: root.i18n.lbl_modal_machine_id; min-width: 175px; font-size: 10px; color: #a1a1aa; vertical-alignment: center; }
                             Text { text: root.info_account_machine_id != "" ? root.info_account_machine_id : root.i18n.lbl_auto_device_id; horizontal-stretch: 1; min-width: 0px; overflow: elide; font-size: 10px; color: #e4e4e7; horizontal-alignment: right; vertical-alignment: center; }
                         }
 
                         HorizontalLayout {
                             spacing: 8px;
-                            Text { text: root.i18n.lbl_modal_endpoint; width: 150px; font-size: 10px; color: #a1a1aa; vertical-alignment: center; }
+                            Text { text: root.i18n.lbl_modal_endpoint; min-width: 175px; font-size: 10px; color: #a1a1aa; vertical-alignment: center; }
                             Text { text: "Google Cloud Code Pa API"; horizontal-stretch: 1; min-width: 0px; overflow: elide; font-size: 10px; color: #e4e4e7; horizontal-alignment: right; vertical-alignment: center; }
                         }
 
                         HorizontalLayout {
                             spacing: 8px;
-                            Text { text: root.i18n.lbl_modal_models; width: 150px; font-size: 10px; color: #a1a1aa; vertical-alignment: center; }
+                            Text { text: root.i18n.lbl_modal_models; min-width: 175px; font-size: 10px; color: #a1a1aa; vertical-alignment: center; }
                             Text { text: root.info_account_models; horizontal-stretch: 1; min-width: 0px; overflow: elide; font-size: 10px; color: #e4e4e7; horizontal-alignment: right; vertical-alignment: center; }
                         }
 
@@ -4079,6 +4321,7 @@ export component MainWindow inherits Window {
 
         TouchArea {
             clicked => { root.show_diagnostic_dialog = false; }
+            scroll-event(event) => { accept }
         }
 
         modal_card_diag := Rectangle {
@@ -4155,10 +4398,10 @@ export component MainWindow inherits Window {
                             }
                         }
 
-                        VerticalLayout {
+                        if root.diag_model_thinking: VerticalLayout {
                             alignment: center;
                             Badge {
-                                text: root.diag_model_thinking ? root.i18n.lbl_badge_thinking : root.i18n.lbl_badge_no_thinking;
+                                text: root.i18n.lbl_badge_thinking;
                             }
                         }
                     }
@@ -4236,18 +4479,30 @@ export component MainWindow inherits Window {
 
                         HorizontalLayout {
                             alignment: space-between;
+                            spacing: 12px;
                             VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
                                 spacing: 2px;
-                                Text { text: root.diag_status_text != "" ? root.diag_status_text : "Ready for diagnostics"; font-size: 12px; font-weight: 600; color: #ffffff; }
+                                Text {
+                                    text: root.diag_status_text != "" ? root.diag_status_text : "Ready for diagnostics";
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: #ffffff;
+                                    wrap: word-wrap;
+                                }
                                 Text { text: "Latency: " + root.diag_latency_text; font-size: 11px; color: #71717a; }
                             }
 
-                            ActionButton {
-                                text: root.diag_is_running ? root.i18n.lbl_diag_testing : root.i18n.btn_run_diagnostic;
-                                is_accent: true;
-                                is_disabled: root.diag_is_running;
-                                custom_height: 32px;
-                                clicked => { root.run_model_diagnostic(root.diag_model_id); }
+                            VerticalLayout {
+                                alignment: center;
+                                ActionButton {
+                                    text: root.diag_is_running ? root.i18n.lbl_diag_testing : root.i18n.btn_run_diagnostic;
+                                    is_accent: true;
+                                    is_disabled: root.diag_is_running;
+                                    custom_height: 32px;
+                                    clicked => { root.run_model_diagnostic(root.diag_model_id); }
+                                }
                             }
                         }
 
@@ -4272,7 +4527,10 @@ export component MainWindow inherits Window {
         background: #000000aa;
         animate opacity { duration: 200ms; easing: ease-in-out; }
 
-        TouchArea { clicked => { root.show_mcp_config_dialog = false; } }
+        TouchArea {
+            clicked => { root.show_mcp_config_dialog = false; }
+            scroll-event(event) => { accept }
+        }
 
         modal_card_mcp_cfg := Rectangle {
             width: 680px;
@@ -4348,6 +4606,7 @@ export component MainWindow inherits Window {
 
         TouchArea {
             clicked => { root.show_log_modal = false; }
+            scroll-event(event) => { accept }
         }
 
         modal_card3 := Rectangle {
@@ -4408,15 +4667,7 @@ export component MainWindow inherits Window {
                             Text { text: root.modal_log_path; font-family: "monospace"; font-size: 12px; font-weight: 700; color: #f4f4f5; vertical-alignment: center; }
                             VerticalLayout { alignment: center; Badge { text: root.modal_log_status; is_green: root.modal_log_status == "200 OK"; is_danger: root.modal_log_status != "" && root.modal_log_status != "200 OK"; } }
                             VerticalLayout { alignment: center; Badge { text: root.modal_log_model; } }
-                            if root.modal_log_effort != "": VerticalLayout { alignment: center; Badge { text: root.i18n.lbl_modal_effort_prefix + root.modal_log_effort; is_amber: root.modal_log_effort != "off"; is_green: root.modal_log_effort == "off"; } }
-                        }
-
-                        HorizontalLayout {
-                            spacing: 10px;
-                            alignment: end;
-                            Text { text: root.modal_log_latency; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
-                            Text { text: root.modal_log_tokens + " tok"; font-size: 11px; font-weight: 600; color: #a1a1aa; vertical-alignment: center; }
-                            Text { text: root.modal_log_time; font-size: 11px; color: #71717a; vertical-alignment: center; }
+                            if root.modal_log_effort != "": VerticalLayout { alignment: center; Badge { text: root.i18n.lbl_modal_effort_prefix + root.modal_log_effort; is_amber: root.modal_log_effort != "off" && root.modal_log_effort != "default"; is_green: root.modal_log_effort == "off" || root.modal_log_effort == "default"; } }
                         }
                     }
                 }
@@ -4456,9 +4707,9 @@ export component MainWindow inherits Window {
                         clicked => {
                             root.modal_log_copied = true;
                             if root.modal_inspector_tab == 0 {
-                                root.copy_text_to_clipboard(root.modal_log_req_body);
+                                root.copy_text_to_clipboard(root.modal_log_req_body_full != "" ? root.modal_log_req_body_full : root.modal_log_req_body);
                             } else if root.modal_inspector_tab == 1 {
-                                root.copy_text_to_clipboard(root.modal_log_resp_body);
+                                root.copy_text_to_clipboard(root.modal_log_resp_body_full != "" ? root.modal_log_resp_body_full : root.modal_log_resp_body);
                             } else {
                                 root.copy_text_to_clipboard(root.modal_log_headers);
                             }
@@ -4560,6 +4811,122 @@ export component MainWindow inherits Window {
                                         Text { text: root.i18n.log_detail_headers; font-size: 11px; font-weight: 800; color: #71717a; }
                                         Text { text: root.modal_log_headers != "" ? root.modal_log_headers : "Content-Type: application/json"; font-family: "monospace"; font-size: 11px; color: #94a3b8; wrap: word-wrap; }
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ============================================================
+    // MODAL 5: MCP TOOLS TEST DIALOG
+    // ============================================================
+    Rectangle {
+        visible: root.show_mcp_test_dialog || self.opacity > 0.01;
+        opacity: root.show_mcp_test_dialog ? 1.0 : 0.0;
+        background: #000000aa;
+        animate opacity { duration: 200ms; easing: ease-in-out; }
+
+        TouchArea {
+            clicked => { root.show_mcp_test_dialog = false; }
+            scroll-event(event) => { accept }
+        }
+
+        Rectangle {
+            width: 560px;
+            height: mcp_test_inner.min-height;
+            background: #141416;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: #27272a;
+            clip: true;
+            y: root.show_mcp_test_dialog ? round((parent.height - self.height) / 2px) * 1px : (round((parent.height - self.height) / 2px) + 20) * 1px;
+            animate y { duration: 200ms; easing: ease-in-out; }
+
+            TouchArea { clicked => { } }
+
+            mcp_test_inner := VerticalLayout {
+                padding: 18px;
+                spacing: 12px;
+
+                HorizontalLayout {
+                    alignment: space-between;
+                    Text { text: root.i18n.mcp_test_dialog_title; font-size: 14px; font-weight: 800; color: #ffffff; vertical-alignment: center; }
+                    ActionButton {
+                        text: root.i18n.btn_close;
+                        is_primary: false;
+                        custom_height: 26px;
+                        clicked => { root.show_mcp_test_dialog = false; }
+                    }
+                }
+
+                Rectangle { height: 1px; background: #27272a; }
+
+                Rectangle {
+                    background: #18181b;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: #27272a;
+                    HorizontalLayout {
+                        padding: 10px;
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        alignment: space-between;
+                        Text {
+                            text: "http://" + root.proxy_host + ":" + root.proxy_port + "/mcp";
+                            font-family: "monospace";
+                            font-size: 11px;
+                            color: #38bdf8;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: "google_web_search • fetch_web_page";
+                            font-size: 10px;
+                            color: #71717a;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                Rectangle {
+                    background: #0d0d0f;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: #27272a;
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 10px;
+                        HorizontalLayout {
+                            alignment: space-between;
+                            spacing: 12px;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: 3px;
+                                Text {
+                                    text: root.mcp_test_status != "" ? root.mcp_test_status : "Ready";
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: #ffffff;
+                                }
+                                if root.mcp_test_result_text != "": Text {
+                                    text: root.mcp_test_result_text;
+                                    font-family: "monospace";
+                                    font-size: 11px;
+                                    color: #4ade80;
+                                    wrap: word-wrap;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                ActionButton {
+                                    text: root.i18n.btn_mcp_test;
+                                    is_accent: true;
+                                    is_disabled: root.mcp_is_testing;
+                                    custom_height: 30px;
+                                    clicked => { root.run_mcp_diagnostic(); }
                                 }
                             }
                         }
