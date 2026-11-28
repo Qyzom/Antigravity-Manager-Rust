@@ -1020,19 +1020,21 @@ fn capture_and_save_screenshots(target_dir: &str) -> Result<(), Box<dyn std::err
     main_window.set_log_entries(Rc::new(VecModel::from(logs)).into());
 
     // Stats tab metrics (zeros when no live stats)
-    main_window.set_stat_prompt_tokens("0".into());
-    main_window.set_stat_completion_tokens("0".into());
-    main_window.set_stat_thinking_tokens("0".into());
-    main_window.set_stat_prompt_pct(0);
-    main_window.set_stat_comp_pct(0);
-    main_window.set_stat_think_pct(0);
-    main_window.set_stat_success_rate("0%".into());
-    main_window.set_stat_success_pct(0);
-    main_window.set_stat_error_count("0".into());
-    main_window.set_stat_error_pct(0);
-    main_window.set_stat_max_latency("0 ms".into());
-    main_window.set_stat_claude_pct(0);
-    main_window.set_stat_gemini_pct(0);
+    refresh_connectors_ui(&main_window, &AppConfig::default());
+
+    main_window.set_stat_prompt_tokens("42,840".into());
+    main_window.set_stat_completion_tokens("18,410".into());
+    main_window.set_stat_thinking_tokens("12,150".into());
+    main_window.set_stat_prompt_pct(58);
+    main_window.set_stat_comp_pct(25);
+    main_window.set_stat_think_pct(17);
+    main_window.set_stat_success_rate("99.4%".into());
+    main_window.set_stat_success_pct(99);
+    main_window.set_stat_error_count("2".into());
+    main_window.set_stat_error_pct(1);
+    main_window.set_stat_max_latency("3210 ms".into());
+    main_window.set_stat_claude_pct(64);
+    main_window.set_stat_gemini_pct(36);
 
     let out_dir = std::path::PathBuf::from(target_dir);
     std::fs::create_dir_all(&out_dir)?;
@@ -1046,7 +1048,7 @@ fn capture_and_save_screenshots(target_dir: &str) -> Result<(), Box<dyn std::err
         (5, "logs.png"),
         (6, "stats.png"),
         (7, "settings.png"),
-        (8, "about.png"),
+        (8, "connectors.png"),
     ];
 
     main_window.show()?;

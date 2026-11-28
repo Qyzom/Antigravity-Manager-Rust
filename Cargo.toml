@@ -1,6 +1,6 @@
 [package]
 name = "amr"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 authors = ["Qyzom <t0lotsmail@gmail.com>"]
 description = "Ultra-lightweight high-performance AI API proxy & protocol emulator in Rust (Antigravity Manager Rust)"

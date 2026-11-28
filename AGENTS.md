@@ -4,7 +4,15 @@
 Below is the definitive record of changes and protocol advancements implemented across all versions:
 
 ### Version Changelog (English)
-- **v1.0.0 (Latest / Production LTS)**:
+- **v1.1.0 (Latest)**:
+  - **BoringSSL TLS/HTTP2 Impersonation (`wreq` + `wreq-util`)**: Full migration off `reqwest`/`rustls` onto `wreq` (`BoringSSL`), emulating authentic Chrome TLS JA3/JA4 & HTTP/2 `SETTINGS` per account (`Chrome134`/`135`/`136`) with isolated connection pools (`account.id | proxy_url`).
+  - **Protocol-Level `DeviceProfile` Binding**: Enriched `loadCodeAssist` metadata with OS `platform` and deterministically bound the `conv` prefix in `payload["requestId"]` to the account's `machine_id` without exposing synthetic HTTP headers.
+  - **Full Legacy Purge & Codebase Rewrite (24 files, +4139 / -2614 lines)**: Stripped 116 dead i18n keys, 140 unused `I18nData` fields, 22 unused Slint properties, 9 dead callbacks, 7 unused SVG chart paths, dead Gemini structs, and `image_generation_models`; moved heavy sync/disk I/O off the async runtime via `spawn_blocking`.
+  - **Split API & MCP Connectors (`connectors.rs`)**: Dedicated **Connectors** tab with live auto-sync, BOM/JSONC comment stripping (`strip_jsonc`), and safe managed block replacement for IDE/CLI clients.
+  - **Security & Protocol Hardening**: Enforced `require_master_api_key`, OAuth `state` CSRF validation + `escape_html` XSS protection, strict local CORS, singleflight + `SAVE_LOCK` token refresh, and per-hop SSRF/DNS-pinning in MCP `fetch_web_page` (`Policy::none()` + `tokio::net::lookup_host`).
+  - **Balancer, Quota & Streaming Accuracy**: Added `probing_in_flight` single-probe guard, strict `0%` quota reporting when Claude/Gemini models or buckets are absent, non-retryable `403 VALIDATION_REQUIRED`/`SUBSCRIPTION_REQUIRED` separation, UTF-8 multi-byte safe `SseByteBuffer` (4 MiB cap), and `tool_use`/`input_json_delta` + parallel tool-call translation across OpenAI ↔ Claude.
+
+- **v1.0.0 (Production LTS)**:
   - **Milestone 1.0.0 Production Release**: First official major production release marking complete API stability, zero telemetry, and long-term maintenance readiness.
   - **Complete Removal of Unsupported TTS & Image Gen Modalities**: Fully purged legacy TTS routes (`/v1/audio/speech`), synthetic fallback layers, and image generation endpoints (`/v1/images/generations`). Upstream Cloud Code Pa restricts image generation to Enterprise tier licenses (`#3501`) and does not offer stateless REST TTS. AMR now strictly exposes 100% stable, authentic upstream capabilities.
   - **Authentic Speech-to-Text Engine (`gemini-3.5-transcribe`)**: Native speech recognition powered by Gemini multimodal audio processing. Transparent OpenAI Whisper SDK compatibility (`whisper-1` and `stt-1` aliases auto-routed to `gemini-3.5-transcribe`).
@@ -102,20 +110,22 @@ src/
 ├── lib.rs           # Library exports for unit and integration testing
 ├── cli.rs           # Clap CLI parser (--headless, --port, --config, --start-minimized)
 ├── config.rs        # App configuration, quota calculus, account state, model catalogs
+├── connectors.rs    # Split API & MCP client connectors with BOM/JSONC parsing & auto-sync
+├── instance.rs      # Single-instance IPC lock & window restore signaling
 ├── i18n.rs          # TranslationBundle & multi-language loader (EN, RU, ZH)
 ├── autostart.rs     # XDG Desktop (Linux) & Registry (Windows) auto-start manager
 ├── sys_metrics.rs   # Low-overhead OS process RSS / memory metrics collector
 ├── tray/            # System tray integration (muda / tray-icon) with dynamic localization
 └── proxy/
-    ├── server.rs    # Axum HTTP proxy router (/v1/chat/completions, /v1/messages, /v1/models)
-    ├── audio.rs     # Audio STT (/v1/audio/transcriptions), TTS (/v1/audio/speech), Images (/v1/images/generations)
-    ├── mcp.rs       # Model Context Protocol (MCP) server & direct tool execution (search & fetch)
-    ├── balancer.rs  # Quota-aware load balancing, session stickiness & KV cache retention
+    ├── server.rs    # Axum HTTP proxy router + per-account wreq (BoringSSL) client pools
+    ├── audio.rs     # Audio STT (/v1/audio/transcriptions via gemini-3.5-transcribe)
+    ├── mcp.rs       # Model Context Protocol (MCP) server & SSRF-hardened web fetch/search
+    ├── balancer.rs  # Quota-aware load balancing, single-probe guard & KV cache retention
     ├── router.rs    # Suffix table & native reasoning effort parser, model name translation
-    ├── antigravity.rs # Upstream OAuth token refresh, Cloud Code Pa API mapping, device profiles
+    ├── antigravity.rs # Upstream OAuth, Cloud Code Pa mapping, protocol-bound DeviceProfile
     ├── fingerprint.rs # Cryptographic machine ID, device ID & hardware fingerprint generators
-    ├── stats.rs     # Lock-free atomic metrics counters & persistent disk logging (logs.jsonl)
-    ├── stream.rs    # SSE chunk transformer, heartbeat injector (: ping\n\n), reasoning parser
+    ├── stats.rs     # Lock-free atomic metrics counters & background disk logging (logs.jsonl)
+    ├── stream.rs    # UTF-8 safe SseByteBuffer, heartbeat injector (: ping\n\n), tool_use & reasoning
     └── mappers/     # OpenAI <-> Claude protocol request & response schema transformers
 ```
 

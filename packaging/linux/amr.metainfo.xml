@@ -24,7 +24,7 @@
   <releases>
     <release version="@VERSION@" date="@DATE@">
       <description>
-        <p>AMR v@VERSION@: Official 1.0.0 Production LTS milestone. Pure Rust AI API proxy, protocol emulator, zero bloat, multimodal STT, web search grounding, and quota-aware balancer.</p>
+        <p>AMR v@VERSION@: Pure Rust AI API proxy &amp; protocol emulator on BoringSSL (wreq) with Chrome TLS/HTTP2 impersonation, protocol-bound DeviceProfile, API/MCP Connectors, hardened SSRF/OAuth security, and full legacy purge.</p>
       </description>
     </release>
   </releases>
